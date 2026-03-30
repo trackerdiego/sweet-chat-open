@@ -13,9 +13,10 @@ import { toast } from 'sonner';
 
 interface DailyGuideProps { strategy: DayStrategy; weeklyTheme?: string; onAiContent?: (content: AiGuideContent) => void; primaryNiche?: string; contentStyle?: string; }
 
-export interface AiGuideContent { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; }
+export interface AiGuideContent { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; taskExamples?: Record<string, string[]>; }
 
-const sectionAiKeys: (keyof AiGuideContent)[] = ['contentTypes', 'hooks', 'videoFormats', 'storytelling', 'ctas'];
+type SectionAiKey = 'contentTypes' | 'hooks' | 'videoFormats' | 'storytelling' | 'ctas';
+const sectionAiKeys: SectionAiKey[] = ['contentTypes', 'hooks', 'videoFormats', 'storytelling', 'ctas'];
 
 export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, contentStyle }: DailyGuideProps) {
   const [open, setOpen] = useState(false);

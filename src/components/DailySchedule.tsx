@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useState } from 'react';
 import confetti from 'canvas-confetti';
 
-interface DailyScheduleProps { schedule: DailyScheduleData; tasks: DailyTaskState; progress: number; onComplete: (task: TaskKey) => void; aiContent?: { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; } | null; }
+interface DailyScheduleProps { schedule: DailyScheduleData; tasks: DailyTaskState; progress: number; onComplete: (task: TaskKey) => void; aiContent?: { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; taskExamples?: Record<string, string[]>; } | null; }
 
 function fireConfetti() { confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#C9A96E', '#D4C5A9', '#2D2D2D'] }); }
 
@@ -45,7 +45,7 @@ function TaskItem({ taskKey, time, label, description, done, onComplete, example
   );
 }
 
-function ScheduleBlock({ block, tasks, onComplete }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; }) {
+function ScheduleBlock({ block, tasks, onComplete, aiContent }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; aiContent?: DailyScheduleProps['aiContent']; }) {
   const [open, setOpen] = useState(true);
   const completedCount = block.tasks.filter(t => { if (t.key === 'valueStories') return tasks.valueStories >= 5; return tasks[t.key as keyof DailyTaskState] === true; }).length;
   const allDone = completedCount === block.tasks.length;
@@ -61,10 +61,12 @@ function ScheduleBlock({ block, tasks, onComplete }: { block: TimeBlock; tasks: 
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="pl-2 space-y-1 mt-1">
-          {block.tasks.map((task) => {
+        {block.tasks.map((task) => {
             const isDone = task.key === 'valueStories' ? tasks.valueStories >= 5 : tasks[task.key as keyof DailyTaskState] === true;
             const displayLabel = task.key === 'valueStories' ? `${task.label} (${tasks.valueStories}/5)` : task.label;
-            return <TaskItem key={task.key} taskKey={task.key as TaskKey} time={task.time} label={displayLabel} description={task.description} done={isDone} onComplete={onComplete} examples={task.examples} />;
+            const aiExamples = aiContent?.taskExamples?.[task.key];
+            const examples = aiExamples && aiExamples.length > 0 ? aiExamples : task.examples;
+            return <TaskItem key={task.key} taskKey={task.key as TaskKey} time={task.time} label={displayLabel} description={task.description} done={isDone} onComplete={onComplete} examples={examples} />;
           })}
         </div>
       </CollapsibleContent>
@@ -86,7 +88,7 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
         </div>
         <Progress value={progress} className="h-2" /><p className="text-xs text-muted-foreground text-right mt-1">{progress}% concluído</p>
       </div>
-      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} />)}
+      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} aiContent={aiContent} />)}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="glass-card p-4 border-l-4 border-l-primary">
         <div className="flex items-start gap-3">
           {tasks.cliffhanger ? <CheckCircle2 size={18} className="text-primary shrink-0 mt-0.5" /> : <Lock size={18} className="text-primary shrink-0 mt-0.5" />}
