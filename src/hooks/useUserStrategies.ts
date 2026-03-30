@@ -31,7 +31,11 @@ export function useUserStrategies() {
           }
           setStrategies(full);
           setHasPersonalized(true);
+        } else {
+          setStrategies(fallbackStrategies);
         }
+      } else {
+        setStrategies(fallbackStrategies);
       }
 
       setLoading(false);

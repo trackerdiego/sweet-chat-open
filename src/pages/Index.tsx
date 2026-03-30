@@ -34,6 +34,25 @@ const Index = () => {
   const navigate = useNavigate();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  if (strategiesLoading || strategies.length === 0) {
+    return (
+      <div className="min-h-screen pb-24 md:pt-20">
+        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+          <div className="max-w-lg mx-auto space-y-3">
+            <Skeleton className="h-5 w-32 bg-white/20" />
+            <Skeleton className="h-9 w-48 bg-white/20" />
+            <Skeleton className="h-4 w-56 bg-white/20" />
+          </div>
+        </div>
+        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-20 w-full rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
   const todayStrategy = strategies[state.currentDay - 1];
   const displayName = profile?.display_name || 'Creator';
 
