@@ -125,7 +125,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-md border-b border-border shadow-sm">
         <div className="container max-w-6xl mx-auto flex items-center justify-between py-3 px-4">
           <div className="flex items-center gap-2">
-            <span className="font-serif text-xl font-bold text-primary">InfluLab</span>
+            <img src={logoHorizontal} alt="InfluLab" className="h-9 w-auto" />
           </div>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate("/auth")}>Entrar</Button>
