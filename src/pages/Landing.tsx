@@ -333,7 +333,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-white/10 py-8 px-4 bg-charcoal">
         <div className="container max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/40">
-          <span className="font-serif font-bold text-primary">InfluLab</span>
+          <img src={logoHorizontal} alt="InfluLab" className="h-7 w-auto" />
           <p>© {new Date().getFullYear()} InfluLab. Todos os direitos reservados.</p>
         </div>
       </footer>
