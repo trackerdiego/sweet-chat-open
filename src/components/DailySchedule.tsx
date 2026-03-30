@@ -88,7 +88,7 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
         </div>
         <Progress value={progress} className="h-2" /><p className="text-xs text-muted-foreground text-right mt-1">{progress}% concluído</p>
       </div>
-      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} />)}
+      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} aiContent={aiContent} />)}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="glass-card p-4 border-l-4 border-l-primary">
         <div className="flex items-start gap-3">
           {tasks.cliffhanger ? <CheckCircle2 size={18} className="text-primary shrink-0 mt-0.5" /> : <Lock size={18} className="text-primary shrink-0 mt-0.5" />}
