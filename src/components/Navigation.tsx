@@ -50,7 +50,7 @@ export function Navigation() {
       <motion.nav
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border px-2 py-2 pb-[env(safe-area-inset-bottom)] md:top-0 md:bottom-auto md:border-t-0 md:border-b md:pb-2"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border px-2 py-2 pb-[env(safe-area-inset-bottom)] md:top-0 md:bottom-auto md:border-t-0 md:border-b md:pb-2 md:pt-[env(safe-area-inset-top)]"
       >
         <div className="flex justify-around items-center max-w-lg mx-auto">
           {navItems.map(({ to, icon: Icon, label }) => (
