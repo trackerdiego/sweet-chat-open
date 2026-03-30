@@ -28,8 +28,6 @@ import {
 import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
-import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { toast } from "sonner";
 
 function Section({
   children,
@@ -167,17 +165,6 @@ const faqs = [
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { canInstall, isIOS, hasNativePrompt, promptInstall } = useInstallPrompt();
-
-  const handleDownload = async () => {
-    if (hasNativePrompt) {
-      await promptInstall();
-    } else if (isIOS) {
-      toast.info('Toque no botão Compartilhar (▢↑) e depois em "Adicionar à Tela de Início"', { duration: 8000 });
-    } else {
-      toast.info('Acesse pelo celular para instalar o app', { duration: 5000 });
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -255,16 +242,6 @@ export default function Landing() {
                   Começar grátis — 7 dias
                   <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
-                {canInstall && (
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={handleDownload}
-                    className="border-white/20 text-white hover:bg-white/10 px-6 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
-                  >
-                    📲 Baixar App
-                  </Button>
-                )}
                 <span className="text-xs text-white/40 self-center">
                   Sem cartão de crédito • Cancele quando quiser
                 </span>
