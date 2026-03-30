@@ -1,56 +1,44 @@
 
 
-# Corrigir Responsividade Mobile
+# Checklist Detalhado + Retry na Geração de Público
 
-## Problemas
+## Problema
 
-1. **Scroll horizontal indesejado** — o app inteiro se move lateralmente ao arrastar no mobile, indicando que algum elemento extravasa a largura da viewport
-2. **Nav bar extravasando no iPhone** — a barra fixa do topo (com "Entrar" e "Começar gratis") nao respeita o safe-area dos iPhones modernos (notch/Dynamic Island)
-
-## Causa Raiz
-
-- O `<div>` raiz da Landing tem `overflow-x-hidden` mas o `<html>` e `<body>` nao tem, entao o scroll lateral ainda e possivel no nivel do documento
-- Elementos com gradientes absolutos (ex: `w-[60%]`, `w-96`) podem ultrapassar a viewport
-- A nav fixa nao usa `safe-area-inset` para padding superior no iPhone
+1. O pipeline mostra 3 passos, mas `generate-audience-profile` faz **2 chamadas AI sequenciais** internamente (descrição + perfil visceral) — o usuario não vê progresso granular
+2. O passo 3 (matriz 30 dias) falha às vezes (429 rate limit ou timeout) e **não tem retry**
+3. A progress bar pula de 10% para 55% de uma vez — parece travado
 
 ## Plano
 
-### 1. Travar scroll horizontal no CSS global
+### 1. Separar o pipeline em 4 passos visuais
 
-**Arquivo:** `src/index.css`
+**Arquivo:** `src/pages/Onboarding.tsx`
 
-Adicionar no `@layer base`:
-```css
-html, body {
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-}
-```
+Alterar `pipelineSteps` de 3 para 4:
+- Passo 1: "Analisando seu nicho e público" (step 1 da edge function)
+- Passo 2: "Estudo visceral — medos, desejos, gatilhos" (step 2 da edge function)
+- Passo 3: "Criando sua Matriz de 30 dias" (matrix)
+- Passo 4: "Finalizando seu perfil" (onboarding_completed)
 
-### 2. Aplicar safe-area na nav da Landing
+Para isso, a edge function `generate-audience-profile` precisa retornar um indicador de progresso entre os 2 passos. Como ela já retorna `audienceDescription` e `avatarProfile`, o frontend pode:
+- Marcar passo 1 como "done" quando a função retorna (ambos já vêm juntos)
+- Ou: separar em 2 chamadas distintas
 
-**Arquivo:** `src/pages/Landing.tsx`
+**Abordagem escolhida:** Manter a edge function como está (ela retorna tudo junto), mas no frontend simular o progresso intermediário com um timer que marca o passo 1 após ~15s, já que o step 1 da AI é mais rápido. Quando a função retorna, marca ambos como done.
 
-- Na `<nav>` fixa (linha 172): adicionar `pt-[env(safe-area-inset-top)]` para que o conteudo nao fique embaixo do notch/Dynamic Island
-- Garantir que o padding da nav respeite as bordas laterais com `px-[max(1rem,env(safe-area-inset-left))]`
+### 2. Adicionar retry automático para a matriz
 
-### 3. Aplicar safe-area na Navigation do app logado
+**Arquivo:** `src/pages/Onboarding.tsx`
 
-**Arquivo:** `src/components/Navigation.tsx`
+Na chamada `generate-personalized-matrix`:
+- Se falhar, aguardar 3 segundos e tentar novamente (1 retry)
+- Se falhar no retry, mostrar botão "Tentar novamente" em vez de apenas avançar com warning
 
-- A bottom nav ja usa `pb-[env(safe-area-inset-bottom)]` — OK
-- Na versao desktop (top), adicionar `pt-[env(safe-area-inset-top)]` para consistencia
+### 3. Atualizar progress bar com intervalos mais suaves
 
-### 4. Conter elementos absolutos que extravasam
-
-**Arquivo:** `src/pages/Landing.tsx`
-
-- No hero, as divs de gradiente absoluto (linhas 200-205) ja estao dentro de um container com `overflow-hidden` — verificar que o wrapper pai tambem contenha com `overflow-hidden`
-- Na secao Final CTA (linha 526), o `overflow-hidden` ja esta presente — OK
+Usar `setInterval` durante cada passo ativo para incrementar a progress bar gradualmente (ex: +1% a cada 2s), dando sensação de progresso contínuo em vez de saltos abruptos.
 
 ### Arquivos alterados
 
-1. `src/index.css` — overflow-x hidden global
-2. `src/pages/Landing.tsx` — safe-area na nav + conter gradientes
-3. `src/components/Navigation.tsx` — safe-area top (se necessario)
+1. `src/pages/Onboarding.tsx` — pipeline de 4 passos, retry na matriz, progress suave
 
