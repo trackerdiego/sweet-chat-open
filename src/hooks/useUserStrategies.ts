@@ -11,6 +11,7 @@ export function useUserStrategies() {
     const fetchStrategies = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
+        setStrategies(fallbackStrategies);
         setLoading(false);
         return;
       }
