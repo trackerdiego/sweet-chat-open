@@ -63,7 +63,7 @@ const Auth = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-          <span className="font-serif text-2xl font-bold text-primary">InfluLab</span>
+          <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
           <h1 className="font-serif text-2xl font-bold text-white mt-4">Verifique seu email ✉️</h1>
         </div>
         <div className="flex-1 flex items-start justify-center px-4 -mt-8">
