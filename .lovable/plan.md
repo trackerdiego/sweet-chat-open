@@ -1,36 +1,47 @@
 
 
-# Corrigir Erro "Não é possível criar o perfil" no Onboarding
+# Sincronizar Projeto com Guia de Referencia
 
-## Causa Raiz
+## Analise
 
-O trigger `handle_new_user` que deveria criar automaticamente o perfil do usuario quando ele se cadastra **nao existe no banco**. A funcao SQL existe mas nenhum trigger a chama. Isso significa que o perfil so e criado pelo frontend (`fetchProfile`), o que causa uma race condition: quando `handleFinish` roda, pode tentar atualizar um perfil que ainda nao foi criado de forma estavel.
+Comparei cada secao do guia com o codigo atual. A maioria ja esta implementada corretamente. A unica dissonancia real encontrada:
+
+### Dissonancia: Secao "Cliffhangers" ausente no DailyGuide
+
+O guia especifica que `generate-daily-guide` retorna **6 categorias**, incluindo `cliffhangers`. A Edge Function ja gera essa categoria. Porem, o componente `DailyGuide.tsx` so renderiza **5 secoes** no accordion — o array `sectionAiKeys` nao inclui `cliffhangers`, e `getDailyGuideContent()` em `dailyGuideContent.ts` so retorna 5 secoes.
+
+Resultado: os cliffhangers personalizados pela IA sao gerados mas nunca exibidos.
 
 ## Plano
 
-### 1. Criar o trigger ausente no banco
+### 1. Adicionar secao Cliffhangers ao conteudo estatico
 
-Migracao SQL para criar o trigger `on_auth_user_created` que chama `handle_new_user` apos cada novo cadastro:
+**Arquivo:** `src/data/dailyGuideContent.ts`
 
-```sql
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
-```
+- Adicionar uma 6a secao na funcao `getDailyGuideContent()` com icone `🔥`, titulo `"Cliffhangers"` e 5 frases estaticas de fallback
 
-Isso garante que todo novo usuario ja tenha perfil criado antes de chegar ao onboarding.
+### 2. Renderizar cliffhangers no accordion do DailyGuide
 
-### 2. Tornar `handleFinish` mais robusto
+**Arquivo:** `src/components/DailyGuide.tsx`
 
-**Arquivo:** `src/pages/Onboarding.tsx`
-
-- Envolver a chamada `updateProfile` em try-catch
-- Se falhar, tentar novamente uma vez antes de desistir
-- Remover a dependencia de o perfil ja existir — se o update falhar, tentar insert direto como fallback
+- Adicionar `'cliffhangers'` ao array `sectionAiKeys` (de 5 para 6 entradas)
+- Atualizar o tipo `SectionAiKey` para incluir `'cliffhangers'`
 
 ### Arquivos alterados
 
-1. Migracao SQL (trigger)
-2. `src/pages/Onboarding.tsx` (error handling)
+1. `src/data/dailyGuideContent.ts` — adicionar secao cliffhangers
+2. `src/components/DailyGuide.tsx` — incluir cliffhangers no mapeamento AI
+
+### O que ja esta correto (sem mudancas necessarias)
+
+- Onboarding: 3 etapas, pipeline, prompts, fallback — OK
+- `generate-audience-profile`: 2 etapas, schema completo — OK
+- `generate-personalized-matrix`: distribuicao visceral, schema DayStrategy — OK
+- `generate-script`: validacao server-side, injecao avatar — OK
+- `ai-chat`: LOVABLE_API_KEY, streaming, contexto avatar — OK
+- `useUserProgress`: calcRealDay, debounce 500ms — OK
+- `useInfluencer`: migrateTasks, pontuacao, progresso — OK
+- `useUserUsage`: FREE_LIMITS, reset diario scripts — OK
+- `useUserStrategies`: fallback, merge — OK
+- Interfaces TypeScript: DayStrategy, DailyTaskState, InfluencerProgress — OK
 
