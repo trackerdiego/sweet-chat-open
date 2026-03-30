@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, Users, Brain, Calendar } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, Users, Brain, Calendar, RefreshCw, CheckCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 const contentStyles = [
@@ -25,6 +25,13 @@ type PipelineStep = {
   status: 'pending' | 'active' | 'done' | 'error';
 };
 
+const INITIAL_STEPS: PipelineStep[] = [
+  { id: 'audience', label: 'Analisando seu nicho e público', sublabel: 'Identificando oportunidades...', icon: Users, status: 'pending' },
+  { id: 'visceral', label: 'Estudo visceral do seu público', sublabel: 'Mapeando medos, desejos e gatilhos...', icon: Brain, status: 'pending' },
+  { id: 'matrix', label: 'Criando sua Matriz de 30 dias', sublabel: 'Construindo estratégias personalizadas...', icon: Calendar, status: 'pending' },
+  { id: 'finalize', label: 'Finalizando seu perfil', sublabel: 'Salvando configurações...', icon: CheckCircle, status: 'pending' },
+];
+
 const Onboarding = () => {
   const { updateProfile, profile } = useUserProfile();
   const navigate = useNavigate();
@@ -35,11 +42,31 @@ const Onboarding = () => {
   const [saving, setSaving] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState(0);
-  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([
-    { id: 'audience', label: 'Gerando descrição do seu público ideal', sublabel: 'Analisando seu perfil...', icon: Users, status: 'pending' },
-    { id: 'visceral', label: 'Realizando estudo visceral do seu público', sublabel: 'Mapeando psicologia, medos, desejos...', icon: Brain, status: 'pending' },
-    { id: 'matrix', label: 'Criando sua Matriz personalizada', sublabel: 'Construindo 30 dias de estratégias...', icon: Calendar, status: 'pending' },
-  ]);
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>(INITIAL_STEPS);
+  const [matrixRetryAvailable, setMatrixRetryAvailable] = useState(false);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopProgressTick = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
+
+  // Smooth progress: increment +1% every 2s, capped at `max`
+  const startProgressTick = useCallback((max: number) => {
+    stopProgressTick();
+    progressIntervalRef.current = setInterval(() => {
+      setPipelineProgress(prev => {
+        if (prev >= max) return prev;
+        return Math.min(prev + 1, max);
+      });
+    }, 2000);
+  }, [stopProgressTick]);
+
+  useEffect(() => {
+    return () => stopProgressTick();
+  }, [stopProgressTick]);
 
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
@@ -52,10 +79,62 @@ const Onboarding = () => {
     setPipelineSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
   };
 
+  const runMatrixGeneration = async (): Promise<boolean> => {
+    const { error } = await supabase.functions.invoke('generate-personalized-matrix', {
+      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
+    });
+    return !error;
+  };
+
+  const handleRetryMatrix = async () => {
+    setMatrixRetryAvailable(false);
+    updateStepStatus('matrix', 'active');
+    startProgressTick(90);
+
+    const success = await runMatrixGeneration();
+    stopProgressTick();
+
+    if (success) {
+      updateStepStatus('matrix', 'done');
+      setPipelineProgress(92);
+      await finalizeOnboarding();
+    } else {
+      updateStepStatus('matrix', 'error');
+      setMatrixRetryAvailable(true);
+      toast.error('A matriz falhou novamente. Tente mais uma vez ou pule.');
+    }
+  };
+
+  const handleSkipMatrix = async () => {
+    setMatrixRetryAvailable(false);
+    toast.warning('A matriz será gerada em breve. Você já pode explorar o app!');
+    await finalizeOnboarding();
+  };
+
+  const finalizeOnboarding = async () => {
+    updateStepStatus('finalize', 'active');
+    setPipelineProgress(95);
+
+    const completeResult = await updateProfile({ onboarding_completed: true });
+    if (completeResult?.error) {
+      await new Promise(r => setTimeout(r, 1000));
+      const retry = await updateProfile({ onboarding_completed: true });
+      if (retry?.error) {
+        updateStepStatus('finalize', 'error');
+        toast.error('Erro ao finalizar. Tente novamente.');
+        return;
+      }
+    }
+
+    updateStepStatus('finalize', 'done');
+    setPipelineProgress(100);
+    await new Promise(r => setTimeout(r, 800));
+    window.location.replace('/');
+  };
+
   const handleFinish = async () => {
     setSaving(true);
 
-    // Try updateProfile, retry once, then fallback to direct upsert
     let result = await updateProfile({
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
@@ -64,7 +143,6 @@ const Onboarding = () => {
     });
 
     if (result?.error) {
-      // Retry once
       await new Promise(r => setTimeout(r, 1000));
       result = await updateProfile({
         display_name: displayName.trim(),
@@ -75,7 +153,6 @@ const Onboarding = () => {
     }
 
     if (result?.error) {
-      // Direct upsert fallback
       try {
         const { error: directError } = await (supabase.from as any)('user_profiles')
           .upsert({
@@ -99,58 +176,63 @@ const Onboarding = () => {
     }
 
     setShowPipeline(true);
-    setPipelineProgress(5);
+    setPipelineProgress(3);
 
-    try {
-      updateStepStatus('audience', 'active');
-      setPipelineProgress(10);
+    // --- Step 1 & 2: Audience profile ---
+    updateStepStatus('audience', 'active');
+    startProgressTick(25); // tick up to 25% while waiting
 
-      const { error: audienceError } = await supabase.functions.invoke('generate-audience-profile', {
-        body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
-      });
+    // Simulate step 1 completing after ~12s (audience description is faster)
+    const step1Timer = setTimeout(() => {
+      updateStepStatus('audience', 'done');
+      setPipelineProgress(prev => Math.max(prev, 25));
+      updateStepStatus('visceral', 'active');
+      // Now tick up to 50%
+      startProgressTick(50);
+    }, 12000);
 
-      if (audienceError) {
-        updateStepStatus('audience', 'error');
-        updateStepStatus('visceral', 'error');
-      } else {
-        updateStepStatus('audience', 'done');
-        setPipelineProgress(35);
-        updateStepStatus('visceral', 'done');
-        setPipelineProgress(55);
-      }
+    const { error: audienceError } = await supabase.functions.invoke('generate-audience-profile', {
+      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
+    });
 
-      updateStepStatus('matrix', 'active');
-      setPipelineProgress(60);
+    clearTimeout(step1Timer);
+    stopProgressTick();
 
-      const { error: matrixError } = await supabase.functions.invoke('generate-personalized-matrix', {
-        body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
-      });
-
-      if (matrixError) {
-        updateStepStatus('matrix', 'error');
-        toast.warning('A matriz será gerada em breve. Você já pode explorar o app!');
-      } else {
-        updateStepStatus('matrix', 'done');
-        setPipelineProgress(95);
-      }
-
-      setPipelineProgress(100);
-      await new Promise(r => setTimeout(r, 800));
-    } catch (e) {
-      toast.warning('Houve um erro parcial, mas você já pode usar o app!');
+    if (audienceError) {
+      updateStepStatus('audience', 'error');
+      updateStepStatus('visceral', 'error');
+      setPipelineProgress(50);
+    } else {
+      updateStepStatus('audience', 'done');
+      updateStepStatus('visceral', 'done');
+      setPipelineProgress(52);
     }
 
-    const completeResult = await updateProfile({ onboarding_completed: true });
-    if (completeResult?.error) {
-      const retry = await updateProfile({ onboarding_completed: true });
-      if (retry?.error) {
-        toast.error('Erro ao finalizar. Tente novamente.');
-        setSaving(false);
-        return;
-      }
+    // --- Step 3: Matrix ---
+    updateStepStatus('matrix', 'active');
+    startProgressTick(85);
+
+    let matrixSuccess = await runMatrixGeneration();
+
+    if (!matrixSuccess) {
+      // Retry once after 3s
+      stopProgressTick();
+      await new Promise(r => setTimeout(r, 3000));
+      startProgressTick(90);
+      matrixSuccess = await runMatrixGeneration();
     }
-    setSaving(false);
-    window.location.replace('/');
+
+    stopProgressTick();
+
+    if (matrixSuccess) {
+      updateStepStatus('matrix', 'done');
+      setPipelineProgress(92);
+      await finalizeOnboarding();
+    } else {
+      updateStepStatus('matrix', 'error');
+      setPipelineProgress(75);
+      setMatrixRetryAvailable(true);
+    }
   };
 
   const steps = [
@@ -245,13 +327,25 @@ const Onboarding = () => {
                       {ps.status === 'active' ? <Loader2 size={16} className="animate-spin" /> : ps.status === 'done' ? <Check size={16} /> : <Icon size={16} />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${ps.status === 'done' ? 'text-emerald-500' : ps.status === 'active' ? 'text-foreground' : 'text-muted-foreground'}`}>{ps.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{ps.status === 'done' ? 'Concluído ✓' : ps.status === 'error' ? 'Erro (continuando...)' : ps.sublabel}</p>
+                      <p className={`text-sm font-medium ${ps.status === 'done' ? 'text-emerald-500' : ps.status === 'active' ? 'text-foreground' : ps.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{ps.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{ps.status === 'done' ? 'Concluído ✓' : ps.status === 'error' ? 'Erro (tentando novamente...)' : ps.sublabel}</p>
                     </div>
                   </motion.div>
                 );
               })}
             </div>
+
+            {matrixRetryAvailable && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
+                <Button onClick={handleRetryMatrix} className="flex-1 gold-gradient text-primary-foreground">
+                  <RefreshCw size={16} /> Tentar novamente
+                </Button>
+                <Button variant="outline" onClick={handleSkipMatrix} className="flex-1">
+                  Pular e continuar
+                </Button>
+              </motion.div>
+            )}
+
             <div className="space-y-2">
               <Progress value={pipelineProgress} className="h-2" />
               <p className="text-center text-xs text-muted-foreground">
