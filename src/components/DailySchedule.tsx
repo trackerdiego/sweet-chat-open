@@ -45,7 +45,7 @@ function TaskItem({ taskKey, time, label, description, done, onComplete, example
   );
 }
 
-function ScheduleBlock({ block, tasks, onComplete }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; }) {
+function ScheduleBlock({ block, tasks, onComplete, aiContent }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; aiContent?: DailyScheduleProps['aiContent']; }) {
   const [open, setOpen] = useState(true);
   const completedCount = block.tasks.filter(t => { if (t.key === 'valueStories') return tasks.valueStories >= 5; return tasks[t.key as keyof DailyTaskState] === true; }).length;
   const allDone = completedCount === block.tasks.length;
