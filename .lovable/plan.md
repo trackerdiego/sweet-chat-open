@@ -1,34 +1,62 @@
 
 
-# Plan: Execute Aura OS Database Migration
+# Migração Pendente — O que falta do Aura OS
 
-## Overview
-Run the complete SQL migration from the uploaded file to replicate the Aura OS database schema in this Supabase project.
+## Diagnóstico
 
-## Approach
-The migration will be split into multiple sequential calls to the database migration tool, since some parts have dependencies and some touch reserved schemas that need careful handling.
+Comparando os dois projetos, existem **4 categorias** de itens ainda não migrados:
 
-### Migration 1: Extensions + Core Tables
-- Enable extensions: `pgmq`, `pg_net`, `supabase_vault`
-- Create 11 tables: `user_profiles`, `user_strategies`, `user_progress`, `user_usage`, `audience_profiles`, `push_subscriptions`, `usage_logs`, `email_send_log`, `email_send_state`, `suppressed_emails`, `email_unsubscribe_tokens`
-- Insert default row into `email_send_state`
+---
 
-### Migration 2: RLS + Policies
-- Enable RLS on all 11 tables
-- Create all RLS policies (user-scoped for app tables, service_role for email tables)
+### 1. Assets (imagens, logos, ícones) — 24 arquivos
+Nenhum asset foi copiado ainda. Isso explica a logo e imagens quebradas.
 
-### Migration 3: Functions + Trigger + Queues + Grants
-- Create functions: `handle_new_user`, `enqueue_email`, `read_email_batch`, `delete_email`, `move_to_dlq`
-- Create trigger `on_auth_user_created` on `auth.users`
-- Create PGMQ queues: `auth_emails`, `transactional_emails`, and their DLQs
-- Set up GRANT/REVOKE for email functions
+**public/**
+- `favicon.png`, `og-image.png`
+- `icons/icon-192.png`, `icons/icon-512.png`
 
-### Migration 4: Storage Bucket + Policies
-- Create `media-uploads` storage bucket
-- Add storage policies for authenticated user upload/read/delete
+**src/assets/**
+- `influlab-logo.png`, `influlab-logo-horizontal.png`
+- `auth-bg.png`, `hero-illustration.png`
+- 11 ícones de nicho em `src/assets/niches/` (fitness, beleza, moda, etc.)
 
-## Important Notes
-- The trigger on `auth.users` is required for auto-creating user profiles on signup — this is a read from auth schema via trigger, which is a standard Supabase pattern
-- The SQL will be executed exactly as provided from the Aura OS project
-- After migration, the Supabase types will auto-update to reflect the new tables
+### 2. Componentes faltando — 3 arquivos
+- `src/components/landing/HeroMockup.tsx` — mockup visual do hero da landing
+- `src/components/PushNotificationButton.tsx` — botão de ativar/desativar notificações push
+- `src/components/TaskChecklist.tsx` — checklist de tarefas diárias com confetti
+
+### 3. Componente desatualizado — 1 arquivo
+- `src/components/NicheIcon.tsx` — versão atual usa apenas emoji fallback; a versão do Aura OS importa as imagens dos nichos
+
+### 4. Edge Functions — 13 functions
+Nenhuma Edge Function foi copiada. São elas:
+- `admin-dashboard`, `ai-chat`, `auth-email-hook`
+- `create-asaas-subscription`
+- `generate-audience-profile`, `generate-daily-guide`, `generate-personalized-matrix`, `generate-script`, `generate-tools-content`
+- `process-email-queue`, `scheduled-push`, `send-push`
+- `transcribe-media`
+- `_shared/email-templates/`
+
+---
+
+## Plano de Execução
+
+### Etapa 1: Copiar todos os assets (24 arquivos)
+Copiar do Aura OS usando `cross_project--copy_project_asset`:
+- 4 arquivos public (`favicon.png`, `og-image.png`, `icon-192.png`, `icon-512.png`)
+- 4 assets principais (`influlab-logo.png`, `influlab-logo-horizontal.png`, `auth-bg.png`, `hero-illustration.png`)
+- 11 ícones de nicho
+
+### Etapa 2: Copiar componentes faltantes (3 arquivos)
+- Criar `HeroMockup.tsx`, `PushNotificationButton.tsx`, `TaskChecklist.tsx` com o código exato do Aura OS
+
+### Etapa 3: Atualizar NicheIcon.tsx
+- Substituir pela versão completa que importa as imagens dos nichos
+
+### Etapa 4: Copiar e deploy das Edge Functions
+- Copiar os 13 diretórios de Edge Functions + `_shared/email-templates`
+- Deploy das functions
+
+## Observação
+As Edge Functions dependem de secrets (API keys do OpenAI, Asaas, VAPID, etc.) que precisarão ser configurados separadamente no painel do Supabase.
 
