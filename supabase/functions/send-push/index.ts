@@ -1,207 +1,302 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
+// ——— Verified VAPID key pair (generated + sign/verify tested in Deno runtime) ———
+const VAPID_PUBLIC_KEY = 'BABwZ141awYJTd606MI2vcDLQ8Zma2NwptLkaMbF_CA57z2H7LfgJsyIS3-Oz8GuteLiwJlG8l5kOv9moAErz3E';
+const VAPID_PRIVATE_KEY = 'DUWaQNGyLJxOEaSqp1B6OaMScQhpEl_Xe6PQd7Y3QCg';
+
+// ——— Base64URL utilities ———
+
+function base64UrlToUint8Array(base64: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function arrayBufferToBase64Url(buffer: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < buffer.length; i++) binary += String.fromCharCode(buffer[i]);
+  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function concatUint8Arrays(...arrays: Uint8Array[]): Uint8Array {
+  const totalLength = arrays.reduce((sum, a) => sum + a.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const a of arrays) {
+    result.set(a, offset);
+    offset += a.length;
+  }
+  return result;
+}
+
+// ——— HKDF (RFC 5869) ———
+
+async function hkdf(
+  salt: Uint8Array,
+  ikm: Uint8Array,
+  info: Uint8Array,
+  length: number
+): Promise<Uint8Array> {
+  // Extract
+  const saltKey = await crypto.subtle.importKey(
+    'raw',
+    salt.length > 0 ? salt : new Uint8Array(32),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const prk = new Uint8Array(await crypto.subtle.sign('HMAC', saltKey, ikm));
+
+  // Expand
+  const prkKey = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const infoWithCounter = new Uint8Array(info.length + 1);
+  infoWithCounter.set(info);
+  infoWithCounter[info.length] = 1;
+  const t1 = new Uint8Array(await crypto.subtle.sign('HMAC', prkKey, infoWithCounter));
+  return t1.slice(0, length);
+}
+
+// ——— RFC 8291: Web Push Payload Encryption (aes128gcm) ———
+
+async function encryptPayload(
+  payloadText: string,
+  p256dhBase64: string,
+  authBase64: string
+): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+
+  const clientPublicKeyBytes = base64UrlToUint8Array(p256dhBase64);
+  const authSecret = base64UrlToUint8Array(authBase64);
+
+  const clientPublicKey = await crypto.subtle.importKey(
+    'raw',
+    clientPublicKeyBytes,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    []
+  );
+
+  const serverKeys = await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    ['deriveBits']
+  );
+
+  const serverPublicKeyBytes = new Uint8Array(
+    await crypto.subtle.exportKey('raw', serverKeys.publicKey)
+  );
+
+  const sharedSecret = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: 'ECDH', public: clientPublicKey },
+      serverKeys.privateKey,
+      256
+    )
+  );
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  // IKM derivation
+  const ikmInfo = concatUint8Arrays(
+    enc.encode('WebPush: info\0'),
+    clientPublicKeyBytes,
+    serverPublicKeyBytes
+  );
+  const ikm = await hkdf(authSecret, sharedSecret, ikmInfo, 32);
+
+  // CEK and nonce
+  const cekInfo = enc.encode('Content-Encoding: aes128gcm\0');
+  const contentEncryptionKey = await hkdf(salt, ikm, cekInfo, 16);
+
+  const nonceInfo = enc.encode('Content-Encoding: nonce\0');
+  const nonce = await hkdf(salt, ikm, nonceInfo, 12);
+
+  // Pad and encrypt
+  const payloadBytes = enc.encode(payloadText);
+  const paddedPayload = new Uint8Array(payloadBytes.length + 1);
+  paddedPayload.set(payloadBytes);
+  paddedPayload[payloadBytes.length] = 2; // final record delimiter
+
+  const aesKey = await crypto.subtle.importKey(
+    'raw',
+    contentEncryptionKey,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: nonce },
+      aesKey,
+      paddedPayload
+    )
+  );
+
+  // Build aes128gcm record: salt(16) + rs(4) + idlen(1) + keyid(65) + ciphertext
+  const rs = 4096;
+  const rsBytes = new Uint8Array(4);
+  new DataView(rsBytes.buffer).setUint32(0, rs, false);
+  const idlen = new Uint8Array([serverPublicKeyBytes.length]);
+
+  return concatUint8Arrays(salt, rsBytes, idlen, serverPublicKeyBytes, ciphertext);
+}
+
+// ——— VAPID JWT (ES256 / RFC 8292) ———
+
+function derToRaw(der: Uint8Array): Uint8Array {
+  if (der.length === 64) return der;
+  if (der[0] !== 0x30) return der;
+
+  let offset = 2;
+  if (der[offset] !== 0x02) return der;
+  offset++;
+  const rLen = der[offset]; offset++;
+  let r = der.slice(offset, offset + rLen); offset += rLen;
+
+  if (der[offset] !== 0x02) return der;
+  offset++;
+  const sLen = der[offset]; offset++;
+  let s = der.slice(offset, offset + sLen);
+
+  if (r.length > 32) r = r.slice(r.length - 32);
+  if (s.length > 32) s = s.slice(s.length - 32);
+
+  const raw = new Uint8Array(64);
+  raw.set(r, 32 - r.length);
+  raw.set(s, 64 - s.length);
+  return raw;
+}
+
+async function generateVapidJWT(audience: string, subject: string): Promise<string> {
+  const privateKeyBytes = base64UrlToUint8Array(VAPID_PRIVATE_KEY);
+  const publicKeyBytes = base64UrlToUint8Array(VAPID_PUBLIC_KEY);
+
+  const x = publicKeyBytes.slice(1, 33);
+  const y = publicKeyBytes.slice(33, 65);
+
+  const jwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: arrayBufferToBase64Url(x),
+    y: arrayBufferToBase64Url(y),
+    d: arrayBufferToBase64Url(privateKeyBytes),
+  };
+
+  const key = await crypto.subtle.importKey(
+    'jwk', jwk,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign']
+  );
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { typ: 'JWT', alg: 'ES256' };
+  const payload = { aud: audience, exp: now + 86400, sub: subject };
+
+  const headerB64 = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const payloadB64 = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const unsignedToken = `${headerB64}.${payloadB64}`;
+
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    new TextEncoder().encode(unsignedToken)
+  );
+
+  const rawSig = derToRaw(new Uint8Array(signature));
+  return `${unsignedToken}.${arrayBufferToBase64Url(rawSig)}`;
+}
+
+// ——— Main handler ———
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const { user_id, title, body, url } = await req.json();
+
+    if (!user_id || !title || !body) {
+      return new Response(JSON.stringify({ error: 'user_id, title, body required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const { data: subscriptions, error } = await supabase
+      .from('push_subscriptions')
+      .select('endpoint, p256dh, auth')
+      .eq('user_id', user_id);
+
+    if (error) throw error;
+    if (!subscriptions || subscriptions.length === 0) {
+      return new Response(JSON.stringify({ sent: 0, message: 'No subscriptions found' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const userId = user.id;
 
-    const { primaryNiche, secondaryNiches, contentStyle } = await req.json();
+    console.log(`[send-push] ${subscriptions.length} subs for ${user_id}, pubkey starts: ${VAPID_PUBLIC_KEY.substring(0, 20)}`);
 
-    const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GOOGLE_GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
+    const payload = JSON.stringify({ title, body, url: url || '/' });
+    let sent = 0;
 
-    const secondaryList = (secondaryNiches || []).join(", ");
-    const styleMap: Record<string, string> = {
-      casual: "leve, descontraído, como conversa entre amigos",
-      profissional: "autoritário, informativo, com dados e dicas práticas",
-      divertido: "engraçado, irreverente, usando memes e trends",
-    };
-    const styleDesc = styleMap[contentStyle] || styleMap.casual;
+    for (const sub of subscriptions) {
+      try {
+        const encryptedPayload = await encryptPayload(payload, sub.p256dh, sub.auth);
 
-    console.log("Step 1: Generating audience description...");
+        const audience = new URL(sub.endpoint).origin;
+        const jwtToken = await generateVapidJWT(audience, 'mailto:push@influlab.app');
 
-    const step1Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `Você é uma estrategista de público digital especialista em criadores(as) de conteúdo brasileiros(as). Crie uma descrição rica e detalhada do público-alvo ideal. Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a).`
+        const response = await fetch(sub.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Encoding': 'aes128gcm',
+            Authorization: `vapid t=${jwtToken}, k=${VAPID_PUBLIC_KEY}`,
+            TTL: '86400',
+            Urgency: 'high',
           },
-          {
-            role: "user",
-            content: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`
-          },
-        ],
-      }),
-    });
+          body: encryptedPayload,
+        });
 
-    if (!step1Response.ok) {
-      const errText = await step1Response.text();
-      console.error("Step 1 error:", step1Response.status, errText);
-      throw new Error(`Erro na etapa 1: ${step1Response.status}`);
-    }
-
-    const step1Data = await step1Response.json();
-    const audienceDescription = step1Data.choices?.[0]?.message?.content || "";
-
-    if (!audienceDescription) {
-      throw new Error("Etapa 1 não retornou descrição do público");
-    }
-
-    console.log("Step 1 complete. Description length:", audienceDescription.length);
-
-    console.log("Step 2: Generating visceral avatar profile...");
-
-    const avatarSystemPrompt = `Act as a Master Copywriter and Direct Response Strategist, specializing in deep psychology and consumer behavior. Your language must be visceral, real, and dimensional. You do not tolerate vague or superficial answers.\n\nYour mission is to build the most robust and compelling Avatar Profile possible, based on the product/audience information below. You must analyze and fill in ALL of the following fields in ONE SINGLE RESPONSE.\n\nUse your vast knowledge base to infer realistic details, going beyond the obvious. I do not want generic answers. I want the psychological truth behind this avatar.\n\nExecute each step with precision, creating an irresistible communication framework that resonates deeply with the target audience.\n\nCRITICAL INSTRUCTION: All of your answers and all output must be in Native Brazilian Portuguese (Português Nativo do Brasil). Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a, inspirado/a).`;
-
-    const avatarUserPrompt = `[Product/Audience]= Criador(a) de conteúdo digital brasileiro(a). Descrição do negócio/conteúdo:\n"${primaryNiche}"\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}.\n\nDescrição detalhada do público-alvo:\n${audienceDescription}\n\nCom base nessas informações, preencha o perfil completo do avatar usando a tool fornecida. Seja visceral, profundo(a) e específico(a). NADA genérico.`;
-
-    const step2Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: avatarSystemPrompt },
-          { role: "user", content: avatarUserPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "save_avatar_profile",
-              description: "Salva o perfil psicológico completo do avatar/público-alvo",
-              parameters: {
-                type: "object",
-                properties: {
-                  niche: { type: "string" }, avatar: { type: "string" },
-                  primaryGoal: { type: "string" }, primaryComplaint: { type: "string" },
-                  secondaryGoals: { type: "array", items: { type: "string" } },
-                  secondaryComplaints: { type: "array", items: { type: "string" } },
-                  promises: { type: "array", items: { type: "string" } },
-                  benefits: { type: "array", items: { type: "string" } },
-                  objections: { type: "array", items: { type: "string" } },
-                  confusions: { type: "array", items: { type: "string" } },
-                  ultimateFear: { type: "string" },
-                  falseSolutions: { type: "array", items: { type: "string" } },
-                  mistakenBeliefs: { type: "array", items: { type: "string" } },
-                  frustrations: { type: "array", items: { type: "string" } },
-                  everydayRelatability: { type: "string" },
-                  commonEnemy: { type: "string" }, tribe: { type: "string" },
-                  deepOccultDesire: { type: "string" },
-                  coreWounds: { type: "array", items: { type: "string" } },
-                  sevenSinsCurrent: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  sevenSinsFuture: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  shameTriggers: { type: "array", items: { type: "string" } },
-                  anxietyDrivers: { type: "array", items: { type: "string" } },
-                  hopeAnchors: { type: "array", items: { type: "string" } },
-                  decisionTriggers: { type: "array", items: { type: "string" } },
-                  verbalTriggers: { type: "array", items: { type: "string" } },
-                  identityAnchors: { type: "array", items: { type: "string" } },
-                  selfImageGap: { type: "string" },
-                },
-                required: ["niche", "avatar", "primaryGoal", "primaryComplaint", "objections", "ultimateFear", "coreWounds", "sevenSinsCurrent", "sevenSinsFuture", "deepOccultDesire", "verbalTriggers"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "save_avatar_profile" } },
-      }),
-    });
-
-    if (!step2Response.ok) {
-      if (step2Response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        if (response.status === 201 || response.status === 200) {
+          sent++;
+          console.log(`[send-push] ✓ delivered`);
+        } else {
+          const respBody = await response.text();
+          console.error(`[send-push] ✗ ${response.status}: ${respBody}`);
+          if (response.status === 404 || response.status === 410) {
+            await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+            console.log(`[send-push] Removed expired subscription`);
+          }
+        }
+      } catch (e: any) {
+        console.error('[send-push] Error:', e.message);
       }
-      const errText = await step2Response.text();
-      console.error("Step 2 error:", step2Response.status, errText);
-      throw new Error(`Erro na etapa 2: ${step2Response.status}`);
     }
 
-    const step2Data = await step2Response.json();
-    const toolCall = step2Data.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall?.function?.arguments) {
-      throw new Error("Resposta da IA sem dados estruturados na etapa 2");
-    }
-
-    const avatarProfile = JSON.parse(toolCall.function.arguments);
-    console.log("Step 2 complete. Avatar profile keys:", Object.keys(avatarProfile).length);
-
-    const { error: upsertError } = await supabase
-      .from("audience_profiles")
-      .upsert({
-        user_id: userId,
-        audience_description: audienceDescription,
-        avatar_profile: avatarProfile,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
-
-    if (upsertError) {
-      console.error("Error saving audience profile:", upsertError);
-    }
-
-    return new Response(JSON.stringify({
-      audienceDescription,
-      avatarProfile,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ sent }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (e) {
-    console.error("generate-audience-profile error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (err: any) {
+    console.error('[send-push] Fatal:', err);
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
