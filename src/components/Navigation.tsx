@@ -94,7 +94,14 @@ export function Navigation() {
                     if (success) {
                       toast.success('Notificações ativadas! 🔔');
                     } else {
-                      toast.error('Não foi possível ativar as notificações');
+                      const inPreview = window.location.hostname.includes('id-preview--') ||
+                        window.location.hostname.includes('lovableproject.com') ||
+                        (() => { try { return window.self !== window.top; } catch { return true; } })();
+                      if (inPreview) {
+                        toast.info('Notificações push funcionam apenas na versão publicada ou no app instalado', { duration: 5000 });
+                      } else {
+                        toast.error('Não foi possível ativar as notificações');
+                      }
                     }
                   }
                 }}
