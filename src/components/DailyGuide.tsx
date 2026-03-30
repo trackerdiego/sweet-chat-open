@@ -15,8 +15,8 @@ interface DailyGuideProps { strategy: DayStrategy; weeklyTheme?: string; onAiCon
 
 export interface AiGuideContent { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; taskExamples?: Record<string, string[]>; }
 
-type SectionAiKey = 'contentTypes' | 'hooks' | 'videoFormats' | 'storytelling' | 'ctas';
-const sectionAiKeys: SectionAiKey[] = ['contentTypes', 'hooks', 'videoFormats', 'storytelling', 'ctas'];
+type SectionAiKey = 'contentTypes' | 'hooks' | 'videoFormats' | 'storytelling' | 'ctas' | 'cliffhangers';
+const sectionAiKeys: SectionAiKey[] = ['contentTypes', 'hooks', 'videoFormats', 'storytelling', 'ctas', 'cliffhangers'];
 
 export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, contentStyle }: DailyGuideProps) {
   const [open, setOpen] = useState(false);
