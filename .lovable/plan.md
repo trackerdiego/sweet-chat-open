@@ -1,56 +1,36 @@
 
 
-# Exemplos de Tarefas: 5 por tipo + Personalizados com Analise Visceral
+# Corrigir Erro "Não é possível criar o perfil" no Onboarding
 
-## Problema Atual
+## Causa Raiz
 
-- Os exemplos estaticos em `dailySchedule.ts` tem apenas 1-3 por tarefa (alguns so 1)
-- Sao genericos, nao usam o perfil de audiencia visceral do onboarding
-- O conteudo AI (`generate-daily-guide`) gera hooks, storytelling, etc. mas NAO gera exemplos para as tarefas do checklist
+O trigger `handle_new_user` que deveria criar automaticamente o perfil do usuario quando ele se cadastra **nao existe no banco**. A funcao SQL existe mas nenhum trigger a chama. Isso significa que o perfil so e criado pelo frontend (`fetchProfile`), o que causa uma race condition: quando `handleFinish` roda, pode tentar atualizar um perfil que ainda nao foi criado de forma estavel.
 
 ## Plano
 
-### 1. Expandir exemplos estaticos para 5 cada (fallback)
+### 1. Criar o trigger ausente no banco
 
-**Arquivo:** `src/data/dailySchedule.ts`
+Migracao SQL para criar o trigger `on_auth_user_created` que chama `handle_new_user` apos cada novo cadastro:
 
-Completar o objeto `taskExamples` para que cada nicho tenha exatamente 5 exemplos por tarefa (morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost). Isso garante fallback antes do usuario gerar IA.
-
-### 2. Gerar exemplos de tarefa via IA com perfil visceral
-
-**Arquivo:** `supabase/functions/generate-daily-guide/index.ts`
-
-Adicionar uma nova categoria `taskExamples` ao prompt e ao function tool da IA:
-- Estrutura: objeto com chaves por tarefa, cada uma com array de 5 strings
-- O prompt ja recebe o perfil visceral completo — basta instruir a IA a gerar exemplos praticos para cada slot de tarefa usando os gatilhos psicologicos do publico
-
-### 3. Passar exemplos AI para o DailySchedule
-
-**Arquivo:** `src/components/DailyGuide.tsx`
-- Expandir `AiGuideContent` para incluir `taskExamples?: Record<string, string[]>`
-
-**Arquivo:** `src/components/DailySchedule.tsx`
-- Receber `aiContent.taskExamples` e, quando disponivel, usar no lugar dos exemplos estaticos de cada `TaskItem`
-
-**Arquivo:** `src/pages/Tasks.tsx`
-- Ja passa `aiContent` para `DailySchedule` — nenhuma mudanca necessaria
-
-### Fluxo resultante
-
-```text
-Onboarding → audience_profiles (perfil visceral)
-                    ↓
-generate-daily-guide (le perfil visceral)
-                    ↓
-Retorna: hooks, storytelling, ctas, cliffhangers + taskExamples
-                    ↓
-DailySchedule exibe 5 exemplos personalizados por tarefa
+```sql
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
 ```
+
+Isso garante que todo novo usuario ja tenha perfil criado antes de chegar ao onboarding.
+
+### 2. Tornar `handleFinish` mais robusto
+
+**Arquivo:** `src/pages/Onboarding.tsx`
+
+- Envolver a chamada `updateProfile` em try-catch
+- Se falhar, tentar novamente uma vez antes de desistir
+- Remover a dependencia de o perfil ja existir — se o update falhar, tentar insert direto como fallback
 
 ### Arquivos alterados
 
-1. `src/data/dailySchedule.ts` — expandir exemplos estaticos para 5 cada
-2. `supabase/functions/generate-daily-guide/index.ts` — adicionar taskExamples ao prompt/tool
-3. `src/components/DailyGuide.tsx` — expandir tipo AiGuideContent
-4. `src/components/DailySchedule.tsx` — usar taskExamples do AI quando disponivel
+1. Migracao SQL (trigger)
+2. `src/pages/Onboarding.tsx` (error handling)
 
