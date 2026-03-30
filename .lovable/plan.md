@@ -1,38 +1,34 @@
 
 
-# Plan: Fix Build Errors - Create Missing Files & Fix TypeScript
+# Plan: Execute Aura OS Database Migration
 
 ## Overview
-The build has 30+ errors from two categories: (1) missing files (9 pages + dailySchedule.ts) and (2) TypeScript errors from Supabase types not knowing about tables. All source content has been read from the Aura OS project.
+Run the complete SQL migration from the uploaded file to replicate the Aura OS database schema in this Supabase project.
 
-## Steps
+## Approach
+The migration will be split into multiple sequential calls to the database migration tool, since some parts have dependencies and some touch reserved schemas that need careful handling.
 
-### 1. Create `src/data/dailySchedule.ts`
-Full 584-line file with schedule generation logic, weekly themes, cliffhangers, and contextual descriptions per pillar.
+### Migration 1: Extensions + Core Tables
+- Enable extensions: `pgmq`, `pg_net`, `supabase_vault`
+- Create 11 tables: `user_profiles`, `user_strategies`, `user_progress`, `user_usage`, `audience_profiles`, `push_subscriptions`, `usage_logs`, `email_send_log`, `email_send_state`, `suppressed_emails`, `email_unsubscribe_tokens`
+- Insert default row into `email_send_state`
 
-### 2. Create all 9 missing pages
-- `src/pages/Landing.tsx` - Full landing page with hero, features, pricing, FAQ
-- `src/pages/Auth.tsx` - Login/signup with forgot password flow
-- `src/pages/Onboarding.tsx` - 3-step onboarding with AI pipeline
-- `src/pages/Matrix.tsx` - 30-day strategy matrix grid
-- `src/pages/Script.tsx` - Script generator page
-- `src/pages/Tasks.tsx` - Daily tasks with schedule and guide
-- `src/pages/Tools.tsx` - AI tools page with transcription
-- `src/pages/Admin.tsx` - Admin dashboard
-- `src/pages/ResetPassword.tsx` - Password reset flow
-- `src/pages/NotFound.tsx` - Already exists, will update if needed
+### Migration 2: RLS + Policies
+- Enable RLS on all 11 tables
+- Create all RLS policies (user-scoped for app tables, service_role for email tables)
 
-### 3. Fix Supabase TypeScript errors in hooks
-Add `as any` casts to all Supabase `.from()` calls in:
-- `useUserProfile.ts` - 3 `.from('user_profiles')` calls
-- `useUserProgress.ts` - 4 `.from('user_progress')` calls + property access casts
-- `useUserUsage.ts` - 3 `.from('user_usage')` calls
-- `useUserStrategies.ts` - 1 `.from('user_strategies')` call
+### Migration 3: Functions + Trigger + Queues + Grants
+- Create functions: `handle_new_user`, `enqueue_email`, `read_email_batch`, `delete_email`, `move_to_dlq`
+- Create trigger `on_auth_user_created` on `auth.users`
+- Create PGMQ queues: `auth_emails`, `transactional_emails`, and their DLQs
+- Set up GRANT/REVOKE for email functions
 
-This is necessary because the Supabase types file has no table definitions yet (tables haven't been created via migrations).
+### Migration 4: Storage Bucket + Policies
+- Create `media-uploads` storage bucket
+- Add storage policies for authenticated user upload/read/delete
 
-## Technical Notes
-- Pages reference assets like `@/assets/influlab-logo.png` which don't exist yet — these will need to be copied in a subsequent step (assets migration)
-- The `as any` pattern on Supabase calls is temporary until migrations create the actual tables
-- The `date-fns` and `framer-motion` dependencies were already added in previous steps
+## Important Notes
+- The trigger on `auth.users` is required for auto-creating user profiles on signup — this is a read from auth schema via trigger, which is a standard Supabase pattern
+- The SQL will be executed exactly as provided from the Aura OS project
+- After migration, the Supabase types will auto-update to reflect the new tables
 
