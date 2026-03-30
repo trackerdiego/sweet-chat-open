@@ -1,16 +1,158 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { motion } from 'framer-motion';
+import { useInfluencer } from '@/hooks/useInfluencer';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { useUserStrategies } from '@/hooks/useUserStrategies';
+import { useUserUsage } from '@/hooks/useUserUsage';
+import { getPillarColor, getPillarEmoji } from '@/data/strategies';
+import { NicheIcon } from '@/components/NicheIcon';
+import { MonthlyProgress } from '@/components/MonthlyProgress';
+import { StreakCounter } from '@/components/StreakCounter';
+import { MindsetPulse } from '@/components/MindsetPulse';
+import { WeeklyView } from '@/components/WeeklyView';
+import { CheckoutModal } from '@/components/CheckoutModal';
+import { ChevronRight, Calendar, LogOut, RefreshCw, Crown, Lock } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const { strategies } = useUserStrategies();
+  const { state, dailyProgress, completedDays } = useInfluencer(strategies);
+  const { profile, signOut, updateProfile } = useUserProfile();
+  const { isPremium, freeLimits } = useUserUsage();
+  const navigate = useNavigate();
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const todayStrategy = strategies[state.currentDay - 1];
+  const displayName = profile?.display_name || 'Creator';
+
+  const handleResetNiche = async () => {
+    await updateProfile({ onboarding_completed: false });
+    navigate('/onboarding', { replace: true });
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="min-h-screen pb-24 md:pt-20">
+      <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+        <motion.div
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="max-w-lg mx-auto space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-white/70 text-sm flex items-center gap-1.5">
+              <Calendar size={14} /> Dia {state.currentDay} de 30
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => isPremium ? setShowResetDialog(true) : setCheckoutOpen(true)} className="text-white/70 hover:text-white hover:bg-white/10">
+                {isPremium ? <RefreshCw size={18} /> : <Lock size={18} />}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={signOut} className="text-white/70 hover:text-white hover:bg-white/10">
+                <LogOut size={18} />
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <h1 className="font-serif text-3xl font-bold text-white">
+              Olá, {displayName} 👑
+            </h1>
+            <p className="text-white/60 text-sm">Sua jornada de influência continua</p>
+          </div>
+        </motion.div>
+      </div>
+
+      <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
+        {!isPremium && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="glass-card p-4 flex items-center justify-between gap-3 border border-primary/20"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Crown size={18} className="text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Plano Gratuito</p>
+                <p className="text-xs text-muted-foreground">
+                  {state.currentDay <= freeLimits.free_days
+                    ? `${freeLimits.free_days - state.currentDay + 1} dias grátis restantes`
+                    : 'Desbloqueie os 30 dias completos'}
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={() => setCheckoutOpen(true)} className="gold-gradient text-primary-foreground shrink-0">
+              Assinar
+            </Button>
+          </motion.div>
+        )}
+
+        <MindsetPulse day={state.currentDay} />
+        <MonthlyProgress completedDays={completedDays.length} totalDays={30} />
+
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Link to="/script" className="block glass-card p-5 hover:shadow-lg transition-all group">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${getPillarColor(todayStrategy.pillar)}`}>
+                  <NicheIcon id={todayStrategy.pillar} fallbackEmoji={getPillarEmoji(todayStrategy.pillar)} size={16} /> {todayStrategy.pillarLabel}
+                </span>
+                <h3 className="font-serif text-lg font-semibold">
+                  {todayStrategy.title}
+                </h3>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {todayStrategy.viralHook}
+                </p>
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground mt-2 group-hover:text-primary transition-colors" />
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex-1 h-2 rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full gold-gradient transition-all duration-500"
+                  style={{ width: `${dailyProgress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">{dailyProgress}%</span>
+            </div>
+          </Link>
+        </motion.div>
+
+        <StreakCounter streak={state.streak} points={state.influencePoints} />
+        <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
+      </div>
+
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Redefinir nicho?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Isso vai regenerar sua matriz de conteúdo e perfil de público com base nos novos nichos. Seu progresso e streak serão mantidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetNiche}>Redefinir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
