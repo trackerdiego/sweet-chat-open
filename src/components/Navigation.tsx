@@ -45,6 +45,58 @@ export function Navigation() {
     navigate('/onboarding', { replace: true });
   };
 
+  const handleNotificationToggle = async () => {
+    if (!isSupported) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isIOS && !isStandalone) {
+        toast.info('Para ativar notificações, abra o app pela tela de início do iPhone', { duration: 5000 });
+      } else {
+        toast.error('Seu navegador não suporta notificações push');
+      }
+      return;
+    }
+
+    if (isSubscribed) {
+      await unsubscribe();
+      toast.success('Notificações desativadas');
+      return;
+    }
+
+    const result = await subscribe();
+
+    if (result.ok) {
+      toast.success('Notificações ativadas! 🔔');
+      return;
+    }
+
+    // Contextual error messages
+    switch (result.reason) {
+      case 'permission_denied':
+        toast.error('Permissão negada. Vá em Ajustes > Safari > Notificações e habilite para este app.', { duration: 6000 });
+        break;
+      case 'sw_not_ready':
+        toast.info('O sistema ainda está inicializando. Aguarde alguns segundos e tente novamente.', { duration: 5000 });
+        break;
+      case 'db_save_failed':
+        toast.error('Erro ao salvar dispositivo. Tente novamente em instantes.');
+        break;
+      case 'not_supported': {
+        const inPreview = window.location.hostname.includes('id-preview--') ||
+          window.location.hostname.includes('lovableproject.com') ||
+          (() => { try { return window.self !== window.top; } catch { return true; } })();
+        if (inPreview) {
+          toast.info('Notificações push funcionam apenas na versão publicada ou no app instalado', { duration: 5000 });
+        } else {
+          toast.error('Seu navegador não suporta notificações push');
+        }
+        break;
+      }
+      default:
+        toast.error('Não foi possível ativar as notificações. Tente novamente.');
+        break;
+    }
+  };
+
   return (
     <>
       <motion.nav
@@ -76,35 +128,7 @@ export function Navigation() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" sideOffset={8} className="mb-2">
               <DropdownMenuItem
-                onClick={async () => {
-                  if (!isSupported) {
-                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                    if (isIOS && !isStandalone) {
-                      toast.info('Para ativar notificações, abra o app pela tela de início do iPhone', { duration: 5000 });
-                    } else {
-                      toast.error('Seu navegador não suporta notificações push');
-                    }
-                    return;
-                  }
-                  if (isSubscribed) {
-                    await unsubscribe();
-                    toast.success('Notificações desativadas');
-                  } else {
-                    const success = await subscribe();
-                    if (success) {
-                      toast.success('Notificações ativadas! 🔔');
-                    } else {
-                      const inPreview = window.location.hostname.includes('id-preview--') ||
-                        window.location.hostname.includes('lovableproject.com') ||
-                        (() => { try { return window.self !== window.top; } catch { return true; } })();
-                      if (inPreview) {
-                        toast.info('Notificações push funcionam apenas na versão publicada ou no app instalado', { duration: 5000 });
-                      } else {
-                        toast.error('Não foi possível ativar as notificações');
-                      }
-                    }
-                  }
-                }}
+                onClick={handleNotificationToggle}
                 disabled={isLoading}
                 className="gap-2"
               >

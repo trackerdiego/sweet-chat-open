@@ -14,6 +14,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+export type SubscribeResult = {
+  ok: boolean;
+  reason?: 'permission_denied' | 'sw_not_ready' | 'db_save_failed' | 'not_supported' | 'unknown';
+};
+
 export function usePushNotifications() {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -29,7 +34,7 @@ export function usePushNotifications() {
     const hasSW = 'serviceWorker' in navigator;
     const hasPush = 'PushManager' in window;
     const hasNotification = 'Notification' in window;
-    const supported = hasSW && (hasPush || hasNotification);
+    const supported = hasSW && hasPush && hasNotification;
 
     console.log('[push] Detection:', { hasSW, hasPush, hasNotification, standalone, supported });
     setIsSupported(supported);
@@ -48,25 +53,44 @@ export function usePushNotifications() {
     }
   }, []);
 
-  const subscribe = useCallback(async () => {
-    if (!registration) return false;
+  const subscribe = useCallback(async (): Promise<SubscribeResult> => {
     setIsLoading(true);
 
     try {
+      // Wait for SW if not ready yet
+      let reg = registration;
+      if (!reg) {
+        if (!('serviceWorker' in navigator)) {
+          setIsLoading(false);
+          return { ok: false, reason: 'not_supported' };
+        }
+        try {
+          reg = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+          ]);
+          setRegistration(reg);
+        } catch {
+          console.warn('[push] SW not ready after 5s');
+          setIsLoading(false);
+          return { ok: false, reason: 'sw_not_ready' };
+        }
+      }
+
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         console.warn('[push] Permission denied');
         setIsLoading(false);
-        return false;
+        return { ok: false, reason: 'permission_denied' };
       }
 
-      const existingSub = await registration.pushManager.getSubscription();
+      const existingSub = await reg.pushManager.getSubscription();
       if (existingSub) {
         console.log('[push] Unsubscribing old subscription before re-subscribing');
         await existingSub.unsubscribe();
       }
 
-      const subscription = await registration.pushManager.subscribe({
+      const subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
       });
@@ -76,7 +100,7 @@ export function usePushNotifications() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setIsLoading(false);
-        return false;
+        return { ok: false, reason: 'unknown' };
       }
 
       const { error } = await (supabase.from as any)('push_subscriptions').upsert(
@@ -92,16 +116,16 @@ export function usePushNotifications() {
       if (error) {
         console.error('[push] Failed to save subscription:', error);
         setIsLoading(false);
-        return false;
+        return { ok: false, reason: 'db_save_failed' };
       }
 
       setIsSubscribed(true);
       setIsLoading(false);
-      return true;
+      return { ok: true };
     } catch (err) {
       console.error('[push] Subscribe error:', err);
       setIsLoading(false);
-      return false;
+      return { ok: false, reason: 'unknown' };
     }
   }, [registration]);
 
