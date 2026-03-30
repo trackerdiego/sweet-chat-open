@@ -1,207 +1,120 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendLovableEmail } from 'npm:@lovable.dev/email-js'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const MAX_RETRIES = 5
+const DEFAULT_BATCH_SIZE = 10
+const DEFAULT_SEND_DELAY_MS = 200
+const DEFAULT_AUTH_TTL_MINUTES = 15
+const DEFAULT_TRANSACTIONAL_TTL_MINUTES = 60
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+function isRateLimited(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'status' in error) return (error as { status: number }).status === 429
+  return error instanceof Error && error.message.includes('429')
+}
 
+function isForbidden(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'status' in error) return (error as { status: number }).status === 403
+  return error instanceof Error && error.message.includes('403')
+}
+
+function getRetryAfterSeconds(error: unknown): number {
+  if (error && typeof error === 'object' && 'retryAfterSeconds' in error) return (error as { retryAfterSeconds: number | null }).retryAfterSeconds ?? 60
+  return 60
+}
+
+function parseJwtClaims(token: string): Record<string, unknown> | null {
+  const parts = token.split('.')
+  if (parts.length < 2) return null
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const payload = parts[1].replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '=')
+    return JSON.parse(atob(payload)) as Record<string, unknown>
+  } catch { return null }
+}
+
+async function moveToDlq(supabase: ReturnType<typeof createClient>, queue: string, msg: { msg_id: number; message: Record<string, unknown> }, reason: string): Promise<void> {
+  const payload = msg.message
+  await supabase.from('email_send_log').insert({ message_id: payload.message_id, template_name: (payload.label || queue) as string, recipient_email: payload.to, status: 'dlq', error_message: reason })
+  const { error } = await supabase.rpc('move_to_dlq', { source_queue: queue, dlq_name: `${queue}_dlq`, message_id: msg.msg_id, payload })
+  if (error) console.error('Failed to move message to DLQ', { queue, msg_id: msg.msg_id, reason, error })
+}
+
+Deno.serve(async (req) => {
+  const apiKey = Deno.env.get('LOVABLE_API_KEY')
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!apiKey || !supabaseUrl || !supabaseServiceKey) { console.error('Missing required environment variables'); return new Response(JSON.stringify({ error: 'Server configuration error' }), { status: 500, headers: { 'Content-Type': 'application/json' } }) }
+
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+
+  const token = authHeader.slice('Bearer '.length).trim()
+  const claims = parseJwtClaims(token)
+  if (claims?.role !== 'service_role') return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+  const { data: state } = await supabase.from('email_send_state').select('retry_after_until, batch_size, send_delay_ms, auth_email_ttl_minutes, transactional_email_ttl_minutes').single()
+  if (state?.retry_after_until && new Date(state.retry_after_until) > new Date()) return new Response(JSON.stringify({ skipped: true, reason: 'rate_limited' }), { headers: { 'Content-Type': 'application/json' } })
+
+  const batchSize = state?.batch_size ?? DEFAULT_BATCH_SIZE
+  const sendDelayMs = state?.send_delay_ms ?? DEFAULT_SEND_DELAY_MS
+  const ttlMinutes: Record<string, number> = { auth_emails: state?.auth_email_ttl_minutes ?? DEFAULT_AUTH_TTL_MINUTES, transactional_emails: state?.transactional_email_ttl_minutes ?? DEFAULT_TRANSACTIONAL_TTL_MINUTES }
+  let totalProcessed = 0
+
+  for (const queue of ['auth_emails', 'transactional_emails']) {
+    const { data: messages, error: readError } = await supabase.rpc('read_email_batch', { queue_name: queue, batch_size: batchSize, vt: 30 })
+    if (readError) { console.error('Failed to read email batch', { queue, error: readError }); continue }
+    if (!messages?.length) continue
+
+    const messageIds = Array.from(new Set(messages.map((msg) => msg?.message?.message_id && typeof msg.message.message_id === 'string' ? msg.message.message_id : null).filter((id): id is string => Boolean(id))))
+    const failedAttemptsByMessageId = new Map<string, number>()
+    if (messageIds.length > 0) {
+      const { data: failedRows, error: failedRowsError } = await supabase.from('email_send_log').select('message_id').in('message_id', messageIds).eq('status', 'failed')
+      if (failedRowsError) console.error('Failed to load failed-attempt counters', { queue, error: failedRowsError })
+      else for (const row of failedRows ?? []) { const messageId = row?.message_id; if (typeof messageId !== 'string' || !messageId) continue; failedAttemptsByMessageId.set(messageId, (failedAttemptsByMessageId.get(messageId) ?? 0) + 1) }
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]
+      const payload = msg.message
+      const failedAttempts = payload?.message_id && typeof payload.message_id === 'string' ? (failedAttemptsByMessageId.get(payload.message_id) ?? 0) : 0
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const userId = user.id;
-
-    const { primaryNiche, secondaryNiches, contentStyle } = await req.json();
-
-    const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GOOGLE_GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
-
-    const secondaryList = (secondaryNiches || []).join(", ");
-    const styleMap: Record<string, string> = {
-      casual: "leve, descontraído, como conversa entre amigos",
-      profissional: "autoritário, informativo, com dados e dicas práticas",
-      divertido: "engraçado, irreverente, usando memes e trends",
-    };
-    const styleDesc = styleMap[contentStyle] || styleMap.casual;
-
-    console.log("Step 1: Generating audience description...");
-
-    const step1Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `Você é uma estrategista de público digital especialista em criadores(as) de conteúdo brasileiros(as). Crie uma descrição rica e detalhada do público-alvo ideal. Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a).`
-          },
-          {
-            role: "user",
-            content: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`
-          },
-        ],
-      }),
-    });
-
-    if (!step1Response.ok) {
-      const errText = await step1Response.text();
-      console.error("Step 1 error:", step1Response.status, errText);
-      throw new Error(`Erro na etapa 1: ${step1Response.status}`);
-    }
-
-    const step1Data = await step1Response.json();
-    const audienceDescription = step1Data.choices?.[0]?.message?.content || "";
-
-    if (!audienceDescription) {
-      throw new Error("Etapa 1 não retornou descrição do público");
-    }
-
-    console.log("Step 1 complete. Description length:", audienceDescription.length);
-
-    console.log("Step 2: Generating visceral avatar profile...");
-
-    const avatarSystemPrompt = `Act as a Master Copywriter and Direct Response Strategist, specializing in deep psychology and consumer behavior. Your language must be visceral, real, and dimensional. You do not tolerate vague or superficial answers.\n\nYour mission is to build the most robust and compelling Avatar Profile possible, based on the product/audience information below. You must analyze and fill in ALL of the following fields in ONE SINGLE RESPONSE.\n\nUse your vast knowledge base to infer realistic details, going beyond the obvious. I do not want generic answers. I want the psychological truth behind this avatar.\n\nExecute each step with precision, creating an irresistible communication framework that resonates deeply with the target audience.\n\nCRITICAL INSTRUCTION: All of your answers and all output must be in Native Brazilian Portuguese (Português Nativo do Brasil). Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a, inspirado/a).`;
-
-    const avatarUserPrompt = `[Product/Audience]= Criador(a) de conteúdo digital brasileiro(a). Descrição do negócio/conteúdo:\n"${primaryNiche}"\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}.\n\nDescrição detalhada do público-alvo:\n${audienceDescription}\n\nCom base nessas informações, preencha o perfil completo do avatar usando a tool fornecida. Seja visceral, profundo(a) e específico(a). NADA genérico.`;
-
-    const step2Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: avatarSystemPrompt },
-          { role: "user", content: avatarUserPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "save_avatar_profile",
-              description: "Salva o perfil psicológico completo do avatar/público-alvo",
-              parameters: {
-                type: "object",
-                properties: {
-                  niche: { type: "string" }, avatar: { type: "string" },
-                  primaryGoal: { type: "string" }, primaryComplaint: { type: "string" },
-                  secondaryGoals: { type: "array", items: { type: "string" } },
-                  secondaryComplaints: { type: "array", items: { type: "string" } },
-                  promises: { type: "array", items: { type: "string" } },
-                  benefits: { type: "array", items: { type: "string" } },
-                  objections: { type: "array", items: { type: "string" } },
-                  confusions: { type: "array", items: { type: "string" } },
-                  ultimateFear: { type: "string" },
-                  falseSolutions: { type: "array", items: { type: "string" } },
-                  mistakenBeliefs: { type: "array", items: { type: "string" } },
-                  frustrations: { type: "array", items: { type: "string" } },
-                  everydayRelatability: { type: "string" },
-                  commonEnemy: { type: "string" }, tribe: { type: "string" },
-                  deepOccultDesire: { type: "string" },
-                  coreWounds: { type: "array", items: { type: "string" } },
-                  sevenSinsCurrent: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  sevenSinsFuture: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  shameTriggers: { type: "array", items: { type: "string" } },
-                  anxietyDrivers: { type: "array", items: { type: "string" } },
-                  hopeAnchors: { type: "array", items: { type: "string" } },
-                  decisionTriggers: { type: "array", items: { type: "string" } },
-                  verbalTriggers: { type: "array", items: { type: "string" } },
-                  identityAnchors: { type: "array", items: { type: "string" } },
-                  selfImageGap: { type: "string" },
-                },
-                required: ["niche", "avatar", "primaryGoal", "primaryComplaint", "objections", "ultimateFear", "coreWounds", "sevenSinsCurrent", "sevenSinsFuture", "deepOccultDesire", "verbalTriggers"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "save_avatar_profile" } },
-      }),
-    });
-
-    if (!step2Response.ok) {
-      if (step2Response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (payload.queued_at) {
+        const ageMs = Date.now() - new Date(payload.queued_at).getTime()
+        if (ageMs > ttlMinutes[queue] * 60 * 1000) { console.warn('Email expired (TTL exceeded)', { queue, msg_id: msg.msg_id }); await moveToDlq(supabase, queue, msg, `TTL exceeded (${ttlMinutes[queue]} minutes)`); continue }
       }
-      const errText = await step2Response.text();
-      console.error("Step 2 error:", step2Response.status, errText);
-      throw new Error(`Erro na etapa 2: ${step2Response.status}`);
+
+      if (failedAttempts >= MAX_RETRIES) { await moveToDlq(supabase, queue, msg, `Max retries (${MAX_RETRIES}) exceeded`); continue }
+
+      if (payload.message_id) {
+        const { data: alreadySent } = await supabase.from('email_send_log').select('id').eq('message_id', payload.message_id).eq('status', 'sent').maybeSingle()
+        if (alreadySent) { console.warn('Skipping duplicate send', { queue, msg_id: msg.msg_id }); await supabase.rpc('delete_email', { queue_name: queue, message_id: msg.msg_id }); continue }
+      }
+
+      try {
+        await sendLovableEmail({ run_id: payload.run_id, to: payload.to, from: payload.from, sender_domain: payload.sender_domain, subject: payload.subject, html: payload.html, text: payload.text, purpose: payload.purpose, label: payload.label, idempotency_key: payload.idempotency_key, unsubscribe_token: payload.unsubscribe_token, message_id: payload.message_id }, { apiKey, sendUrl: Deno.env.get('LOVABLE_SEND_URL') })
+        await supabase.from('email_send_log').insert({ message_id: payload.message_id, template_name: payload.label || queue, recipient_email: payload.to, status: 'sent' })
+        const { error: delError } = await supabase.rpc('delete_email', { queue_name: queue, message_id: msg.msg_id })
+        if (delError) console.error('Failed to delete sent message', { queue, msg_id: msg.msg_id, error: delError })
+        totalProcessed++
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        console.error('Email send failed', { queue, msg_id: msg.msg_id, failed_attempts: failedAttempts, error: errorMsg })
+
+        if (isRateLimited(error)) {
+          await supabase.from('email_send_log').insert({ message_id: payload.message_id, template_name: payload.label || queue, recipient_email: payload.to, status: 'rate_limited', error_message: errorMsg.slice(0, 1000) })
+          await supabase.from('email_send_state').update({ retry_after_until: new Date(Date.now() + getRetryAfterSeconds(error) * 1000).toISOString(), updated_at: new Date().toISOString() }).eq('id', 1)
+          return new Response(JSON.stringify({ processed: totalProcessed, stopped: 'rate_limited' }), { headers: { 'Content-Type': 'application/json' } })
+        }
+
+        if (isForbidden(error)) { await moveToDlq(supabase, queue, msg, 'Emails disabled for this project'); return new Response(JSON.stringify({ processed: totalProcessed, stopped: 'emails_disabled' }), { headers: { 'Content-Type': 'application/json' } }) }
+
+        await supabase.from('email_send_log').insert({ message_id: payload.message_id, template_name: payload.label || queue, recipient_email: payload.to, status: 'failed', error_message: errorMsg.slice(0, 1000) })
+        if (payload?.message_id && typeof payload.message_id === 'string') failedAttemptsByMessageId.set(payload.message_id, failedAttempts + 1)
+      }
+
+      if (i < messages.length - 1) await new Promise((r) => setTimeout(r, sendDelayMs))
     }
-
-    const step2Data = await step2Response.json();
-    const toolCall = step2Data.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall?.function?.arguments) {
-      throw new Error("Resposta da IA sem dados estruturados na etapa 2");
-    }
-
-    const avatarProfile = JSON.parse(toolCall.function.arguments);
-    console.log("Step 2 complete. Avatar profile keys:", Object.keys(avatarProfile).length);
-
-    const { error: upsertError } = await supabase
-      .from("audience_profiles")
-      .upsert({
-        user_id: userId,
-        audience_description: audienceDescription,
-        avatar_profile: avatarProfile,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
-
-    if (upsertError) {
-      console.error("Error saving audience profile:", upsertError);
-    }
-
-    return new Response(JSON.stringify({
-      audienceDescription,
-      avatarProfile,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
-    console.error("generate-audience-profile error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   }
-});
+
+  return new Response(JSON.stringify({ processed: totalProcessed }), { headers: { 'Content-Type': 'application/json' } })
+})

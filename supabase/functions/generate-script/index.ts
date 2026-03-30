@@ -3,205 +3,78 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!authHeader?.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const supabaseAuth = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authHeader } } });
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    if (authError || !user) return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     const userId = user.id;
 
-    const { primaryNiche, secondaryNiches, contentStyle } = await req.json();
+    const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, script_generations, last_script_date").eq("user_id", userId).maybeSingle();
+    const isPremium = usageData?.is_premium ?? false;
+    const today = new Date().toISOString().slice(0, 10);
+    const scriptCount = (usageData?.last_script_date === today) ? (usageData?.script_generations ?? 0) : 0;
+    if (!isPremium && scriptCount >= 3) return new Response(JSON.stringify({ error: "Você atingiu o limite de 3 scripts por dia. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+    const newCount = (usageData?.last_script_date === today) ? scriptCount + 1 : 1;
+    await Promise.all([
+      adminClient.from("user_usage").update({ script_generations: newCount, last_script_date: today }).eq("user_id", userId),
+      adminClient.from("usage_logs").insert({ user_id: userId, feature: "script" }),
+    ]);
+
+    const { day, title, pillar, pillarLabel, viralHook, storytellingBody, subtleConversion, primaryNiche, contentStyle, visceralElement } = await req.json();
     const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
     if (!GOOGLE_GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
 
-    const secondaryList = (secondaryNiches || []).join(", ");
-    const styleMap: Record<string, string> = {
-      casual: "leve, descontraído, como conversa entre amigos",
-      profissional: "autoritário, informativo, com dados e dicas práticas",
-      divertido: "engraçado, irreverente, usando memes e trends",
-    };
+    let visceralContext = "";
+    const { data: audienceData } = await supabaseAuth.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle();
+    if (audienceData?.avatar_profile) {
+      const ap = audienceData.avatar_profile as Record<string, unknown>;
+      visceralContext = `\n\n═══════════════════════════════════════════════════════════\nPERFIL PSICOLÓGICO COMPLETO DO PÚBLICO\n═══════════════════════════════════════════════════════════\n\nAvatar: ${ap.avatar || ''}\nObjetivo principal: ${ap.primaryGoal || ''}\nQueixa principal: ${ap.primaryComplaint || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto profundo: ${ap.deepOccultDesire || ''}\nInimigo comum: ${ap.commonEnemy || ''}\nGap de autoimagem: ${ap.selfImageGap || ''}\n\nFeridas centrais: ${JSON.stringify(ap.coreWounds || [])}\nObjeções: ${JSON.stringify(ap.objections || [])}\nGatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}\nGatilhos de vergonha: ${JSON.stringify(ap.shameTriggers || [])}\nÂncoras de esperança: ${JSON.stringify(ap.hopeAnchors || [])}\nGatilhos de decisão: ${JSON.stringify(ap.decisionTriggers || [])}\nFrustrações: ${JSON.stringify(ap.frustrations || [])}\nCrenças equivocadas: ${JSON.stringify(ap.mistakenBeliefs || [])}\nDrivers de ansiedade: ${JSON.stringify(ap.anxietyDrivers || [])}\nÂncoras de identidade: ${JSON.stringify(ap.identityAnchors || [])}\nRelatabilidade do cotidiano: ${JSON.stringify(ap.everydayRelatability || [])}\nFalsas soluções: ${JSON.stringify(ap.falseSolutions || [])}\n\n7 Pecados (Dor atual): ${JSON.stringify(ap.sevenSinsCurrent || {})}\n7 Pecados (Motivação oculta): ${JSON.stringify(ap.sevenSinsFuture || {})}\n\nINSTRUÇÕES POR SEÇÃO:\nHOOK: ATIVE shameTriggers/coreWounds, use verbalTriggers\nSTORYTELLING: Explore frustrations, falseSolutions, commonEnemy, selfImageGap\nCTA: Fale ao deepOccultDesire, use hopeAnchors, ative decisionTriggers\n═══════════════════════════════════════════════════════════`;
+    }
+
+    const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
     const styleDesc = styleMap[contentStyle] || styleMap.casual;
+    const nicheContext = primaryNiche ? `\nO nicho principal do(a) criador(a) de conteúdo é: ${primaryNiche}.` : '';
+    const visceralInstruction = visceralElement ? `\n\nGATILHO VISCERAL OBRIGATÓRIO: ${visceralElement}\n- O HOOK deve ativar EXATAMENTE este gatilho\n- O STORYTELLING deve explorar este tema emocional\n- O CTA deve conectar este gatilho à transformação` : "";
 
-    console.log("Step 1: Generating audience description...");
+    const systemPrompt = `Você é um(a) copywriter especialista em conteúdo para criadores de conteúdo brasileiros. Use linguagem neutra de gênero.${nicheContext}\nEstilo: ${styleDesc}.\n${visceralContext}${visceralInstruction}\n\nRegras: Linguagem natural e coloquial em PT-BR. Hooks com curiosidade imediata. Storytelling pessoal e emocional. CTA sutil. Adapte ao nicho "${primaryNiche || 'lifestyle'}". Cada script deve ser ÚNICO.`;
 
-    const step1Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    const userPrompt = `Crie uma versão NOVA e MELHORADA do script para o Dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo: ${title}\n${visceralElement ? `GATILHO VISCERAL: ${visceralElement}\n` : ""}Script de referência (NÃO copie):\n- Hook: ${viralHook}\n- Corpo: ${storytellingBody}\n- CTA: ${subtleConversion}\n\nGere script completamente novo. Adapte ao nicho "${primaryNiche || 'lifestyle'}".`;
+
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `Você é uma estrategista de público digital especialista em criadores(as) de conteúdo brasileiros(as). Crie uma descrição rica e detalhada do público-alvo ideal. Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a).`
-          },
-          {
-            role: "user",
-            content: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`
-          },
-        ],
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+        tools: [{ type: "function", function: { name: "generate_script", description: "Retorna script estruturado", parameters: { type: "object", properties: { viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" } }, required: ["viralHook", "storytellingBody", "subtleConversion"], additionalProperties: false } } }],
+        tool_choice: { type: "function", function: { name: "generate_script" } },
       }),
     });
 
-    if (!step1Response.ok) {
-      const errText = await step1Response.text();
-      console.error("Step 1 error:", step1Response.status, errText);
-      throw new Error(`Erro na etapa 1: ${step1Response.status}`);
+    if (!response.ok) {
+      if (response.status === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido.", retryable: true }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (response.status === 402) return new Response(JSON.stringify({ error: "Créditos de IA esgotados." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const text = await response.text(); console.error("AI error:", response.status, text);
+      return new Response(JSON.stringify({ error: "Erro ao gerar script" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const step1Data = await step1Response.json();
-    const audienceDescription = step1Data.choices?.[0]?.message?.content || "";
-
-    if (!audienceDescription) {
-      throw new Error("Etapa 1 não retornou descrição do público");
-    }
-
-    console.log("Step 1 complete. Description length:", audienceDescription.length);
-
-    console.log("Step 2: Generating visceral avatar profile...");
-
-    const avatarSystemPrompt = `Act as a Master Copywriter and Direct Response Strategist, specializing in deep psychology and consumer behavior. Your language must be visceral, real, and dimensional. You do not tolerate vague or superficial answers.\n\nYour mission is to build the most robust and compelling Avatar Profile possible, based on the product/audience information below. You must analyze and fill in ALL of the following fields in ONE SINGLE RESPONSE.\n\nUse your vast knowledge base to infer realistic details, going beyond the obvious. I do not want generic answers. I want the psychological truth behind this avatar.\n\nExecute each step with precision, creating an irresistible communication framework that resonates deeply with the target audience.\n\nCRITICAL INSTRUCTION: All of your answers and all output must be in Native Brazilian Portuguese (Português Nativo do Brasil). Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a, inspirado/a).`;
-
-    const avatarUserPrompt = `[Product/Audience]= Criador(a) de conteúdo digital brasileiro(a). Descrição do negócio/conteúdo:\n"${primaryNiche}"\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}.\n\nDescrição detalhada do público-alvo:\n${audienceDescription}\n\nCom base nessas informações, preencha o perfil completo do avatar usando a tool fornecida. Seja visceral, profundo(a) e específico(a). NADA genérico.`;
-
-    const step2Response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: avatarSystemPrompt },
-          { role: "user", content: avatarUserPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "save_avatar_profile",
-              description: "Salva o perfil psicológico completo do avatar/público-alvo",
-              parameters: {
-                type: "object",
-                properties: {
-                  niche: { type: "string" }, avatar: { type: "string" },
-                  primaryGoal: { type: "string" }, primaryComplaint: { type: "string" },
-                  secondaryGoals: { type: "array", items: { type: "string" } },
-                  secondaryComplaints: { type: "array", items: { type: "string" } },
-                  promises: { type: "array", items: { type: "string" } },
-                  benefits: { type: "array", items: { type: "string" } },
-                  objections: { type: "array", items: { type: "string" } },
-                  confusions: { type: "array", items: { type: "string" } },
-                  ultimateFear: { type: "string" },
-                  falseSolutions: { type: "array", items: { type: "string" } },
-                  mistakenBeliefs: { type: "array", items: { type: "string" } },
-                  frustrations: { type: "array", items: { type: "string" } },
-                  everydayRelatability: { type: "string" },
-                  commonEnemy: { type: "string" }, tribe: { type: "string" },
-                  deepOccultDesire: { type: "string" },
-                  coreWounds: { type: "array", items: { type: "string" } },
-                  sevenSinsCurrent: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  sevenSinsFuture: {
-                    type: "object",
-                    properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-                    required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
-                  },
-                  shameTriggers: { type: "array", items: { type: "string" } },
-                  anxietyDrivers: { type: "array", items: { type: "string" } },
-                  hopeAnchors: { type: "array", items: { type: "string" } },
-                  decisionTriggers: { type: "array", items: { type: "string" } },
-                  verbalTriggers: { type: "array", items: { type: "string" } },
-                  identityAnchors: { type: "array", items: { type: "string" } },
-                  selfImageGap: { type: "string" },
-                },
-                required: ["niche", "avatar", "primaryGoal", "primaryComplaint", "objections", "ultimateFear", "coreWounds", "sevenSinsCurrent", "sevenSinsFuture", "deepOccultDesire", "verbalTriggers"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "save_avatar_profile" } },
-      }),
-    });
-
-    if (!step2Response.ok) {
-      if (step2Response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      const errText = await step2Response.text();
-      console.error("Step 2 error:", step2Response.status, errText);
-      throw new Error(`Erro na etapa 2: ${step2Response.status}`);
-    }
-
-    const step2Data = await step2Response.json();
-    const toolCall = step2Data.choices?.[0]?.message?.tool_calls?.[0];
-
-    if (!toolCall?.function?.arguments) {
-      throw new Error("Resposta da IA sem dados estruturados na etapa 2");
-    }
-
-    const avatarProfile = JSON.parse(toolCall.function.arguments);
-    console.log("Step 2 complete. Avatar profile keys:", Object.keys(avatarProfile).length);
-
-    const { error: upsertError } = await supabase
-      .from("audience_profiles")
-      .upsert({
-        user_id: userId,
-        audience_description: audienceDescription,
-        avatar_profile: avatarProfile,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
-
-    if (upsertError) {
-      console.error("Error saving audience profile:", upsertError);
-    }
-
-    return new Response(JSON.stringify({
-      audienceDescription,
-      avatarProfile,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const data = await response.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall?.function?.arguments) throw new Error("Resposta da IA sem dados estruturados");
+    const script = JSON.parse(toolCall.function.arguments);
+    return new Response(JSON.stringify(script), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
-    console.error("generate-audience-profile error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    console.error("generate-script error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
