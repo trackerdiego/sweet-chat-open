@@ -1,24 +1,23 @@
 
 
-# Remover botão "Baixar App" da Landing Page
+# Ativar Emails Personalizados com sua Brand
 
-## Contexto
-O botão "Baixar App" na hero section da landing tem dois problemas:
-1. **Bug visual**: O variant `outline` renderiza com fundo branco no contexto escuro, tornando o texto ilegível (só aparece no hover)
-2. **UX inadequado**: Oferecer instalação PWA antes do cadastro não faz sentido -- o usuário ainda não conhece o produto
+## Situacao Atual
 
-O componente `InstallBanner.tsx` já existe e aparece dentro do app após login, que é o local apropriado para essa ação.
+Os templates de email ja existem no projeto com a brand do InfluLab (cores roxas, fonte Inter, textos em portugues). O dominio `notify.influlab.pro` esta verificado. O que falta e **deployar a Edge Function** `auth-email-hook` para que o Supabase use seus templates customizados em vez dos emails padrao.
+
+## O que ja esta pronto
+- 6 templates branded: signup, recovery, magic-link, invite, email-change, reauthentication
+- Cores da brand aplicadas (roxo `hsl(258, 60%, 55%)`, fonte Inter)
+- Textos em portugues
+- Dominio verificado (`notify.influlab.pro`)
+- Emails habilitados no projeto
 
 ## Plano
 
-### Arquivo: `src/pages/Landing.tsx`
+### Passo unico: Deploy da Edge Function `auth-email-hook`
 
-1. **Remover o bloco do botão "Baixar App"** (linhas 258-267) -- o `{canInstall && (...)}` inteiro
-2. **Remover imports não utilizados** após a remoção:
-   - `useInstallPrompt` (linha 33)
-   - `toast` de sonner (linha 34) -- verificar se é usado em outro lugar do arquivo
-   - A desestruturação `canInstall, isIOS, hasNativePrompt, promptInstall` (linha 170)
-   - A função `handleDownload` (linhas 172-179)
+Deployar a funcao para que os emails passem a usar seus templates customizados, enviados de `noreply@influlab.pro`.
 
-Nenhum outro arquivo é afetado.
+Apos o deploy, todos os emails de autenticacao (confirmacao de cadastro, recuperacao de senha, magic link, etc.) serao enviados com a sua brand.
 
