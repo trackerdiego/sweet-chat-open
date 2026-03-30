@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { DayStrategy, strategies as fallbackStrategies } from '@/data/strategies';
 
 export function useUserStrategies() {
-  const [strategies, setStrategies] = useState<DayStrategy[]>(fallbackStrategies);
+  const [strategies, setStrategies] = useState<DayStrategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasPersonalized, setHasPersonalized] = useState(false);
 
