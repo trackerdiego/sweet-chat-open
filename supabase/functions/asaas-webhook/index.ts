@@ -11,6 +11,17 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Validate webhook token
+  const webhookToken = Deno.env.get("ASAAS_WEBHOOK_TOKEN");
+  const receivedToken = req.headers.get("asaas-access-token");
+  if (webhookToken && receivedToken !== webhookToken) {
+    console.error("Invalid webhook token");
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const body = await req.json();
     const event = body.event;
