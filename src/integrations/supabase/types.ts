@@ -14,7 +14,315 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audience_profiles: {
+        Row: {
+          audience_description: string | null
+          avatar_profile: Json | null
+          generated_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          audience_description?: string | null
+          avatar_profile?: Json | null
+          generated_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          audience_description?: string | null
+          avatar_profile?: Json | null
+          generated_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_send_log: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          message_id: string | null
+          metadata: Json | null
+          recipient_email: string
+          status: string
+          template_name: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          message_id?: string | null
+          metadata?: Json | null
+          recipient_email: string
+          status: string
+          template_name: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          message_id?: string | null
+          metadata?: Json | null
+          recipient_email?: string
+          status?: string
+          template_name?: string
+        }
+        Relationships: []
+      }
+      email_send_state: {
+        Row: {
+          auth_email_ttl_minutes: number
+          batch_size: number
+          id: number
+          retry_after_until: string | null
+          send_delay_ms: number
+          transactional_email_ttl_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          auth_email_ttl_minutes?: number
+          batch_size?: number
+          id?: number
+          retry_after_until?: string | null
+          send_delay_ms?: number
+          transactional_email_ttl_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          auth_email_ttl_minutes?: number
+          batch_size?: number
+          id?: number
+          retry_after_until?: string | null
+          send_delay_ms?: number
+          transactional_email_ttl_minutes?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_unsubscribe_tokens: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          token: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string | null
+          endpoint: string
+          id: string
+          p256dh: string
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string | null
+          endpoint: string
+          id?: string
+          p256dh: string
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string | null
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      suppressed_emails: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          metadata: Json | null
+          reason: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          metadata?: Json | null
+          reason: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          metadata?: Json | null
+          reason?: string
+        }
+        Relationships: []
+      }
+      usage_logs: {
+        Row: {
+          created_at: string | null
+          feature: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          feature: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          feature?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          audience_size: string | null
+          content_style: string | null
+          created_at: string | null
+          display_name: string
+          id: string
+          onboarding_completed: boolean | null
+          primary_niche: string
+          secondary_niches: string[] | null
+          user_id: string
+        }
+        Insert: {
+          audience_size?: string | null
+          content_style?: string | null
+          created_at?: string | null
+          display_name: string
+          id?: string
+          onboarding_completed?: boolean | null
+          primary_niche: string
+          secondary_niches?: string[] | null
+          user_id: string
+        }
+        Update: {
+          audience_size?: string | null
+          content_style?: string | null
+          created_at?: string | null
+          display_name?: string
+          id?: string
+          onboarding_completed?: boolean | null
+          primary_niche?: string
+          secondary_niches?: string[] | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_progress: {
+        Row: {
+          current_day: number
+          id: string
+          influence_points: number
+          start_date: string
+          streak: number
+          tasks_completed: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          current_day?: number
+          id?: string
+          influence_points?: number
+          start_date?: string
+          streak?: number
+          tasks_completed?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          current_day?: number
+          id?: string
+          influence_points?: number
+          start_date?: string
+          streak?: number
+          tasks_completed?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_strategies: {
+        Row: {
+          generated_at: string | null
+          id: string
+          strategies: Json
+          user_id: string
+        }
+        Insert: {
+          generated_at?: string | null
+          id?: string
+          strategies: Json
+          user_id: string
+        }
+        Update: {
+          generated_at?: string | null
+          id?: string
+          strategies?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_usage: {
+        Row: {
+          chat_messages: number
+          created_at: string
+          id: string
+          is_premium: boolean
+          last_script_date: string | null
+          script_generations: number
+          tool_generations: number
+          transcriptions: number
+          user_id: string
+        }
+        Insert: {
+          chat_messages?: number
+          created_at?: string
+          id?: string
+          is_premium?: boolean
+          last_script_date?: string | null
+          script_generations?: number
+          tool_generations?: number
+          transcriptions?: number
+          user_id: string
+        }
+        Update: {
+          chat_messages?: number
+          created_at?: string
+          id?: string
+          is_premium?: boolean
+          last_script_date?: string | null
+          script_generations?: number
+          tool_generations?: number
+          transcriptions?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
