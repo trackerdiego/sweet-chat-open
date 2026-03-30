@@ -11,7 +11,7 @@ import { CheckCircle2, Lock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const Matrix = () => {
-  const { strategies } = useUserStrategies();
+  const { strategies, loading: strategiesLoading } = useUserStrategies();
   const { state, completedDays } = useInfluencer(strategies);
   const { canAccessDay, isPremium } = useUserUsage();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
