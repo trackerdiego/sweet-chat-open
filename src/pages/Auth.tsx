@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
+import logo from '@/assets/influlab-logo.png';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
