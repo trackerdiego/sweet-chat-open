@@ -141,7 +141,7 @@ export default function Landing() {
           <div className="absolute top-20 left-[20%] w-72 h-72 rounded-full bg-primary/8 blur-[100px]" />
         </div>
         <div className="container max-w-6xl mx-auto px-4 pt-24 pb-16 relative z-10">
-          <div className="max-w-2xl">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-6 border border-primary/20">
                 <Sparkles className="h-3.5 w-3.5" /> Powered by IA Visceral
@@ -164,6 +164,9 @@ export default function Landing() {
                 )}
                 <span className="text-xs text-white/40 self-center">Sem cartão de crédito</span>
               </div>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.2 }} className="hidden lg:block">
+              <img src={heroIllustration} alt="InfluLab Dashboard" className="w-full h-auto drop-shadow-2xl" />
             </motion.div>
           </div>
         </div>
