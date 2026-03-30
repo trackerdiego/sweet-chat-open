@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/alert-dialog';
 
 const Index = () => {
-  const { strategies } = useUserStrategies();
+  const { strategies, loading: strategiesLoading } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
   const { profile, signOut, updateProfile } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
