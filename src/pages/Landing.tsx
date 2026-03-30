@@ -23,8 +23,11 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
+import { LandingHeroMockup } from "@/components/landing/HeroMockup";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { toast } from "sonner";
+import logoHorizontal from "@/assets/influlab-logo-horizontal.png";
+import heroIllustration from "@/assets/hero-illustration.png";
 
 function Section({
   children,
