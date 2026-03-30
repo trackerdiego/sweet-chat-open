@@ -173,6 +173,17 @@ function generateCTAs(strategy: DayStrategy): string[] {
   return ctas;
 }
 
+function generateCliffhangers(strategy: DayStrategy): string[] {
+  const title = strategy.title;
+  const cliffhangers: string[] = [];
+  cliffhangers.push(`"Amanhã eu vou revelar o que REALMENTE mudou meus resultados com ${title}…"`);
+  cliffhangers.push(`"Tem uma coisa sobre ${title} que ninguém fala — e eu vou contar amanhã"`);
+  cliffhangers.push(`"O próximo conteúdo vai te chocar. Prepara o coração 🫣"`);
+  cliffhangers.push(`"Eu cometi um erro GRAVE com ${title}… e amanhã conto o que aconteceu"`);
+  cliffhangers.push(`"Se você acha que já sabe tudo sobre ${title}, espera o conteúdo de amanhã 👀"`);
+  return cliffhangers;
+}
+
 export function getDailyGuideContent(strategy: DayStrategy): GuideSection[] {
   return [
     {
