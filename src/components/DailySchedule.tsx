@@ -61,10 +61,12 @@ function ScheduleBlock({ block, tasks, onComplete }: { block: TimeBlock; tasks: 
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="pl-2 space-y-1 mt-1">
-          {block.tasks.map((task) => {
+        {block.tasks.map((task) => {
             const isDone = task.key === 'valueStories' ? tasks.valueStories >= 5 : tasks[task.key as keyof DailyTaskState] === true;
             const displayLabel = task.key === 'valueStories' ? `${task.label} (${tasks.valueStories}/5)` : task.label;
-            return <TaskItem key={task.key} taskKey={task.key as TaskKey} time={task.time} label={displayLabel} description={task.description} done={isDone} onComplete={onComplete} examples={task.examples} />;
+            const aiExamples = aiContent?.taskExamples?.[task.key];
+            const examples = aiExamples && aiExamples.length > 0 ? aiExamples : task.examples;
+            return <TaskItem key={task.key} taskKey={task.key as TaskKey} time={task.time} label={displayLabel} description={task.description} done={isDone} onComplete={onComplete} examples={examples} />;
           })}
         </div>
       </CollapsibleContent>
