@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,9 +14,25 @@ serve(async (req) => {
 
   try {
     const ASAAS_API_KEY = Deno.env.get("ASAAS_API_KEY");
-    if (!ASAAS_API_KEY) {
-      throw new Error("ASAAS_API_KEY is not configured");
+    if (!ASAAS_API_KEY) throw new Error("ASAAS_API_KEY is not configured");
+
+    // Extract user_id from JWT
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+    if (claimsError || !claimsData?.claims?.sub) {
+      return new Response(JSON.stringify({ error: "Token inválido" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    const userId = claimsData.claims.sub;
 
     const { name, email, cpfCnpj, phone, postalCode, address, addressNumber, complement, province, plan } = await req.json();
 
@@ -28,7 +45,7 @@ serve(async (req) => {
 
     const ASAAS_BASE_URL = "https://api.asaas.com/v3";
 
-    console.log("Creating customer in Asaas...");
+    console.log("Creating customer in Asaas for user:", userId);
     const customerBody: Record<string, string> = { name, email, cpfCnpj };
     if (phone) { customerBody.mobilePhone = phone; customerBody.phone = phone; }
     if (postalCode) customerBody.postalCode = postalCode;
@@ -70,6 +87,7 @@ serve(async (req) => {
         value: plan === "yearly" ? 397.0 : 47.0, nextDueDate: dueDateStr,
         cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
         description: plan === "yearly" ? "InfluLab Pro - Assinatura Anual" : "InfluLab Pro - Assinatura Mensal",
+        externalReference: userId,
       }),
     });
 

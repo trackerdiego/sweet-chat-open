@@ -50,6 +50,14 @@ export function CheckoutModal({ open, onOpenChange }: CheckoutModalProps) {
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.email && !email) setEmail(user.email);
+      });
+    }
+  }, [open]);
   const [cpfCnpj, setCpfCnpj] = useState("");
   const [phone, setPhone] = useState("");
   const [cep, setCep] = useState("");
