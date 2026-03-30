@@ -1,62 +1,30 @@
 
 
-# Migração Pendente — O que falta do Aura OS
+# Corrigir Imagens Não Exibidas
 
-## Diagnóstico
+## Problema
+Os assets foram copiados mas os componentes não os importam. Comparando com o Aura OS:
 
-Comparando os dois projetos, existem **4 categorias** de itens ainda não migrados:
+- **Landing.tsx**: Falta `import logoHorizontal` e `import heroIllustration`. A nav usa texto "InfluLab" em vez da logo. O hero não mostra a ilustração.
+- **Auth.tsx**: Falta `import logo` e `import authBg`. Não exibe logo nem background.
 
----
+## Plano
 
-### 1. Assets (imagens, logos, ícones) — 24 arquivos
-Nenhum asset foi copiado ainda. Isso explica a logo e imagens quebradas.
+### 1. Atualizar Landing.tsx
+- Adicionar imports: `logoHorizontal` de `@/assets/influlab-logo-horizontal.png` e `heroIllustration` de `@/assets/hero-illustration.png`
+- Na nav, trocar o `<span>InfluLab</span>` por `<img src={logoHorizontal} alt="InfluLab" className="h-9 w-auto" />`
+- No hero, adicionar a coluna direita com `<img src={heroIllustration}>` (grid de 2 colunas como no Aura OS)
+- Atualizar nav para fundo branco (`bg-white/95` com texto escuro) como no original
 
-**public/**
-- `favicon.png`, `og-image.png`
-- `icons/icon-192.png`, `icons/icon-512.png`
+### 2. Atualizar Auth.tsx
+- Adicionar imports: `logo` de `@/assets/influlab-logo.png` e `authBg` de `@/assets/auth-bg.png`
+- Usar a logo e o background conforme o Aura OS
 
-**src/assets/**
-- `influlab-logo.png`, `influlab-logo-horizontal.png`
-- `auth-bg.png`, `hero-illustration.png`
-- 11 ícones de nicho em `src/assets/niches/` (fitness, beleza, moda, etc.)
+### 3. Verificar index.html
+- Confirmar que o favicon aponta para `/favicon.png`
 
-### 2. Componentes faltando — 3 arquivos
-- `src/components/landing/HeroMockup.tsx` — mockup visual do hero da landing
-- `src/components/PushNotificationButton.tsx` — botão de ativar/desativar notificações push
-- `src/components/TaskChecklist.tsx` — checklist de tarefas diárias com confetti
-
-### 3. Componente desatualizado — 1 arquivo
-- `src/components/NicheIcon.tsx` — versão atual usa apenas emoji fallback; a versão do Aura OS importa as imagens dos nichos
-
-### 4. Edge Functions — 13 functions
-Nenhuma Edge Function foi copiada. São elas:
-- `admin-dashboard`, `ai-chat`, `auth-email-hook`
-- `create-asaas-subscription`
-- `generate-audience-profile`, `generate-daily-guide`, `generate-personalized-matrix`, `generate-script`, `generate-tools-content`
-- `process-email-queue`, `scheduled-push`, `send-push`
-- `transcribe-media`
-- `_shared/email-templates/`
-
----
-
-## Plano de Execução
-
-### Etapa 1: Copiar todos os assets (24 arquivos)
-Copiar do Aura OS usando `cross_project--copy_project_asset`:
-- 4 arquivos public (`favicon.png`, `og-image.png`, `icon-192.png`, `icon-512.png`)
-- 4 assets principais (`influlab-logo.png`, `influlab-logo-horizontal.png`, `auth-bg.png`, `hero-illustration.png`)
-- 11 ícones de nicho
-
-### Etapa 2: Copiar componentes faltantes (3 arquivos)
-- Criar `HeroMockup.tsx`, `PushNotificationButton.tsx`, `TaskChecklist.tsx` com o código exato do Aura OS
-
-### Etapa 3: Atualizar NicheIcon.tsx
-- Substituir pela versão completa que importa as imagens dos nichos
-
-### Etapa 4: Copiar e deploy das Edge Functions
-- Copiar os 13 diretórios de Edge Functions + `_shared/email-templates`
-- Deploy das functions
-
-## Observação
-As Edge Functions dependem de secrets (API keys do OpenAI, Asaas, VAPID, etc.) que precisarão ser configurados separadamente no painel do Supabase.
+## Detalhes Técnicos
+- Os arquivos de imagem já existem em `src/assets/` e `public/`
+- As mudanças são apenas de import e uso no JSX
+- O Landing.tsx será substituído pela versão completa do Aura OS para garantir paridade total
 
