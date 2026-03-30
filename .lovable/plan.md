@@ -1,34 +1,56 @@
 
 
-# Corrigir Erros de Onboarding — Constraints Ausentes
+# Exemplos de Tarefas: 5 por tipo + Personalizados com Analise Visceral
 
-## Problema
+## Problema Atual
 
-As tabelas `audience_profiles` e `user_strategies` nao tem constraint UNIQUE na coluna `user_id`. Quando as Edge Functions tentam fazer `upsert` com `onConflict: "user_id"`, o Postgres rejeita com erro `42P10`. O resultado: perfil de audiencia e matriz personalizada nunca sao salvos no banco.
-
-## Causa Raiz
-
-O clone do projeto nao copiou as constraints UNIQUE que existiam no Aura OS. As Edge Functions geram os dados corretamente (os logs mostram "Step 2 complete" com sucesso), mas falham ao salvar.
+- Os exemplos estaticos em `dailySchedule.ts` tem apenas 1-3 por tarefa (alguns so 1)
+- Sao genericos, nao usam o perfil de audiencia visceral do onboarding
+- O conteudo AI (`generate-daily-guide`) gera hooks, storytelling, etc. mas NAO gera exemplos para as tarefas do checklist
 
 ## Plano
 
-### Migração SQL (unica ação necessária)
+### 1. Expandir exemplos estaticos para 5 cada (fallback)
 
-Adicionar constraints UNIQUE em `user_id` nas duas tabelas afetadas:
+**Arquivo:** `src/data/dailySchedule.ts`
 
-```sql
-ALTER TABLE public.audience_profiles
-  ADD CONSTRAINT audience_profiles_user_id_key UNIQUE (user_id);
+Completar o objeto `taskExamples` para que cada nicho tenha exatamente 5 exemplos por tarefa (morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost). Isso garante fallback antes do usuario gerar IA.
 
-ALTER TABLE public.user_strategies
-  ADD CONSTRAINT user_strategies_user_id_key UNIQUE (user_id);
+### 2. Gerar exemplos de tarefa via IA com perfil visceral
+
+**Arquivo:** `supabase/functions/generate-daily-guide/index.ts`
+
+Adicionar uma nova categoria `taskExamples` ao prompt e ao function tool da IA:
+- Estrutura: objeto com chaves por tarefa, cada uma com array de 5 strings
+- O prompt ja recebe o perfil visceral completo — basta instruir a IA a gerar exemplos praticos para cada slot de tarefa usando os gatilhos psicologicos do publico
+
+### 3. Passar exemplos AI para o DailySchedule
+
+**Arquivo:** `src/components/DailyGuide.tsx`
+- Expandir `AiGuideContent` para incluir `taskExamples?: Record<string, string[]>`
+
+**Arquivo:** `src/components/DailySchedule.tsx`
+- Receber `aiContent.taskExamples` e, quando disponivel, usar no lugar dos exemplos estaticos de cada `TaskItem`
+
+**Arquivo:** `src/pages/Tasks.tsx`
+- Ja passa `aiContent` para `DailySchedule` — nenhuma mudanca necessaria
+
+### Fluxo resultante
+
+```text
+Onboarding → audience_profiles (perfil visceral)
+                    ↓
+generate-daily-guide (le perfil visceral)
+                    ↓
+Retorna: hooks, storytelling, ctas, cliffhangers + taskExamples
+                    ↓
+DailySchedule exibe 5 exemplos personalizados por tarefa
 ```
 
-### Nenhuma mudanca de codigo
+### Arquivos alterados
 
-As Edge Functions e o frontend ja estao corretos — o upsert com `onConflict: "user_id"` vai funcionar assim que as constraints existirem.
-
-### Depois da migração
-
-O usuario deve refazer o onboarding (ou re-gerar a matriz) para que os dados sejam salvos corretamente desta vez.
+1. `src/data/dailySchedule.ts` — expandir exemplos estaticos para 5 cada
+2. `supabase/functions/generate-daily-guide/index.ts` — adicionar taskExamples ao prompt/tool
+3. `src/components/DailyGuide.tsx` — expandir tipo AiGuideContent
+4. `src/components/DailySchedule.tsx` — usar taskExamples do AI quando disponivel
 
