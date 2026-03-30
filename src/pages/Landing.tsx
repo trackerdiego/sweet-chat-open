@@ -165,17 +165,6 @@ const faqs = [
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { canInstall, isIOS, hasNativePrompt, promptInstall } = useInstallPrompt();
-
-  const handleDownload = async () => {
-    if (hasNativePrompt) {
-      await promptInstall();
-    } else if (isIOS) {
-      toast.info('Toque no botão Compartilhar (▢↑) e depois em "Adicionar à Tela de Início"', { duration: 8000 });
-    } else {
-      toast.info('Acesse pelo celular para instalar o app', { duration: 5000 });
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
