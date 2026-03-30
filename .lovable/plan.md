@@ -1,23 +1,34 @@
 
 
-# Ativar Emails Personalizados com sua Brand
+# Corrigir Erros de Onboarding — Constraints Ausentes
 
-## Situacao Atual
+## Problema
 
-Os templates de email ja existem no projeto com a brand do InfluLab (cores roxas, fonte Inter, textos em portugues). O dominio `notify.influlab.pro` esta verificado. O que falta e **deployar a Edge Function** `auth-email-hook` para que o Supabase use seus templates customizados em vez dos emails padrao.
+As tabelas `audience_profiles` e `user_strategies` nao tem constraint UNIQUE na coluna `user_id`. Quando as Edge Functions tentam fazer `upsert` com `onConflict: "user_id"`, o Postgres rejeita com erro `42P10`. O resultado: perfil de audiencia e matriz personalizada nunca sao salvos no banco.
 
-## O que ja esta pronto
-- 6 templates branded: signup, recovery, magic-link, invite, email-change, reauthentication
-- Cores da brand aplicadas (roxo `hsl(258, 60%, 55%)`, fonte Inter)
-- Textos em portugues
-- Dominio verificado (`notify.influlab.pro`)
-- Emails habilitados no projeto
+## Causa Raiz
+
+O clone do projeto nao copiou as constraints UNIQUE que existiam no Aura OS. As Edge Functions geram os dados corretamente (os logs mostram "Step 2 complete" com sucesso), mas falham ao salvar.
 
 ## Plano
 
-### Passo unico: Deploy da Edge Function `auth-email-hook`
+### Migração SQL (unica ação necessária)
 
-Deployar a funcao para que os emails passem a usar seus templates customizados, enviados de `noreply@influlab.pro`.
+Adicionar constraints UNIQUE em `user_id` nas duas tabelas afetadas:
 
-Apos o deploy, todos os emails de autenticacao (confirmacao de cadastro, recuperacao de senha, magic link, etc.) serao enviados com a sua brand.
+```sql
+ALTER TABLE public.audience_profiles
+  ADD CONSTRAINT audience_profiles_user_id_key UNIQUE (user_id);
+
+ALTER TABLE public.user_strategies
+  ADD CONSTRAINT user_strategies_user_id_key UNIQUE (user_id);
+```
+
+### Nenhuma mudanca de codigo
+
+As Edge Functions e o frontend ja estao corretos — o upsert com `onConflict: "user_id"` vai funcionar assim que as constraints existirem.
+
+### Depois da migração
+
+O usuario deve refazer o onboarding (ou re-gerar a matriz) para que os dados sejam salvos corretamente desta vez.
 
