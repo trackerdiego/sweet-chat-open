@@ -293,7 +293,10 @@ export type Database = {
           created_at: string
           id: string
           is_premium: boolean
+          last_chat_date: string | null
           last_script_date: string | null
+          last_tool_date: string | null
+          last_transcription_date: string | null
           script_generations: number
           tool_generations: number
           transcriptions: number
@@ -304,7 +307,10 @@ export type Database = {
           created_at?: string
           id?: string
           is_premium?: boolean
+          last_chat_date?: string | null
           last_script_date?: string | null
+          last_tool_date?: string | null
+          last_transcription_date?: string | null
           script_generations?: number
           tool_generations?: number
           transcriptions?: number
@@ -315,7 +321,10 @@ export type Database = {
           created_at?: string
           id?: string
           is_premium?: boolean
+          last_chat_date?: string | null
           last_script_date?: string | null
+          last_tool_date?: string | null
+          last_transcription_date?: string | null
           script_generations?: number
           tool_generations?: number
           transcriptions?: number

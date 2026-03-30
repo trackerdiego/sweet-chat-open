@@ -8,18 +8,25 @@ interface UserUsage {
   chat_messages: number;
   is_premium: boolean;
   last_script_date: string | null;
+  last_tool_date: string | null;
+  last_transcription_date: string | null;
+  last_chat_date: string | null;
 }
 
 const FREE_LIMITS = {
-  script_generations: 3,
-  tool_generations: 2,
-  transcriptions: 2,
-  chat_messages: 10,
+  script_generations: 3,   // per day
+  tool_generations: 2,     // per day
+  transcriptions: 2,       // per day
+  chat_messages: 10,       // per day
   free_days: 7,
 };
 
 function getTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getCountForToday(count: number, lastDate: string | null, today: string): number {
+  return lastDate === today ? count : 0;
 }
 
 export function useUserUsage() {
@@ -54,48 +61,49 @@ export function useUserUsage() {
   }, []);
 
   const isPremium = usage?.is_premium ?? false;
-
   const today = getTodayDate();
-  const scriptCountToday = (usage?.last_script_date === today) ? (usage?.script_generations ?? 0) : 0;
+
+  const scriptCountToday = getCountForToday(usage?.script_generations ?? 0, usage?.last_script_date ?? null, today);
+  const toolCountToday = getCountForToday(usage?.tool_generations ?? 0, usage?.last_tool_date ?? null, today);
+  const transcriptionCountToday = getCountForToday(usage?.transcriptions ?? 0, usage?.last_transcription_date ?? null, today);
+  const chatCountToday = getCountForToday(usage?.chat_messages ?? 0, usage?.last_chat_date ?? null, today);
 
   const canUseScript = isPremium || scriptCountToday < FREE_LIMITS.script_generations;
-  const canUseTool = isPremium || (usage?.tool_generations ?? 0) < FREE_LIMITS.tool_generations;
-  const canTranscribe = isPremium || (usage?.transcriptions ?? 0) < FREE_LIMITS.transcriptions;
-  const canUseChat = isPremium || (usage?.chat_messages ?? 0) < FREE_LIMITS.chat_messages;
+  const canUseTool = isPremium || toolCountToday < FREE_LIMITS.tool_generations;
+  const canTranscribe = isPremium || transcriptionCountToday < FREE_LIMITS.transcriptions;
+  const canUseChat = isPremium || chatCountToday < FREE_LIMITS.chat_messages;
 
   const canAccessDay = useCallback((day: number) => {
     return isPremium || day <= FREE_LIMITS.free_days;
   }, [isPremium]);
 
   const remainingScripts = isPremium ? Infinity : Math.max(0, FREE_LIMITS.script_generations - scriptCountToday);
-  const remainingTools = isPremium ? Infinity : Math.max(0, FREE_LIMITS.tool_generations - (usage?.tool_generations ?? 0));
-  const remainingTranscriptions = isPremium ? Infinity : Math.max(0, FREE_LIMITS.transcriptions - (usage?.transcriptions ?? 0));
-  const remainingChat = isPremium ? Infinity : Math.max(0, FREE_LIMITS.chat_messages - (usage?.chat_messages ?? 0));
+  const remainingTools = isPremium ? Infinity : Math.max(0, FREE_LIMITS.tool_generations - toolCountToday);
+  const remainingTranscriptions = isPremium ? Infinity : Math.max(0, FREE_LIMITS.transcriptions - transcriptionCountToday);
+  const remainingChat = isPremium ? Infinity : Math.max(0, FREE_LIMITS.chat_messages - chatCountToday);
 
   const incrementUsage = useCallback(async (feature: 'script_generations' | 'tool_generations' | 'transcriptions' | 'chat_messages') => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    if (feature === 'script_generations') {
-      const isNewDay = usage?.last_script_date !== today;
-      const newCount = isNewDay ? 1 : (usage?.script_generations ?? 0) + 1;
+    const dateFieldMap: Record<string, string> = {
+      script_generations: 'last_script_date',
+      tool_generations: 'last_tool_date',
+      transcriptions: 'last_transcription_date',
+      chat_messages: 'last_chat_date',
+    };
 
-      const { error } = await (supabase.from as any)('user_usage')
-        .update({ script_generations: newCount, last_script_date: today })
-        .eq('user_id', user.id);
+    const dateField = dateFieldMap[feature];
+    const currentDateValue = (usage as any)?.[dateField] ?? null;
+    const isNewDay = currentDateValue !== today;
+    const newCount = isNewDay ? 1 : ((usage as any)?.[feature] ?? 0) + 1;
 
-      if (!error) {
-        setUsage(prev => prev ? { ...prev, script_generations: newCount, last_script_date: today } : prev);
-      }
-    } else {
-      const currentVal = usage?.[feature] ?? 0;
-      const { error } = await (supabase.from as any)('user_usage')
-        .update({ [feature]: currentVal + 1 })
-        .eq('user_id', user.id);
+    const { error } = await (supabase.from as any)('user_usage')
+      .update({ [feature]: newCount, [dateField]: today })
+      .eq('user_id', user.id);
 
-      if (!error) {
-        setUsage(prev => prev ? { ...prev, [feature]: currentVal + 1 } : prev);
-      }
+    if (!error) {
+      setUsage(prev => prev ? { ...prev, [feature]: newCount, [dateField]: today } : prev);
     }
   }, [usage, today]);
 
