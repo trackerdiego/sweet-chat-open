@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useState } from 'react';
 import confetti from 'canvas-confetti';
 
-interface DailyScheduleProps { schedule: DailyScheduleData; tasks: DailyTaskState; progress: number; onComplete: (task: TaskKey) => void; aiContent?: { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; } | null; }
+interface DailyScheduleProps { schedule: DailyScheduleData; tasks: DailyTaskState; progress: number; onComplete: (task: TaskKey) => void; aiContent?: { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; taskExamples?: Record<string, string[]>; } | null; }
 
 function fireConfetti() { confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#C9A96E', '#D4C5A9', '#2D2D2D'] }); }
 
