@@ -200,5 +200,10 @@ export function getDailyGuideContent(strategy: DayStrategy): GuideSection[] {
       title: 'CTAs de Conversão',
       items: generateCTAs(strategy),
     },
+    {
+      icon: '🔥',
+      title: 'Cliffhangers',
+      items: generateCliffhangers(strategy),
+    },
   ];
 }
