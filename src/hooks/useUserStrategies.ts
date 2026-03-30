@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { DayStrategy, strategies as fallbackStrategies } from '@/data/strategies';
 
 export function useUserStrategies() {
-  const [strategies, setStrategies] = useState<DayStrategy[]>(fallbackStrategies);
+  const [strategies, setStrategies] = useState<DayStrategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasPersonalized, setHasPersonalized] = useState(false);
 
@@ -11,6 +11,7 @@ export function useUserStrategies() {
     const fetchStrategies = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
+        setStrategies(fallbackStrategies);
         setLoading(false);
         return;
       }
@@ -30,7 +31,11 @@ export function useUserStrategies() {
           }
           setStrategies(full);
           setHasPersonalized(true);
+        } else {
+          setStrategies(fallbackStrategies);
         }
+      } else {
+        setStrategies(fallbackStrategies);
       }
 
       setLoading(false);

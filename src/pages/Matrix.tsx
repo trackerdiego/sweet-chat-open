@@ -8,9 +8,10 @@ import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserUsage } from '@/hooks/useUserUsage';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckCircle2, Lock } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Matrix = () => {
-  const { strategies } = useUserStrategies();
+  const { strategies, loading: strategiesLoading } = useUserStrategies();
   const { state, completedDays } = useInfluencer(strategies);
   const { canAccessDay, isPremium } = useUserUsage();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -29,6 +30,26 @@ const Matrix = () => {
       })),
     ];
   }, [strategies]);
+
+  if (strategiesLoading || strategies.length === 0) {
+    return (
+      <div className="min-h-screen pb-24 md:pt-20">
+        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+          <div className="max-w-lg mx-auto">
+            <Skeleton className="h-9 w-48 bg-white/20" />
+            <Skeleton className="h-4 w-56 bg-white/20 mt-2" />
+          </div>
+        </div>
+        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+          <div className="grid grid-cols-2 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const filtered = filter === 'all' ? strategies : strategies.filter(s => s.pillar === filter);
   const selectedStrategy = selectedDay ? strategies[selectedDay - 1] : null;
