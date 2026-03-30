@@ -13,6 +13,7 @@ import { CheckoutModal } from '@/components/CheckoutModal';
 import { ChevronRight, Calendar, LogOut, RefreshCw, Crown, Lock } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
 import {
   AlertDialog,
