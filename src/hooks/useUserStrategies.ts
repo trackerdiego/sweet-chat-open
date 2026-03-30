@@ -15,8 +15,7 @@ export function useUserStrategies() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('user_strategies')
+      const { data, error } = await (supabase.from as any)('user_strategies')
         .select('strategies')
         .eq('user_id', session.user.id)
         .maybeSingle();

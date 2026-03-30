@@ -22,11 +22,9 @@ export function useUserProfile() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -41,15 +39,13 @@ export function useUserProfile() {
 
   const fetchProfile = async (userId: string) => {
     if (!profile) setLoading(true);
-    let { data, error } = await supabase
-      .from('user_profiles')
+    let { data, error } = await (supabase.from as any)('user_profiles')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (!error && !data) {
-      const { data: newData } = await supabase
-        .from('user_profiles')
+      const { data: newData } = await (supabase.from as any)('user_profiles')
         .upsert({
           user_id: userId,
           display_name: 'Creator',
@@ -70,8 +66,7 @@ export function useUserProfile() {
   const updateProfile = useCallback(async (updates: Partial<Omit<UserProfile, 'id' | 'user_id'>>) => {
     if (!session?.user) return;
     
-    const { data, error } = await supabase
-      .from('user_profiles')
+    const { data, error } = await (supabase.from as any)('user_profiles')
       .upsert({
         user_id: session.user.id,
         display_name: updates.display_name || profile?.display_name || 'Creator',
