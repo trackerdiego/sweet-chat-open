@@ -54,7 +54,9 @@ const Onboarding = () => {
 
   const handleFinish = async () => {
     setSaving(true);
-    const result = await updateProfile({
+
+    // Try updateProfile, retry once, then fallback to direct upsert
+    let result = await updateProfile({
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
       secondary_niches: [],
@@ -62,9 +64,38 @@ const Onboarding = () => {
     });
 
     if (result?.error) {
-      toast.error('Erro ao salvar perfil. Tente novamente.');
-      setSaving(false);
-      return;
+      // Retry once
+      await new Promise(r => setTimeout(r, 1000));
+      result = await updateProfile({
+        display_name: displayName.trim(),
+        primary_niche: businessDescription.trim(),
+        secondary_niches: [],
+        content_style: contentStyle,
+      });
+    }
+
+    if (result?.error) {
+      // Direct upsert fallback
+      try {
+        const { error: directError } = await (supabase.from as any)('user_profiles')
+          .upsert({
+            user_id: (await supabase.auth.getUser()).data.user?.id,
+            display_name: displayName.trim(),
+            primary_niche: businessDescription.trim(),
+            secondary_niches: [],
+            content_style: contentStyle,
+            onboarding_completed: false,
+          }, { onConflict: 'user_id' });
+        if (directError) {
+          toast.error('Erro ao salvar perfil. Tente novamente.');
+          setSaving(false);
+          return;
+        }
+      } catch {
+        toast.error('Erro ao salvar perfil. Tente novamente.');
+        setSaving(false);
+        return;
+      }
     }
 
     setShowPipeline(true);
