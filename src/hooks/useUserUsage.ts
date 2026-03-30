@@ -31,8 +31,7 @@ export function useUserUsage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 
-      const { data, error } = await supabase
-        .from('user_usage')
+      const { data, error } = await (supabase.from as any)('user_usage')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
@@ -42,8 +41,7 @@ export function useUserUsage() {
       if (data) {
         setUsage(data as UserUsage);
       } else {
-        const { data: inserted, error: insertErr } = await supabase
-          .from('user_usage')
+        const { data: inserted, error: insertErr } = await (supabase.from as any)('user_usage')
           .insert({ user_id: user.id })
           .select()
           .single();
@@ -82,9 +80,8 @@ export function useUserUsage() {
       const isNewDay = usage?.last_script_date !== today;
       const newCount = isNewDay ? 1 : (usage?.script_generations ?? 0) + 1;
 
-      const { error } = await supabase
-        .from('user_usage')
-        .update({ script_generations: newCount, last_script_date: today } as any)
+      const { error } = await (supabase.from as any)('user_usage')
+        .update({ script_generations: newCount, last_script_date: today })
         .eq('user_id', user.id);
 
       if (!error) {
@@ -92,8 +89,7 @@ export function useUserUsage() {
       }
     } else {
       const currentVal = usage?.[feature] ?? 0;
-      const { error } = await supabase
-        .from('user_usage')
+      const { error } = await (supabase.from as any)('user_usage')
         .update({ [feature]: currentVal + 1 })
         .eq('user_id', user.id);
 

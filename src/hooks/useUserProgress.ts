@@ -41,29 +41,28 @@ export function useUserProgress() {
       }
       setUserId(session.user.id);
 
-      const { data, error } = await supabase
-        .from('user_progress')
+      const { data, error } = await (supabase.from as any)('user_progress')
         .select('*')
         .eq('user_id', session.user.id)
         .maybeSingle();
 
       if (!error && data) {
-        const realDay = calcRealDay(data.start_date);
-        const needsSync = realDay > data.current_day;
+        const d = data as any;
+        const realDay = calcRealDay(d.start_date);
+        const needsSync = realDay > d.current_day;
 
-        const synced = {
+        const synced: InfluencerProgress = {
           current_day: realDay,
-          start_date: data.start_date,
-          tasks_completed: (data.tasks_completed as Record<string, any>) || {},
-          streak: data.streak,
-          influence_points: data.influence_points,
+          start_date: d.start_date,
+          tasks_completed: (d.tasks_completed as Record<string, any>) || {},
+          streak: d.streak,
+          influence_points: d.influence_points,
         };
 
         setProgress(synced);
 
         if (needsSync) {
-          await supabase
-            .from('user_progress')
+          await (supabase.from as any)('user_progress')
             .update({ current_day: realDay, updated_at: new Date().toISOString() })
             .eq('user_id', session.user.id);
         }
@@ -76,7 +75,7 @@ export function useUserProgress() {
           streak: 0,
           influence_points: 0,
         };
-        await supabase.from('user_progress').insert(initial);
+        await (supabase.from as any)('user_progress').insert(initial);
       }
       setLoading(false);
     };
@@ -87,8 +86,7 @@ export function useUserProgress() {
     if (!userId) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      await supabase
-        .from('user_progress')
+      await (supabase.from as any)('user_progress')
         .update({
           current_day: updated.current_day,
           start_date: updated.start_date,
