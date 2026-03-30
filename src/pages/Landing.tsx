@@ -23,8 +23,11 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
+import { LandingHeroMockup } from "@/components/landing/HeroMockup";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { toast } from "sonner";
+import logoHorizontal from "@/assets/influlab-logo-horizontal.png";
+import heroIllustration from "@/assets/hero-illustration.png";
 
 function Section({
   children,
@@ -122,7 +125,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-md border-b border-border shadow-sm">
         <div className="container max-w-6xl mx-auto flex items-center justify-between py-3 px-4">
           <div className="flex items-center gap-2">
-            <span className="font-serif text-xl font-bold text-primary">InfluLab</span>
+            <img src={logoHorizontal} alt="InfluLab" className="h-9 w-auto" />
           </div>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate("/auth")}>Entrar</Button>
@@ -138,7 +141,7 @@ export default function Landing() {
           <div className="absolute top-20 left-[20%] w-72 h-72 rounded-full bg-primary/8 blur-[100px]" />
         </div>
         <div className="container max-w-6xl mx-auto px-4 pt-24 pb-16 relative z-10">
-          <div className="max-w-2xl">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-6 border border-primary/20">
                 <Sparkles className="h-3.5 w-3.5" /> Powered by IA Visceral
@@ -161,6 +164,9 @@ export default function Landing() {
                 )}
                 <span className="text-xs text-white/40 self-center">Sem cartão de crédito</span>
               </div>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.2 }} className="hidden lg:block">
+              <img src={heroIllustration} alt="InfluLab Dashboard" className="w-full h-auto drop-shadow-2xl" />
             </motion.div>
           </div>
         </div>
@@ -327,7 +333,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-white/10 py-8 px-4 bg-charcoal">
         <div className="container max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/40">
-          <span className="font-serif font-bold text-primary">InfluLab</span>
+          <img src={logoHorizontal} alt="InfluLab" className="h-7 w-auto" />
           <p>© {new Date().getFullYear()} InfluLab. Todos os direitos reservados.</p>
         </div>
       </footer>

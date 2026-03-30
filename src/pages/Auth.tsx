@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
+import logo from '@/assets/influlab-logo.png';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -62,7 +63,7 @@ const Auth = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-          <span className="font-serif text-2xl font-bold text-primary">InfluLab</span>
+          <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
           <h1 className="font-serif text-2xl font-bold text-white mt-4">Verifique seu email ✉️</h1>
         </div>
         <div className="flex-1 flex items-start justify-center px-4 -mt-8">
@@ -92,7 +93,7 @@ const Auth = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-          <span className="font-serif text-2xl font-bold text-primary">InfluLab</span>
+          <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
           <h1 className="font-serif text-2xl font-bold text-white mt-4">Recuperar senha 🔑</h1>
           <p className="text-white/60 text-sm mt-1">Digite seu email para receber o link</p>
         </div>
@@ -120,7 +121,7 @@ const Auth = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-        <span className="font-serif text-2xl font-bold text-primary">InfluLab</span>
+        <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
         <h1 className="font-serif text-2xl font-bold text-white mt-4">
           {isLogin ? 'Boas-vindas de volta' : 'Crie sua conta'} 👑
         </h1>
