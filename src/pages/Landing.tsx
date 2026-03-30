@@ -242,16 +242,6 @@ export default function Landing() {
                   Começar grátis — 7 dias
                   <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
-                {canInstall && (
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={handleDownload}
-                    className="border-white/20 text-white hover:bg-white/10 px-6 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
-                  >
-                    📲 Baixar App
-                  </Button>
-                )}
                 <span className="text-xs text-white/40 self-center">
                   Sem cartão de crédito • Cancele quando quiser
                 </span>
