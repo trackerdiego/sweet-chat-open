@@ -63,7 +63,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
-      <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+      <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
         <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
