@@ -8,11 +8,12 @@ import { DailySchedule } from '@/components/DailySchedule';
 import { DailyGuide, AiGuideContent } from '@/components/DailyGuide';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckoutModal } from '@/components/CheckoutModal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const Tasks = () => {
-  const { strategies } = useUserStrategies();
+  const { strategies, loading } = useUserStrategies();
   const { state, todayTasks, dailyProgress, completeTask, schedule } = useInfluencer(strategies);
   const { profile } = useUserProfile();
   const { canAccessDay } = useUserUsage();
