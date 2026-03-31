@@ -1,21 +1,33 @@
 
 
-# Armazenar Token do Webhook e Adicionar Validação
+# Correção: Tela branca nas páginas Script e Tarefas
 
-## O que será feito
+## Problema
 
-1. **Armazenar o secret `ASAAS_WEBHOOK_TOKEN`** no Supabase com o valor fornecido
-2. **Atualizar `supabase/functions/asaas-webhook/index.ts`** para validar o token recebido no header `asaas-access-token` contra o secret armazenado — rejeitando requisições que não venham do Asaas
+As páginas **Index** e **Matrix** funcionam porque checam o estado de loading das strategies e mostram um skeleton enquanto carrega. Já as páginas **Script** e **Tasks** não fazem essa checagem — renderizam imediatamente com `strategies` vazio (`[]`), o que faz `todayStrategy` ser `undefined`. Isso causa crash silencioso nos componentes filhos (`ScriptGenerator`, `DailyGuide`, etc.) que esperam receber um objeto válido.
 
-## Detalhes técnicos
+A página **Tools** provavelmente também trava se `useUserUsage` ainda não carregou.
 
-O Asaas envia um header `asaas-access-token` com o token configurado no painel. A edge function irá:
-- Ler `ASAAS_WEBHOOK_TOKEN` do ambiente
-- Comparar com o header da requisição
-- Retornar 401 se não bater
+## Solução
 
-## Arquivos alterados
+Adicionar guards de loading em 3 páginas:
 
-1. Secret `ASAAS_WEBHOOK_TOKEN` — novo
-2. `supabase/functions/asaas-webhook/index.ts` — adicionar validação do token
+### 1. `src/pages/Script.tsx`
+- Importar `Skeleton` 
+- Checar `strategies.length === 0` (ou loading do hook)
+- Mostrar skeleton/loading enquanto strategies não carregam
+- Só renderizar `ScriptGenerator` quando `todayStrategy` existir
+
+### 2. `src/pages/Tasks.tsx`
+- Já tem acesso a `useUserStrategies` mas não checa loading
+- Adicionar guard similar: se `strategies.length === 0`, mostrar skeleton
+- Proteger renderização de `DailyGuide` e `DailySchedule`
+
+### 3. `src/pages/Tools.tsx`
+- Checar `loading` do `useUserUsage`
+- Mostrar skeleton enquanto carrega
+
+## Padrão a seguir
+
+Mesmo padrão já usado em Index.tsx e Matrix.tsx — skeleton com layout similar ao conteúdo final para evitar layout shift.
 
