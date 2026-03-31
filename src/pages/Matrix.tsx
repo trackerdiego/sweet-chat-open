@@ -34,7 +34,7 @@ const Matrix = () => {
   if (strategiesLoading || strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
           <div className="max-w-lg mx-auto">
             <Skeleton className="h-9 w-48 bg-white/20" />
             <Skeleton className="h-4 w-56 bg-white/20 mt-2" />
