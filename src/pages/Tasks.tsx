@@ -8,11 +8,12 @@ import { DailySchedule } from '@/components/DailySchedule';
 import { DailyGuide, AiGuideContent } from '@/components/DailyGuide';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckoutModal } from '@/components/CheckoutModal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const Tasks = () => {
-  const { strategies } = useUserStrategies();
+  const { strategies, loading } = useUserStrategies();
   const { state, todayTasks, dailyProgress, completeTask, schedule } = useInfluencer(strategies);
   const { profile } = useUserProfile();
   const { canAccessDay } = useUserUsage();
@@ -25,6 +26,23 @@ const Tasks = () => {
   const realDate = new Date();
   const formattedDate = format(realDate, "EEEE, d 'de' MMMM", { locale: ptBR });
   const displayDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+  if (loading || strategies.length === 0) {
+    return (
+      <div className="min-h-screen pb-24 md:pt-20">
+        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+          <div className="max-w-lg mx-auto">
+            <Skeleton className="h-8 w-32 bg-white/20" />
+            <Skeleton className="h-4 w-48 mt-2 bg-white/10" />
+          </div>
+        </div>
+        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+          <Skeleton className="h-[120px] w-full rounded-xl" />
+          <Skeleton className="h-[200px] w-full rounded-xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
