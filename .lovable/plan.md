@@ -1,33 +1,35 @@
 
 
-# Correção: Tela branca nas páginas Script e Tarefas
+# Corrigir Experiência de Email de Confirmação
 
-## Problema
+## Problemas Identificados
 
-As páginas **Index** e **Matrix** funcionam porque checam o estado de loading das strategies e mostram um skeleton enquanto carrega. Já as páginas **Script** e **Tasks** não fazem essa checagem — renderizam imediatamente com `strategies` vazio (`[]`), o que faz `todayStrategy` ser `undefined`. Isso causa crash silencioso nos componentes filhos (`ScriptGenerator`, `DailyGuide`, etc.) que esperam receber um objeto válido.
+1. **Email chega com branding do Supabase** — O `auth-email-hook` existe no código mas pode não estar deployado/ativado, então o Supabase envia o email padrão dele em vez do template customizado do InfluLab.
 
-A página **Tools** provavelmente também trava se `useUserUsage` ainda não carregou.
+2. **Link de verificação leva a página de erro** — O `signUp()` em `Auth.tsx` não define `emailRedirectTo`, então o Supabase redireciona para a URL padrão configurada no projeto (provavelmente uma URL antiga/incorreta). Além disso, o app não tem um handler para processar o token de confirmação na URL.
 
 ## Solução
 
-Adicionar guards de loading em 3 páginas:
+### 1. Deploy do auth-email-hook
+- Fazer deploy da edge function `auth-email-hook` para que os emails customizados com branding InfluLab sejam efetivamente usados
+- Os templates já existem e estão com visual correto (cores roxas, logo InfluLab, textos em português)
 
-### 1. `src/pages/Script.tsx`
-- Importar `Skeleton` 
-- Checar `strategies.length === 0` (ou loading do hook)
-- Mostrar skeleton/loading enquanto strategies não carregam
-- Só renderizar `ScriptGenerator` quando `todayStrategy` existir
+### 2. Corrigir redirect do signUp
+- Adicionar `emailRedirectTo: window.location.origin` no `signUp()` em `Auth.tsx` para que o link de confirmação redirecione para o app correto
 
-### 2. `src/pages/Tasks.tsx`
-- Já tem acesso a `useUserStrategies` mas não checa loading
-- Adicionar guard similar: se `strategies.length === 0`, mostrar skeleton
-- Proteger renderização de `DailyGuide` e `DailySchedule`
+### 3. Adicionar handler de confirmação no App
+- Atualizar `useUserProfile.ts` para tratar o evento `SIGNED_IN` que vem após clicar no link de confirmação — o `onAuthStateChange` já existe, mas precisamos garantir que o fluxo de redirect funcione suavemente após confirmação
 
-### 3. `src/pages/Tools.tsx`
-- Checar `loading` do `useUserUsage`
-- Mostrar skeleton enquanto carrega
+### 4. Atualizar subjects dos emails para português
+- Alterar os subjects em `auth-email-hook/index.ts` de inglês para português:
+  - "Confirm your email" → "Confirme seu email - InfluLab"
+  - "Reset your password" → "Redefinir sua senha - InfluLab"
+  - "Your login link" → "Seu link de acesso - InfluLab"
+  - etc.
 
-## Padrão a seguir
+## Arquivos alterados
 
-Mesmo padrão já usado em Index.tsx e Matrix.tsx — skeleton com layout similar ao conteúdo final para evitar layout shift.
+1. `src/pages/Auth.tsx` — adicionar `emailRedirectTo`
+2. `supabase/functions/auth-email-hook/index.ts` — traduzir subjects para PT-BR
+3. Deploy da edge function `auth-email-hook`
 
