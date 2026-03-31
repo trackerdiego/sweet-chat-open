@@ -12,7 +12,7 @@ const Script = () => {
 
   if (loading || strategies.length === 0) {
     return (
-      <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-6 space-y-4">
+      <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))] space-y-4">
         <Skeleton className="h-8 w-48 mx-auto" />
         <Skeleton className="h-4 w-64 mx-auto" />
         <Skeleton className="h-[200px] w-full rounded-xl" />
@@ -22,7 +22,7 @@ const Script = () => {
   }
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-6">
+    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))]">
       {todayStrategy && (
         <ScriptGenerator
           strategy={todayStrategy}

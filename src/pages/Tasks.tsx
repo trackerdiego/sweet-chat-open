@@ -30,7 +30,7 @@ const Tasks = () => {
   if (loading || strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
           <div className="max-w-lg mx-auto">
             <Skeleton className="h-8 w-32 bg-white/20" />
             <Skeleton className="h-4 w-48 mt-2 bg-white/10" />
@@ -46,7 +46,7 @@ const Tasks = () => {
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
-      <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+      <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
         <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-lg mx-auto">
           <h1 className="font-serif text-3xl font-bold text-white">Tarefas</h1>
           <p className="text-white/60 text-sm mt-1">

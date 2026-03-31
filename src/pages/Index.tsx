@@ -37,7 +37,7 @@ const Index = () => {
   if (strategiesLoading || strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
           <div className="max-w-lg mx-auto space-y-3">
             <Skeleton className="h-5 w-32 bg-white/20" />
             <Skeleton className="h-9 w-48 bg-white/20" />
@@ -63,7 +63,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
-      <div className="gradient-header px-4 pt-6 pb-10 rounded-b-3xl">
+      <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
         <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
