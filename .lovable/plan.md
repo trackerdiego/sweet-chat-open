@@ -1,35 +1,25 @@
 
 
-# Corrigir Experiência de Email de Confirmação
+# Corrigir Safe Area no iPhone 16 (Dynamic Island)
 
-## Problemas Identificados
+## Problema
 
-1. **Email chega com branding do Supabase** — O `auth-email-hook` existe no código mas pode não estar deployado/ativado, então o Supabase envia o email padrão dele em vez do template customizado do InfluLab.
+No iPhone 16 e outros modelos com Dynamic Island/notch, o conteúdo das páginas fica atrás da barra de status porque o `pt-6` fixo não considera o `safe-area-inset-top`. A Navigation no desktop usa `md:pt-[env(safe-area-inset-top)]` mas as páginas em si não adicionam padding para o safe area no mobile.
 
-2. **Link de verificação leva a página de erro** — O `signUp()` em `Auth.tsx` não define `emailRedirectTo`, então o Supabase redireciona para a URL padrão configurada no projeto (provavelmente uma URL antiga/incorreta). Além disso, o app não tem um handler para processar o token de confirmação na URL.
+A Landing page já faz certo (`pt-[env(safe-area-inset-top)]` na nav fixa). As páginas internas não.
 
 ## Solução
 
-### 1. Deploy do auth-email-hook
-- Fazer deploy da edge function `auth-email-hook` para que os emails customizados com branding InfluLab sejam efetivamente usados
-- Os templates já existem e estão com visual correto (cores roxas, logo InfluLab, textos em português)
+Usar `pt-[max(1.5rem,env(safe-area-inset-top))]` no lugar de `pt-6` nos headers de todas as páginas internas. Isso garante no mínimo 1.5rem (equivalente ao pt-6 atual) mas respeita o safe area quando é maior.
 
-### 2. Corrigir redirect do signUp
-- Adicionar `emailRedirectTo: window.location.origin` no `signUp()` em `Auth.tsx` para que o link de confirmação redirecione para o app correto
+### Arquivos a alterar
 
-### 3. Adicionar handler de confirmação no App
-- Atualizar `useUserProfile.ts` para tratar o evento `SIGNED_IN` que vem após clicar no link de confirmação — o `onAuthStateChange` já existe, mas precisamos garantir que o fluxo de redirect funcione suavemente após confirmação
+1. **`src/pages/Index.tsx`** — Trocar `pt-6` por `pt-[max(1.5rem,env(safe-area-inset-top))]` nos gradient-headers (loading e normal)
+2. **`src/pages/Matrix.tsx`** — Mesmo ajuste nos gradient-headers
+3. **`src/pages/Tasks.tsx`** — Mesmo ajuste nos gradient-headers
+4. **`src/pages/Script.tsx`** — Trocar `pt-6` por `pt-[max(1.5rem,env(safe-area-inset-top))]` no container
+5. **`src/pages/Tools.tsx`** — Mesmo ajuste no container
+6. **`src/components/Navigation.tsx`** — A nav inferior no mobile já tem `pb-[env(safe-area-inset-bottom)]`, está OK
 
-### 4. Atualizar subjects dos emails para português
-- Alterar os subjects em `auth-email-hook/index.ts` de inglês para português:
-  - "Confirm your email" → "Confirme seu email - InfluLab"
-  - "Reset your password" → "Redefinir sua senha - InfluLab"
-  - "Your login link" → "Seu link de acesso - InfluLab"
-  - etc.
-
-## Arquivos alterados
-
-1. `src/pages/Auth.tsx` — adicionar `emailRedirectTo`
-2. `supabase/functions/auth-email-hook/index.ts` — traduzir subjects para PT-BR
-3. Deploy da edge function `auth-email-hook`
+São alterações simples de CSS em 5 arquivos — trocar `pt-6` pelo valor que respeita o safe area.
 
