@@ -32,8 +32,6 @@ const Index = () => {
   const { profile, signOut, updateProfile } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
-  const [showResetDialog, setShowResetDialog] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
   if (strategiesLoading || strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
