@@ -72,11 +72,33 @@ serve(async (req) => {
       console.log("Premium activated successfully for:", userId);
     }
 
+    // Handle payment failures — deactivate premium
+    if (["PAYMENT_OVERDUE", "PAYMENT_REFUNDED", "PAYMENT_DELETED"].includes(event)) {
+      let userId = body.payment?.externalReference;
+      if (!userId && body.payment?.subscription) {
+        const ASAAS_API_KEY = Deno.env.get("ASAAS_API_KEY");
+        if (ASAAS_API_KEY) {
+          const subRes = await fetch(`https://api.asaas.com/v3/subscriptions/${body.payment.subscription}`, {
+            headers: { access_token: ASAAS_API_KEY },
+          });
+          const subData = await subRes.json();
+          userId = subData.externalReference;
+        }
+      }
+      if (userId) {
+        console.log(`Deactivating premium for user (${event}):`, userId);
+        await supabaseAdmin
+          .from("user_usage")
+          .update({ is_premium: false })
+          .eq("user_id", userId);
+      }
+    }
+
     // Handle subscription cancellation/deletion
     if (["SUBSCRIPTION_DELETED", "SUBSCRIPTION_INACTIVE"].includes(event)) {
       const userId = body.subscription?.externalReference;
       if (userId) {
-        console.log("Deactivating premium for user:", userId);
+        console.log("Deactivating premium for user (subscription):", userId);
         await supabaseAdmin
           .from("user_usage")
           .update({ is_premium: false })
