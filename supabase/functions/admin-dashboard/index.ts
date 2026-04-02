@@ -41,7 +41,7 @@ serve(async (req) => {
 
     const [usageRes, profilesRes, logsRes, authUsersRes, audienceRes, strategiesRes] = await Promise.all([
       admin.from("user_usage").select("*"),
-      admin.from("user_profiles").select("user_id, display_name, primary_niche, secondary_niches, content_style, audience_size, onboarding_completed, created_at"),
+      admin.from("user_profiles").select("user_id, display_name, primary_niche, secondary_niches, content_style, audience_size, onboarding_completed, created_at, description_status"),
       admin.from("usage_logs").select("*").order("created_at", { ascending: false }).limit(500),
       admin.auth.admin.listUsers({ perPage: 1000 }),
       admin.from("audience_profiles").select("user_id, audience_description, generated_at"),
@@ -76,6 +76,7 @@ serve(async (req) => {
         content_style: p.content_style,
         audience_size: p.audience_size,
         onboarding_completed: p.onboarding_completed ?? false,
+        description_status: p.description_status || "pending",
         profile_created_at: p.created_at,
         auth_created_at: auth.created_at,
         is_premium: (u as any).is_premium ?? false,

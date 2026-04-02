@@ -17,6 +17,7 @@ interface UserData {
   content_style: string;
   audience_size: string;
   onboarding_completed: boolean;
+  description_status: string;
   profile_created_at: string;
   auth_created_at: string;
   is_premium: boolean;
@@ -169,7 +170,7 @@ export default function Admin() {
                   <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
                   <TableCell>{u.primary_niche}</TableCell>
                   <TableCell>
-                    {(u as any).description_status === 'ok' ? (
+                    {u.description_status === 'ok' ? (
                       <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
                     ) : (
                       <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
@@ -229,7 +230,7 @@ export default function Admin() {
                 {selectedUser.is_premium ? (
                   <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><Crown className="h-3 w-3 mr-1" />Premium</Badge>
                 ) : (<Badge variant="secondary">Free</Badge>)}
-                {(selectedUser as any).description_status === 'ok' ? (
+                {selectedUser.description_status === 'ok' ? (
                   <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
                 ) : (
                   <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
