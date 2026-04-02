@@ -294,13 +294,13 @@ const Tools = () => {
             ))}
           </motion.div>
         ) : (
-          <motion.div key="detail" initial={{ x: 30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -30, opacity: 0 }} className="space-y-4">
-            <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5">
+          <motion.div key="detail" initial={{ x: 30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -30, opacity: 0 }} className={`${selectedTool.id === 'chat' ? 'flex flex-col flex-1 min-h-0' : 'space-y-4'}`}>
+            <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 shrink-0">
               <ArrowLeft size={16} /> Voltar
             </Button>
 
             {selectedTool.id === 'chat' ? (
-              <AiChat />
+              <div className="flex-1 min-h-0"><AiChat /></div>
             ) : (
             <>
             <div className="text-center space-y-2">

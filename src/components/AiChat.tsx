@@ -24,7 +24,24 @@ const suggestions = [
 async function streamChat({ messages, onDelta, onDone, onError }: { messages: Msg[]; onDelta: (text: string) => void; onDone: () => void; onError: (err: string) => void; }) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) { onError('Você precisa estar logado'); return; }
-  const resp = await fetch(CHAT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ messages }) });
+
+  const doFetch = async (token: string) => {
+    return fetch(CHAT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ messages }) });
+  };
+
+  let resp = await doFetch(session.access_token).catch(() => null);
+
+  // Retry once: refresh token and try again
+  if (!resp || !resp.ok) {
+    if (!resp || resp.status === 401 || resp.status >= 500) {
+      const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+      if (refreshed?.access_token) {
+        resp = await doFetch(refreshed.access_token).catch(() => null);
+      }
+    }
+  }
+
+  if (!resp) { onError('Erro de conexão com a IA'); return; }
   if (!resp.ok) { const data = await resp.json().catch(() => ({})); onError(data.error || 'Erro ao conectar com a IA'); return; }
   if (!resp.body) { onError('Sem resposta da IA'); return; }
   const reader = resp.body.getReader();
