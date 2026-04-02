@@ -1,47 +1,53 @@
 
 
-# Melhorar instruções de instalação do PWA para usuários leigos
+# Limitar acesso a 1 dispositivo por vez
 
-## Problema
+## Como funciona
 
-Os banners atuais (InstallBanner e InAppBrowserBanner) são finas barras no topo com texto pequeno. Usuários leigos não entendem o que precisam fazer, especialmente no iOS onde o processo exige múltiplos passos manuais (compartilhar → adicionar à tela).
+Cada vez que o usuário faz login ou abre o app, registramos um "session token" unico no banco. Se outro dispositivo faz login com a mesma conta, o token muda e o dispositivo anterior e deslogado automaticamente na proxima verificacao.
 
-## Solução
+## Implementacao
 
-Transformar as instruções em um **modal/dialog visual com passo-a-passo ilustrado**, em vez de um banner fino ou um toast rápido.
+### 1. Migration: adicionar coluna `active_session_token` em `user_profiles`
 
-### 1. Novo componente `InstallInstructionsModal.tsx`
+```sql
+ALTER TABLE public.user_profiles
+ADD COLUMN active_session_token text;
+```
 
-Um Dialog/Drawer que abre quando o usuário toca "Como instalar" no InstallBanner (iOS) ou quando está no navegador in-app. Contém:
+### 2. `src/hooks/useUserProfile.ts`
 
-- **Título grande**: "Instale o InfluLab no seu celular"
-- **Passo-a-passo numerado com ícones grandes**:
-  - **iOS (Safari)**: 
-    1. Toque no ícone de compartilhar (ícone Share grande e colorido) na barra inferior do Safari
-    2. Role para baixo e toque em "Adicionar à Tela de Início"
-    3. Toque em "Adicionar" no canto superior direito
-  - **iOS (navegador in-app)**:
-    1. Toque em "Copiar link" (botão grande)
-    2. Abra o Safari
-    3. Cole o link na barra de endereço
-    4. Siga os passos de instalação acima
-  - **Android**: Botão grande "Instalar agora" que dispara o prompt nativo
-- Cada passo com **ícone grande**, **texto claro em linguagem simples**, e **destaque visual** (numbered circles)
-- Botão de fechar discreto
+- No login/carregamento da sessao, gerar um token unico (`crypto.randomUUID()`) e salvar no `localStorage` e na coluna `active_session_token` do perfil
+- Criar um intervalo (a cada 30s) que verifica se o `active_session_token` no banco ainda bate com o token local
+- Se nao bater, significa que outro dispositivo tomou a sessao: deslogar o usuario automaticamente e mostrar um toast ("Sua conta foi acessada em outro dispositivo")
 
-### 2. Alterar `InstallBanner.tsx`
+### 3. Fluxo
 
-- No iOS, em vez de mostrar um toast com texto, abrir o `InstallInstructionsModal`
-- Aumentar levemente o banner: texto um pouco maior, botão mais chamativo
-- Texto do botão: "Ver como instalar" (mais claro que "Como fazer")
+```text
+Dispositivo A faz login
+  → gera token "abc123"
+  → salva no banco e localStorage
 
-### 3. Alterar `InAppBrowserBanner.tsx`
+Dispositivo B faz login com mesma conta
+  → gera token "xyz789"
+  → atualiza banco para "xyz789"
 
-- No iOS, ao tocar "Copiar link", além de copiar, abrir o modal com instruções visuais do que fazer depois (abrir Safari, colar, etc.)
-- Tornar o banner mais visualmente impactante: fundo mais contrastante, texto maior
+Dispositivo A verifica (polling 30s)
+  → banco tem "xyz789", local tem "abc123"
+  → mismatch → deslogar A automaticamente
+```
+
+### 4. Protecao extra na Auth page
+
+- Apos `signInWithPassword` ou `signUp` com sessao, imediatamente gravar o novo token
 
 ### Arquivos impactados
-- **Novo** `src/components/InstallInstructionsModal.tsx` — modal com passo-a-passo visual
-- **Editar** `src/components/InstallBanner.tsx` — abrir modal no iOS em vez de toast
-- **Editar** `src/components/InAppBrowserBanner.tsx` — abrir modal após copiar link no iOS
+- **Migration SQL** — adicionar `active_session_token` a `user_profiles`
+- **`src/hooks/useUserProfile.ts`** — gerar token, gravar no banco, polling de verificacao, auto-logout
+- **`src/pages/Auth.tsx`** — gravar token apos login bem-sucedido (ou delegar ao hook)
+
+### Consideracoes
+- O polling de 30s e leve (1 query simples por usuario)
+- Se o usuario recarregar a pagina, o token local persiste no localStorage, nao precisa gerar outro
+- Se o usuario fizer logout manual, o token e limpo
 
