@@ -17,6 +17,7 @@ interface UserData {
   content_style: string;
   audience_size: string;
   onboarding_completed: boolean;
+  description_status: string;
   profile_created_at: string;
   auth_created_at: string;
   is_premium: boolean;
