@@ -1,44 +1,33 @@
 
-Objetivo
 
-- Fazer os próximos emails de confirmação chegarem como “InfluLab” na caixa de entrada, em vez de “Supabase Auth”.
+# Ativar Emails Brandados da InfluLab
 
-Diagnóstico
+## Situação Atual
+- O domínio `notify.influlab.pro` está **verificado** e pronto para envio
+- Os templates de email já existem no código, mas precisam ser re-scaffoldados pela ferramenta oficial do Lovable para ativar o fluxo correto (enfileiramento via pgmq)
+- Após isso, os emails de autenticação (confirmação de cadastro, recuperação de senha, etc.) passarão a chegar com remetente "InfluLab" em vez de "Supabase Auth"
 
-- O código já está preparado para branding: o remetente foi definido como `InfluLab <noreply@influlab.pro>`.
-- O subdomínio de envio `notify.influlab.pro` está verificado.
-- Mesmo assim, os logs atuais ainda mostram envio saindo por `noreply@mail.app.supabase.io`.
-- Também não há sinais de que o fluxo customizado de auth esteja recebendo os eventos.
-- Conclusão: o problema principal não é o template; é que o Auth ainda está usando o envio padrão, não o fluxo brandado da InfluLab.
+## Plano
 
-Plano
+### 1. Re-scaffoldar os templates de auth email
+- Usar a ferramenta de scaffolding para gerar os templates compatíveis com o sistema de fila do Lovable
+- Isso garante que o `auth-email-hook` use o fluxo correto (enqueue via pgmq) em vez do envio direto
 
-1. Reativar o envio customizado dos emails de autenticação
-- Reaplicar a configuração de email de autenticação do projeto para que signup, recuperação e magic link passem pelo fluxo brandado.
-- Se a configuração estiver “desconectada”, refazer o vínculo preservando a marca InfluLab.
+### 2. Aplicar branding da InfluLab nos templates
+- Extrair cores e estilos do projeto (CSS variables, logo)
+- Aplicar nos 6 templates: signup, recovery, magic-link, invite, email-change, reauthentication
+- Textos em PT-BR, tom consistente com o app
+- Upload do logo para storage bucket para uso nos emails
 
-2. Garantir o remetente visível correto
-- Manter o cabeçalho `from` como `InfluLab <noreply@influlab.pro>`.
-- Confirmar que o domínio real de envio continue sendo `notify.influlab.pro`, que já está validado.
+### 3. Deploy do auth-email-hook
+- Fazer deploy da edge function atualizada
 
-3. Verificar o estado do envio do projeto
-- Confirmar que o envio customizado do projeto está habilitado.
-- Validar que a fila/processamento de emails esteja pronta para enviar assim que o fluxo de auth voltar a receber eventos.
+### 4. Confirmar ativação
+- Os emails passarão a sair de `noreply@notify.influlab.pro` com visual da InfluLab
+- O nome do remetente na caixa de entrada será "InfluLab" (não mais "Supabase Auth")
 
-4. Validar com um novo email de confirmação
-- Disparar um novo cadastro/teste.
-- Confirmar dois sinais de sucesso:
-  - o log deixa de mostrar `mail.app.supabase.io`;
-  - passam a aparecer registros no log interno de emails do projeto.
+## Resultado Esperado
+- Remetente aparece como **InfluLab** na caixa de entrada
+- Email com logo, cores e textos em português
+- Links de confirmação apontam para `https://influlab.pro`
 
-Resultado esperado
-
-- Novos emails chegam com remetente “InfluLab”.
-- O conteúdo continua com branding da InfluLab.
-- Emails antigos já recebidos não mudam; a correção vale para os próximos envios.
-
-Detalhes técnicos
-
-- Hoje o projeto já tem quase tudo pronto: domínio verificado, templates customizados e remetente definido no código.
-- O ponto que falta é fazer o Auth realmente usar esse fluxo customizado.
-- Se eu encontrar divergência entre o domínio do app e a URL usada nos links dos emails, também alinharei isso para evitar novo comportamento incorreto no clique do usuário.
