@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -33,11 +33,12 @@ const navItems = [
 ];
 
 export function Navigation() {
-  const { updateProfile } = useUserProfile();
+  const { updateProfile, session } = useUserProfile();
   const navigate = useNavigate();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isPremium } = useUserUsage();
+  const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
   const handleResetNiche = async () => {
@@ -121,6 +122,21 @@ export function Navigation() {
               <span>{label}</span>
             </NavLink>
           ))}
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium ${
+                  isActive
+                    ? 'text-primary-foreground gold-gradient shadow-md shadow-primary/20'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <ShieldCheck size={20} />
+              <span>Admin</span>
+            </NavLink>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground">
               <Settings size={20} />
