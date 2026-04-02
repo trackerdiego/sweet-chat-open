@@ -119,10 +119,10 @@ const Onboarding = () => {
     updateStepStatus('finalize', 'active');
     setPipelineProgress(95);
 
-    const completeResult = await updateProfile({ onboarding_completed: true });
+    const completeResult = await updateProfile({ onboarding_completed: true, description_status: 'ok' as any });
     if (completeResult?.error) {
       await new Promise(r => setTimeout(r, 1000));
-      const retry = await updateProfile({ onboarding_completed: true });
+      const retry = await updateProfile({ onboarding_completed: true, description_status: 'ok' as any });
       if (retry?.error) {
         updateStepStatus('finalize', 'error');
         toast.error('Erro ao finalizar. Tente novamente.');

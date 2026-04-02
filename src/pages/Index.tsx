@@ -10,29 +10,18 @@ import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
 import { CheckoutModal } from '@/components/CheckoutModal';
-import { ChevronRight, Calendar, LogOut, RefreshCw, Crown, Lock } from 'lucide-react';
+import { ChevronRight, Calendar, LogOut, Crown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 
 const Index = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
-  const { profile, signOut, updateProfile } = useUserProfile();
+  const { profile, signOut } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
-  const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   if (strategiesLoading || strategies.length === 0) {
     return (
@@ -56,10 +45,6 @@ const Index = () => {
   const todayStrategy = strategies[state.currentDay - 1];
   const displayName = profile?.display_name || 'Creator';
 
-  const handleResetNiche = async () => {
-    await updateProfile({ onboarding_completed: false });
-    navigate('/onboarding', { replace: true });
-  };
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
@@ -73,14 +58,9 @@ const Index = () => {
             <p className="text-white/70 text-sm flex items-center gap-1.5">
               <Calendar size={14} /> Dia {state.currentDay} de 30
             </p>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" onClick={() => isPremium ? setShowResetDialog(true) : setCheckoutOpen(true)} className="text-white/70 hover:text-white hover:bg-white/10">
-                {isPremium ? <RefreshCw size={18} /> : <Lock size={18} />}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={signOut} className="text-white/70 hover:text-white hover:bg-white/10">
-                <LogOut size={18} />
-              </Button>
-            </div>
+            <Button variant="ghost" size="icon" onClick={signOut} className="text-white/70 hover:text-white hover:bg-white/10">
+              <LogOut size={18} />
+            </Button>
           </div>
           <div className="space-y-1">
             <h1 className="font-serif text-3xl font-bold text-white">
@@ -92,7 +72,7 @@ const Index = () => {
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
-        {profile && profile.onboarding_completed && profile.primary_niche.trim().split(' ').length <= 2 && (
+        {profile && profile.description_status === 'pending' && profile.onboarding_completed && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -175,21 +155,6 @@ const Index = () => {
         <StreakCounter streak={state.streak} points={state.influencePoints} />
         <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
       </div>
-
-      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Redefinir nicho?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Isso vai regenerar sua matriz de conteúdo e perfil de público com base nos novos nichos. Seu progresso e streak serão mantidos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleResetNiche}>Redefinir</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </div>
   );
