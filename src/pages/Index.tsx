@@ -92,7 +92,7 @@ const Index = () => {
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
-        {profile && profile.onboarding_completed && profile.primary_niche.trim().split(' ').length <= 2 && (
+        {profile && profile.description_status === 'pending' && profile.onboarding_completed && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
