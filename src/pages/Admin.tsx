@@ -169,10 +169,8 @@ export default function Admin() {
                   <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
                   <TableCell>{u.primary_niche}</TableCell>
                   <TableCell>
-                    {u.onboarding_completed && u.primary_niche.trim().split(' ').length > 2 ? (
-                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Completo</Badge>
-                    ) : u.onboarding_completed ? (
-                      <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30"><Clock className="h-3 w-3 mr-1" />Descrição curta</Badge>
+                    {(u as any).description_status === 'ok' ? (
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
                     ) : (
                       <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
                     )}
