@@ -33,11 +33,12 @@ const navItems = [
 ];
 
 export function Navigation() {
-  const { updateProfile } = useUserProfile();
+  const { updateProfile, session } = useUserProfile();
   const navigate = useNavigate();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isPremium } = useUserUsage();
+  const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
   const handleResetNiche = async () => {
