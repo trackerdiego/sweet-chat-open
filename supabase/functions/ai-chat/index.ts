@@ -101,7 +101,7 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
     systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.`;
 
     await Promise.all([
-      adminClient.from("user_usage").update({ chat_messages: chatCount + 1 }).eq("user_id", userId),
+      adminClient.from("user_usage").update({ chat_messages: chatCount + 1, last_chat_date: today }).eq("user_id", userId),
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "chat" }),
     ]);
 
