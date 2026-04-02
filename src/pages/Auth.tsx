@@ -151,7 +151,7 @@ const Auth = () => {
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required />
+              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -162,7 +162,7 @@ const Auth = () => {
                   </button>
                 )}
               </div>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" minLength={6} required />
+              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="off" minLength={6} required />
             </div>
             <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
               {loading && <Loader2 size={16} className="animate-spin" />}

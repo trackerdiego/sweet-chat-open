@@ -28,6 +28,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
+import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 
 function Section({
   children,
