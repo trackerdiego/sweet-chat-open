@@ -70,7 +70,7 @@ const Onboarding = () => {
 
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
-    if (step === 1) return businessDescription.trim().length >= 30;
+    if (step === 1) return businessDescription.trim().length >= 80;
     if (step === 2) return !!contentStyle;
     return false;
   };
