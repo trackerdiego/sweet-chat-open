@@ -42,7 +42,7 @@ export function Navigation() {
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
   const handleResetNiche = async () => {
-    await updateProfile({ onboarding_completed: false });
+    await updateProfile({ onboarding_completed: false, description_status: 'pending' as any });
     navigate('/onboarding', { replace: true });
   };
 
