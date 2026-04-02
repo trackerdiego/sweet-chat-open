@@ -155,7 +155,7 @@ const Index = () => {
         <StreakCounter streak={state.streak} points={state.influencePoints} />
         <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
       </div>
-
+      <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </div>
   );
 };
