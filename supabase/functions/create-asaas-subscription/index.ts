@@ -28,11 +28,12 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
-    if (claimsError || !claimsData?.claims?.sub) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Auth error:", userError);
       return new Response(JSON.stringify({ error: "Token inválido" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     const { name, email, cpfCnpj, phone, postalCode, address, addressNumber, complement, province, plan } = await req.json();
 
