@@ -165,21 +165,6 @@ const Index = () => {
         <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
       </div>
 
-      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Redefinir nicho?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Isso vai regenerar sua matriz de conteúdo e perfil de público com base nos novos nichos. Seu progresso e streak serão mantidos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleResetNiche}>Redefinir</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </div>
   );
 };
