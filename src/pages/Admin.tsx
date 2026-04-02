@@ -170,7 +170,7 @@ export default function Admin() {
                   <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
                   <TableCell>{u.primary_niche}</TableCell>
                   <TableCell>
-                    {(u as any).description_status === 'ok' ? (
+                    {u.description_status === 'ok' ? (
                       <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
                     ) : (
                       <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
