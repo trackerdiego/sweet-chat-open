@@ -43,16 +43,20 @@ const Auth = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: { display_name: displayName },
-            emailRedirectTo: 'https://influlab.pro',
+            emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
-        setShowConfirmation(true);
+        if (data.session) {
+          toast.success('Conta criada com sucesso! 🎉');
+        } else {
+          setShowConfirmation(true);
+        }
         return;
       }
     } catch (err: any) {
