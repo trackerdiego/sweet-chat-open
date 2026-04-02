@@ -23,7 +23,7 @@ const Auth = () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://influlab.pro/reset-password',
+        redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
       toast.success('Email de recuperação enviado!');
@@ -43,16 +43,20 @@ const Auth = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: { display_name: displayName },
-            emailRedirectTo: 'https://influlab.pro',
+            emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
-        setShowConfirmation(true);
+        if (data.session) {
+          toast.success('Conta criada com sucesso! 🎉');
+        } else {
+          setShowConfirmation(true);
+        }
         return;
       }
     } catch (err: any) {
