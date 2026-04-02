@@ -7,7 +7,8 @@ interface MindsetPulseProps {
 }
 
 export function MindsetPulse({ day }: MindsetPulseProps) {
-  const quote = mindsetQuotes[(day - 1) % mindsetQuotes.length];
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+  const quote = mindsetQuotes[(dayOfYear - 1) % mindsetQuotes.length];
 
   return (
     <motion.div
