@@ -17,12 +17,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirme seu email - InfluLab',
-  invite: 'Você foi convidado(a) - InfluLab',
-  magiclink: 'Seu link de acesso - InfluLab',
-  recovery: 'Redefinir sua senha - InfluLab',
-  email_change: 'Confirme seu novo email - InfluLab',
-  reauthentication: 'Seu código de verificação - InfluLab',
+  signup: 'Confirm your email',
+  invite: "You've been invited",
+  magiclink: 'Your login link',
+  recovery: 'Reset your password',
+  email_change: 'Confirm your new email',
+  reauthentication: 'Your verification code',
 }
 
 // Template mapping
@@ -36,10 +36,10 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "InfluLab"
-const SENDER_DOMAIN = "notify.influlab.pro"
-const ROOT_DOMAIN = "influlab.pro"
-const FROM_DOMAIN = "influlab.pro"
+const SITE_NAME = "sweet-chat-open"
+const SENDER_DOMAIN = "notify.app.influlab.pro"
+const ROOT_DOMAIN = "app.influlab.pro"
+const FROM_DOMAIN = "app.influlab.pro" // Domain shown in From address (may be root or sender subdomain)
 
 // Sample data for preview mode ONLY (not used in actual email sending).
 // URLs are baked in at scaffold time from the project's real data.
