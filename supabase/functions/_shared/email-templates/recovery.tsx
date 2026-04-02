@@ -18,22 +18,26 @@ interface RecoveryEmailProps {
   confirmationUrl: string
 }
 
-export const RecoveryEmail = ({ siteName, confirmationUrl }: RecoveryEmailProps) => (
-  <Html lang="pt-BR" dir="ltr">
+export const RecoveryEmail = ({
+  siteName,
+  confirmationUrl,
+}: RecoveryEmailProps) => (
+  <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Redefinir sua senha no InfluLab</Preview>
+    <Preview>Reset your password for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={logo}>🚀 InfluLab</Text>
-        <Heading style={h1}>Redefinir senha</Heading>
+        <Heading style={h1}>Reset your password</Heading>
         <Text style={text}>
-          Recebemos um pedido para redefinir sua senha no <strong>InfluLab</strong>. Clique no botão abaixo para escolher uma nova senha.
+          We received a request to reset your password for {siteName}. Click
+          the button below to choose a new password.
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Redefinir minha senha
+          Reset Password
         </Button>
         <Text style={footer}>
-          Se você não solicitou a redefinição de senha, pode ignorar este email. Sua senha não será alterada.
+          If you didn't request a password reset, you can safely ignore this
+          email. Your password will not be changed.
         </Text>
       </Container>
     </Body>
@@ -42,10 +46,26 @@ export const RecoveryEmail = ({ siteName, confirmationUrl }: RecoveryEmailProps)
 
 export default RecoveryEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: "'Inter', Arial, sans-serif" }
-const container = { padding: '30px 25px' }
-const logo = { fontSize: '20px', fontWeight: 'bold' as const, color: 'hsl(258, 60%, 55%)', margin: '0 0 25px' }
-const h1 = { fontSize: '24px', fontWeight: 'bold' as const, color: 'hsl(260, 20%, 15%)', margin: '0 0 20px' }
-const text = { fontSize: '15px', color: 'hsl(260, 10%, 45%)', lineHeight: '1.6', margin: '0 0 20px' }
-const button = { backgroundColor: 'hsl(258, 60%, 55%)', color: '#ffffff', fontSize: '15px', borderRadius: '10px', padding: '14px 24px', textDecoration: 'none', fontWeight: 'bold' as const }
+const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
+const container = { padding: '20px 25px' }
+const h1 = {
+  fontSize: '22px',
+  fontWeight: 'bold' as const,
+  color: '#000000',
+  margin: '0 0 20px',
+}
+const text = {
+  fontSize: '14px',
+  color: '#55575d',
+  lineHeight: '1.5',
+  margin: '0 0 25px',
+}
+const button = {
+  backgroundColor: '#000000',
+  color: '#ffffff',
+  fontSize: '14px',
+  borderRadius: '8px',
+  padding: '12px 20px',
+  textDecoration: 'none',
+}
 const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
