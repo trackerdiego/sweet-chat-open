@@ -1,39 +1,47 @@
 
 
-# Plano: Detectar navegador in-app + Corrigir vazamento de email
+# Melhorar instruções de instalação do PWA para usuários leigos
 
-## Problema 1: PWA impossivel de instalar via Stories
+## Problema
 
-Quando alguem clica no link do InfluLab dentro do Instagram/TikTok/Facebook Stories, o app abre no **navegador interno** (WebView). Esse navegador nao tem botao de compartilhar nem suporte a instalacao PWA. O usuario fica preso.
+Os banners atuais (InstallBanner e InAppBrowserBanner) são finas barras no topo com texto pequeno. Usuários leigos não entendem o que precisam fazer, especialmente no iOS onde o processo exige múltiplos passos manuais (compartilhar → adicionar à tela).
 
-### Solucao
+## Solução
 
-Criar um componente `InAppBrowserBanner` que detecta se o usuario esta num navegador in-app e mostra um botao "Abrir no navegador" que redireciona para o navegador real do celular.
+Transformar as instruções em um **modal/dialog visual com passo-a-passo ilustrado**, em vez de um banner fino ou um toast rápido.
 
-**Deteccao** (user-agent): navegadores in-app contem strings como `Instagram`, `FBAN`, `FBAV`, `Twitter`, `Line`, `TikTok`, `BytedanceWebview`.
+### 1. Novo componente `InstallInstructionsModal.tsx`
 
-**Acao**: No Android, usar `intent://` URL scheme para forcar abertura no Chrome. No iOS, instrucoes para copiar link e abrir no Safari (infelizmente iOS nao tem intent scheme universal).
+Um Dialog/Drawer que abre quando o usuário toca "Como instalar" no InstallBanner (iOS) ou quando está no navegador in-app. Contém:
 
-**Onde aparece**: Fixo no topo, acima de tudo, nas paginas Landing e Auth (antes do login). Prioridade sobre o InstallBanner.
+- **Título grande**: "Instale o InfluLab no seu celular"
+- **Passo-a-passo numerado com ícones grandes**:
+  - **iOS (Safari)**: 
+    1. Toque no ícone de compartilhar (ícone Share grande e colorido) na barra inferior do Safari
+    2. Role para baixo e toque em "Adicionar à Tela de Início"
+    3. Toque em "Adicionar" no canto superior direito
+  - **iOS (navegador in-app)**:
+    1. Toque em "Copiar link" (botão grande)
+    2. Abra o Safari
+    3. Cole o link na barra de endereço
+    4. Siga os passos de instalação acima
+  - **Android**: Botão grande "Instalar agora" que dispara o prompt nativo
+- Cada passo com **ícone grande**, **texto claro em linguagem simples**, e **destaque visual** (numbered circles)
+- Botão de fechar discreto
 
-### Arquivos
+### 2. Alterar `InstallBanner.tsx`
 
-- **Novo** `src/hooks/useInAppBrowser.ts` — hook que detecta WebView via user-agent
-- **Novo** `src/components/InAppBrowserBanner.tsx` — banner com botao "Abrir no navegador"
-- **Editar** `src/pages/Landing.tsx` — adicionar o banner
-- **Editar** `src/pages/Auth.tsx` — adicionar o banner
+- No iOS, em vez de mostrar um toast com texto, abrir o `InstallInstructionsModal`
+- Aumentar levemente o banner: texto um pouco maior, botão mais chamativo
+- Texto do botão: "Ver como instalar" (mais claro que "Como fazer")
 
----
+### 3. Alterar `InAppBrowserBanner.tsx`
 
-## Problema 2: Email de outro usuario aparecendo no campo de senha
+- No iOS, ao tocar "Copiar link", além de copiar, abrir o modal com instruções visuais do que fazer depois (abrir Safari, colar, etc.)
+- Tornar o banner mais visualmente impactante: fundo mais contrastante, texto maior
 
-Isso **nao e um vazamento de dados do InfluLab**. E o **autopreenchimento do navegador** (autofill). Como o campo de email tem `id="email"` e `type="email"`, o navegador salva credenciais de outros usuarios que usaram o mesmo celular ou sugere emails de contas Google/iCloud sincronizadas.
-
-### Solucao
-
-Adicionar `autoComplete="off"` nos campos de email e senha da pagina Auth para evitar que o navegador preencha automaticamente com dados de outros usuarios.
-
-### Arquivos
-
-- **Editar** `src/pages/Auth.tsx` — adicionar `autoComplete="off"` nos Inputs de email e senha
+### Arquivos impactados
+- **Novo** `src/components/InstallInstructionsModal.tsx` — modal com passo-a-passo visual
+- **Editar** `src/components/InstallBanner.tsx` — abrir modal no iOS em vez de toast
+- **Editar** `src/components/InAppBrowserBanner.tsx` — abrir modal após copiar link no iOS
 
