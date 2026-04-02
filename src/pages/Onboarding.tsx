@@ -248,25 +248,45 @@ const Onboarding = () => {
       </div>
     </motion.div>,
 
-    <motion.div key="description" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
+    <motion.div key="description" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-5">
       <div className="text-center space-y-2">
         <span className="text-4xl">🎯</span>
-        <h2 className="font-serif text-2xl font-bold">Conte sobre seu conteúdo</h2>
-        <p className="text-muted-foreground text-sm">Descreva o que você faz, para quem cria conteúdo e o que quer alcançar</p>
+        <h2 className="font-serif text-2xl font-bold">Quanto mais você descrever, melhor será sua experiência</h2>
+        <p className="text-muted-foreground text-sm">A IA usa sua descrição para criar seu estudo de público, matriz de 30 dias e roteiros personalizados</p>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="description">Sua descrição</Label>
+      <div className="space-y-3">
+        <Label htmlFor="description">Descreva seu trabalho e público</Label>
         <Textarea
           id="description"
           value={businessDescription}
           onChange={e => setBusinessDescription(e.target.value)}
-          placeholder="Ex: Sou personal trainer focado em pessoas acima de 40 que querem emagrecer sem academia."
-          className="min-h-[120px] text-sm"
+          placeholder={"Ex: Sou nutricionista especializada em emagrecimento feminino pós-gravidez. Meu público são mães de 25 a 40 anos que querem perder peso de forma saudável sem dietas restritivas. Quero me posicionar como autoridade e vender consultorias online."}
+          className="min-h-[130px] text-sm"
           autoFocus
         />
-        <p className={`text-xs ${businessDescription.trim().length >= 30 ? 'text-emerald-500' : 'text-muted-foreground'}`}>
-          {businessDescription.trim().length}/30 caracteres mínimos
+        <p className={`text-xs font-medium ${
+          businessDescription.trim().length >= 80 ? 'text-emerald-500' :
+          businessDescription.trim().length >= 50 ? 'text-yellow-500' :
+          'text-muted-foreground'
+        }`}>
+          {businessDescription.trim().length}/80 caracteres mínimos
+          {businessDescription.trim().length >= 80 && ' ✓'}
+          {businessDescription.trim().length >= 50 && businessDescription.trim().length < 80 && ' — quase lá!'}
         </p>
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+            <Sparkles size={12} /> Dicas para uma descrição poderosa
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground space-y-1.5">
+            <p>Responda mentalmente essas perguntas:</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li><strong>Qual seu nicho principal?</strong> (ex: fitness, finanças, moda)</li>
+              <li><strong>Quem é seu público-alvo?</strong> (idade, perfil, dor principal)</li>
+              <li><strong>Qual seu objetivo?</strong> (vender curso, ganhar seguidores, ser autoridade)</li>
+              <li><strong>Que resultado quer gerar?</strong> (engajamento, vendas, comunidade)</li>
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </motion.div>,
 
