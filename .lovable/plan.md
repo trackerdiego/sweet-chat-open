@@ -1,32 +1,26 @@
 
-# Corrigir Sistema de Pagamentos Asaas
 
-## Problemas Críticos
+# Dose de Coragem — Mudar a Frase Diariamente
 
-### 1. `getClaims()` inexistente — Edge function quebrada
-A função `create-asaas-subscription` usa `supabase.auth.getClaims()` que não existe no SDK. Isso significa que **nenhuma assinatura consegue ser criada** — a função sempre retorna erro.
+## Problema
 
-**Correção:** Trocar por `supabase.auth.getUser()` que retorna o user_id corretamente.
+O componente `MindsetPulse` usa `state.currentDay` (vindo de `user_progress.current_day` no banco) para selecionar a frase. Esse valor só muda quando o usuário avança de dia no programa, não com o calendário real. Então a frase fica estática.
 
-### 2. Eventos de webhook incompletos
-Faltam eventos importantes:
-- `PAYMENT_OVERDUE` / `PAYMENT_REFUNDED` — devem desativar premium
-- `PAYMENT_CONFIRMED` no objeto `payment` pode não ter `externalReference` dependendo do fluxo
+## Solução
 
-### 3. Webhook URL precisa ser configurada no painel Asaas
-A URL do webhook é: `https://gchncrlrmsyzumgmbplh.supabase.co/functions/v1/asaas-webhook`
-O usuário precisa cadastrar essa URL no painel do Asaas em Integrações > Webhooks.
+Trocar a lógica de seleção da frase para usar a **data real do calendário** em vez do dia do programa. Assim, mesmo que o usuário fique no dia 1 do programa por vários dias, a frase muda todo dia.
 
-## Arquivos a Alterar
+## Alteração
 
-### `supabase/functions/create-asaas-subscription/index.ts`
-- Trocar `supabase.auth.getClaims(token)` por `supabase.auth.getUser()` 
-- Extrair `userId` de `user.id` em vez de `claims.sub`
+**`src/components/MindsetPulse.tsx`**
+- Em vez de `mindsetQuotes[(day - 1) % mindsetQuotes.length]`, calcular o índice baseado no dia do ano (`new Date().getDate()` ou day-of-year)
+- Isso garante uma frase diferente a cada dia do calendário, independente do progresso no programa
 
-### `supabase/functions/asaas-webhook/index.ts`
-- Adicionar eventos `PAYMENT_OVERDUE`, `PAYMENT_REFUNDED`, `PAYMENT_DELETED` para desativar premium
-- Melhorar log para facilitar debug
+Lógica:
+```typescript
+const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+const quote = mindsetQuotes[(dayOfYear - 1) % mindsetQuotes.length];
+```
 
-## Passo Manual (informar ao usuário)
-- Configurar URL do webhook no painel Asaas: `https://gchncrlrmsyzumgmbplh.supabase.co/functions/v1/asaas-webhook`
-- Selecionar eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, PAYMENT_REFUNDED, SUBSCRIPTION_DELETED, SUBSCRIPTION_INACTIVE
+Apenas 1 arquivo alterado, alteração de 2 linhas.
+
