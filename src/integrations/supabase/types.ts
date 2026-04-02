@@ -199,6 +199,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          active_session_token: string | null
           audience_size: string | null
           content_style: string | null
           created_at: string | null
@@ -211,6 +212,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active_session_token?: string | null
           audience_size?: string | null
           content_style?: string | null
           created_at?: string | null
@@ -223,6 +225,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active_session_token?: string | null
           audience_size?: string | null
           content_style?: string | null
           created_at?: string | null
