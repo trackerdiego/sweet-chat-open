@@ -19,7 +19,7 @@ interface ReauthenticationEmailProps {
 export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => (
   <Html lang="pt-BR" dir="ltr">
     <Head />
-    <Preview>Seu código de verificação do InfluLab</Preview>
+    <Preview>Seu código de verificação - InfluLab</Preview>
     <Body style={main}>
       <Container style={container}>
         <Text style={logo}>🚀 InfluLab</Text>

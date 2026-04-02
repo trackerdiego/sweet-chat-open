@@ -37,9 +37,9 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 
 // Configuration
 const SITE_NAME = "InfluLab"
-const SENDER_DOMAIN = "notify.app.influlab.pro"
-const ROOT_DOMAIN = "app.influlab.pro"
-const FROM_DOMAIN = "app.influlab.pro"
+const SENDER_DOMAIN = "notify.influlab.pro"
+const ROOT_DOMAIN = "influlab.pro"
+const FROM_DOMAIN = "influlab.pro"
 
 // Sample data for preview mode ONLY (not used in actual email sending).
 // URLs are baked in at scaffold time from the project's real data.
