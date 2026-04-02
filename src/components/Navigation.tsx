@@ -136,7 +136,7 @@ export function Navigation() {
               <ShieldCheck size={20} />
               <span>Admin</span>
             </NavLink>
-          )}
+          <DropdownMenu>
             <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground">
               <Settings size={20} />
               <span>Config</span>
@@ -155,7 +155,7 @@ export function Navigation() {
                 Redefinir perfil
               </DropdownMenuItem>
             </DropdownMenuContent>
-          <DropdownMenu>
+          </DropdownMenu>
         </div>
       </motion.nav>
 
