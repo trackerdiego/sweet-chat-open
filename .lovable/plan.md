@@ -1,34 +1,39 @@
 
 
-# Corrigir input do chat coberto pela barra de navegação no mobile
+# Plano: Detectar navegador in-app + Corrigir vazamento de email
 
-## Problema
+## Problema 1: PWA impossivel de instalar via Stories
 
-Na página Tools, quando o chat IA está aberto no mobile, a barra de navegação inferior (`Navigation`) fica fixa sobre o input de texto do chat, impossibilitando a digitação.
+Quando alguem clica no link do InfluLab dentro do Instagram/TikTok/Facebook Stories, o app abre no **navegador interno** (WebView). Esse navegador nao tem botao de compartilhar nem suporte a instalacao PWA. O usuario fica preso.
 
-## Causa raiz
+### Solucao
 
-- O container do chat em `Tools.tsx` (linha 281) usa `h-[100dvh]` mas não reserva espaço para a barra de navegação inferior (que tem ~60px + safe-area).
-- O `AiChat.tsx` ocupa `h-full` do container pai, mas o input na parte inferior fica escondido atrás da nav.
+Criar um componente `InAppBrowserBanner` que detecta se o usuario esta num navegador in-app e mostra um botao "Abrir no navegador" que redireciona para o navegador real do celular.
 
-## Solução
+**Deteccao** (user-agent): navegadores in-app contem strings como `Instagram`, `FBAN`, `FBAV`, `Twitter`, `Line`, `TikTok`, `BytedanceWebview`.
 
-### 1. `src/pages/Tools.tsx`
+**Acao**: No Android, usar `intent://` URL scheme para forcar abertura no Chrome. No iOS, instrucoes para copiar link e abrir no Safari (infelizmente iOS nao tem intent scheme universal).
 
-Adicionar `pb-20` (padding-bottom) ao container do chat no mobile para empurrar o conteúdo acima da barra de navegação. Alterar a classe do container quando `selectedTool?.id === 'chat'` de:
+**Onde aparece**: Fixo no topo, acima de tudo, nas paginas Landing e Auth (antes do login). Prioridade sobre o InstallBanner.
 
-```
-h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]
-```
+### Arquivos
 
-Para:
+- **Novo** `src/hooks/useInAppBrowser.ts` — hook que detecta WebView via user-agent
+- **Novo** `src/components/InAppBrowserBanner.tsx` — banner com botao "Abrir no navegador"
+- **Editar** `src/pages/Landing.tsx` — adicionar o banner
+- **Editar** `src/pages/Auth.tsx` — adicionar o banner
 
-```
-h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-20 md:pb-0
-```
+---
 
-Isso garante que no mobile o input fique acima da barra, e no desktop (onde a nav é no topo) não adiciona padding extra.
+## Problema 2: Email de outro usuario aparecendo no campo de senha
 
-### Arquivos impactados
-- `src/pages/Tools.tsx` — adicionar `pb-20 md:pb-0` ao container do chat
+Isso **nao e um vazamento de dados do InfluLab**. E o **autopreenchimento do navegador** (autofill). Como o campo de email tem `id="email"` e `type="email"`, o navegador salva credenciais de outros usuarios que usaram o mesmo celular ou sugere emails de contas Google/iCloud sincronizadas.
+
+### Solucao
+
+Adicionar `autoComplete="off"` nos campos de email e senha da pagina Auth para evitar que o navegador preencha automaticamente com dados de outros usuarios.
+
+### Arquivos
+
+- **Editar** `src/pages/Auth.tsx` — adicionar `autoComplete="off"` nos Inputs de email e senha
 
