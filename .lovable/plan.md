@@ -1,31 +1,44 @@
 
+Objetivo
 
-# Corrigir Emails de Autenticação — Branding + Redirecionamento
+- Fazer os próximos emails de confirmação chegarem como “InfluLab” na caixa de entrada, em vez de “Supabase Auth”.
 
-## Problemas
+Diagnóstico
 
-1. **Email chega com branding do Supabase** — O auth-email-hook existe no código mas não está ativado/deployado. O Supabase está enviando o email padrão ("Confirm Your Signup" em inglês, sem marca InfluLab).
+- O código já está preparado para branding: o remetente foi definido como `InfluLab <noreply@influlab.pro>`.
+- O subdomínio de envio `notify.influlab.pro` está verificado.
+- Mesmo assim, os logs atuais ainda mostram envio saindo por `noreply@mail.app.supabase.io`.
+- Também não há sinais de que o fluxo customizado de auth esteja recebendo os eventos.
+- Conclusão: o problema principal não é o template; é que o Auth ainda está usando o envio padrão, não o fluxo brandado da InfluLab.
 
-2. **Link de confirmação aponta para localhost:3000** — O `emailRedirectTo: window.location.origin` resolve para `localhost:3000` no ambiente de preview/dev. Precisa apontar para a URL real do app publicado.
+Plano
 
-## Correções
+1. Reativar o envio customizado dos emails de autenticação
+- Reaplicar a configuração de email de autenticação do projeto para que signup, recuperação e magic link passem pelo fluxo brandado.
+- Se a configuração estiver “desconectada”, refazer o vínculo preservando a marca InfluLab.
 
-### 1. Deploy do auth-email-hook
-O edge function precisa ser deployado para que o Supabase passe a usar os templates customizados com branding InfluLab. Após o deploy, a ativação acontece automaticamente via Cloud → Emails.
+2. Garantir o remetente visível correto
+- Manter o cabeçalho `from` como `InfluLab <noreply@influlab.pro>`.
+- Confirmar que o domínio real de envio continue sendo `notify.influlab.pro`, que já está validado.
 
-### 2. Corrigir URL de redirecionamento em `src/pages/Auth.tsx`
-Trocar `window.location.origin` por uma URL fixa do app publicado, ou usar uma lógica que priorize a URL de produção.
+3. Verificar o estado do envio do projeto
+- Confirmar que o envio customizado do projeto está habilitado.
+- Validar que a fila/processamento de emails esteja pronta para enviar assim que o fluxo de auth voltar a receber eventos.
 
-**Alteração em `src/pages/Auth.tsx`:**
-- No `signUp` (linha 51): trocar `emailRedirectTo: window.location.origin` para usar a URL publicada do app
-- No `resetPasswordForEmail` (linha 27): mesmo ajuste no `redirectTo`
+4. Validar com um novo email de confirmação
+- Disparar um novo cadastro/teste.
+- Confirmar dois sinais de sucesso:
+  - o log deixa de mostrar `mail.app.supabase.io`;
+  - passam a aparecer registros no log interno de emails do projeto.
 
-A URL correta seria `https://influlab.pro` (domínio custom) ou `https://sweet-chat-open.lovable.app` (URL publicada). Como o projeto usa o domínio `influlab.pro`, usaremos esse.
+Resultado esperado
 
-### 3. Re-deploy do auth-email-hook
-Deploy da edge function para ativar os templates brandados que já existem no código.
+- Novos emails chegam com remetente “InfluLab”.
+- O conteúdo continua com branding da InfluLab.
+- Emails antigos já recebidos não mudam; a correção vale para os próximos envios.
 
-## Resultado Esperado
-- Emails chegam com visual InfluLab (logo, cores, texto em PT-BR)
-- Link de confirmação redireciona para `https://influlab.pro` (ou a URL publicada), não mais para localhost
+Detalhes técnicos
 
+- Hoje o projeto já tem quase tudo pronto: domínio verificado, templates customizados e remetente definido no código.
+- O ponto que falta é fazer o Auth realmente usar esse fluxo customizado.
+- Se eu encontrar divergência entre o domínio do app e a URL usada nos links dos emails, também alinharei isso para evitar novo comportamento incorreto no clique do usuário.
