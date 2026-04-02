@@ -19,9 +19,10 @@ import { useState } from 'react';
 const Index = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
-  const { profile, signOut, updateProfile } = useUserProfile();
+  const { profile, signOut } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   if (strategiesLoading || strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
