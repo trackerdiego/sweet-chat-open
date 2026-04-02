@@ -54,10 +54,6 @@ const Index = () => {
   const todayStrategy = strategies[state.currentDay - 1];
   const displayName = profile?.display_name || 'Creator';
 
-  const handleResetNiche = async () => {
-    await updateProfile({ onboarding_completed: false });
-    navigate('/onboarding', { replace: true });
-  };
 
   return (
     <div className="min-h-screen pb-24 md:pt-20">
