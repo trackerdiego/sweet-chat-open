@@ -1,22 +1,32 @@
 
+# Corrigir Sistema de Pagamentos Asaas
 
-# Ativar Premium para Bruna
+## Problemas Críticos
 
-## Usuária identificada
-- **Nome:** Bruna
-- **user_id:** `6066bf74-e0ba-4043-a783-ecf5c78da462`
-- **Status atual:** `is_premium = false`
+### 1. `getClaims()` inexistente — Edge function quebrada
+A função `create-asaas-subscription` usa `supabase.auth.getClaims()` que não existe no SDK. Isso significa que **nenhuma assinatura consegue ser criada** — a função sempre retorna erro.
 
-## Ação
+**Correção:** Trocar por `supabase.auth.getUser()` que retorna o user_id corretamente.
 
-Executar um UPDATE na tabela `user_usage` para definir `is_premium = true`:
+### 2. Eventos de webhook incompletos
+Faltam eventos importantes:
+- `PAYMENT_OVERDUE` / `PAYMENT_REFUNDED` — devem desativar premium
+- `PAYMENT_CONFIRMED` no objeto `payment` pode não ter `externalReference` dependendo do fluxo
 
-```sql
-UPDATE user_usage SET is_premium = true WHERE user_id = '6066bf74-e0ba-4043-a783-ecf5c78da462';
-```
+### 3. Webhook URL precisa ser configurada no painel Asaas
+A URL do webhook é: `https://gchncrlrmsyzumgmbplh.supabase.co/functions/v1/asaas-webhook`
+O usuário precisa cadastrar essa URL no painel do Asaas em Integrações > Webhooks.
 
-## Resultado
-- Bruna terá acesso a todos os dias do programa (sem limite de 7 dias)
-- Sem limites diários de gerações de script, ferramentas, transcrições e chat
-- Poderá redefinir perfil sem paywall
+## Arquivos a Alterar
 
+### `supabase/functions/create-asaas-subscription/index.ts`
+- Trocar `supabase.auth.getClaims(token)` por `supabase.auth.getUser()` 
+- Extrair `userId` de `user.id` em vez de `claims.sub`
+
+### `supabase/functions/asaas-webhook/index.ts`
+- Adicionar eventos `PAYMENT_OVERDUE`, `PAYMENT_REFUNDED`, `PAYMENT_DELETED` para desativar premium
+- Melhorar log para facilitar debug
+
+## Passo Manual (informar ao usuário)
+- Configurar URL do webhook no painel Asaas: `https://gchncrlrmsyzumgmbplh.supabase.co/functions/v1/asaas-webhook`
+- Selecionar eventos: PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, PAYMENT_REFUNDED, SUBSCRIPTION_DELETED, SUBSCRIPTION_INACTIVE
