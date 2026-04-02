@@ -1,32 +1,25 @@
 
 
-# Adicionar visualizacao completa de usuarios no painel admin
+# Forçar re-onboarding para usuários com nicho "lifestyle"
 
 ## Problema
-Atualmente a tabela de usuarios no admin mostra apenas dados basicos (nome, email, nicho, plano, contadores). Nao ha como clicar em um usuario para ver todos os detalhes dele.
+Usuários que ficaram com o nicho padrão "lifestyle" estão tendo experiência ruim porque o estudo de público e a matriz ficam genéricos.
 
-## Plano
+## Solução
+Executar um UPDATE no banco de dados para setar `onboarding_completed = false` em todos os perfis onde `primary_niche = 'lifestyle'`. 
 
-### 1. Expandir a edge function `admin-dashboard` para retornar mais dados
-- Incluir `onboarding_completed`, `content_style`, `audience_size`, `secondary_niches` e `created_at` dos profiles
-- Incluir dados do `audience_profiles` (descricao do publico, avatar gerado)
-- Incluir dados do `user_strategies` (se tem matriz gerada)
-- Incluir `created_at` do auth user (data de cadastro)
+O app já redireciona automaticamente para o onboarding quando `onboarding_completed = false` (lógica em `App.tsx` via `needsOnboarding`), então não precisa mudar código nenhum.
 
-### 2. Adicionar modal/drawer de detalhes do usuario no Admin.tsx
-- Ao clicar em uma linha da tabela, abrir um Sheet (drawer lateral) com todas as informacoes do usuario:
-  - Dados do perfil: nome, email, nicho, nichos secundarios, estilo de conteudo, tamanho da audiencia
-  - Status: onboarding completo ou nao, data de cadastro
-  - Uso: scripts, tools, chat, transcricoes com datas
-  - Plano: free/premium
-  - Se tem estudo de publico gerado (audience_profile)
-  - Se tem matriz de estrategias gerada
-- Cursor pointer nas linhas da tabela para indicar que sao clicaveis
+## Execução
+- Um único comando SQL via migration tool:
+```sql
+UPDATE user_profiles 
+SET onboarding_completed = false 
+WHERE primary_niche = 'lifestyle';
+```
 
-### 3. Adicionar coluna "Onboarding" na tabela principal
-- Badge verde "Completo" ou amarelo "Pendente" para identificar rapidamente quem completou
-
-### Arquivos alterados
-- `supabase/functions/admin-dashboard/index.ts` - retornar dados extras
-- `src/pages/Admin.tsx` - drawer de detalhes + coluna onboarding
+## Resultado
+- Na próxima vez que esses usuários abrirem o app, serão redirecionados ao onboarding (agora com mínimo de 80 caracteres e dicas)
+- Usuários que já preencheram corretamente não são afetados
+- Nenhuma alteração de código necessária
 
