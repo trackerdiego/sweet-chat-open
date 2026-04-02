@@ -38,12 +38,15 @@ serve(async (req) => {
     const userId = user.id;
 
     const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, tool_generations").eq("user_id", userId).maybeSingle();
+    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle();
     const isPremium = usageData?.is_premium ?? false;
-    if (!isPremium && (usageData?.tool_generations ?? 0) >= 2) return new Response(JSON.stringify({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const today = new Date().toISOString().split("T")[0];
+    const isNewDay = usageData?.last_tool_date !== today;
+    const currentToolCount = isNewDay ? 0 : (usageData?.tool_generations ?? 0);
+    if (!isPremium && currentToolCount >= 2) return new Response(JSON.stringify({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     await Promise.all([
-      adminClient.from("user_usage").update({ tool_generations: (usageData?.tool_generations ?? 0) + 1 }).eq("user_id", userId),
+      adminClient.from("user_usage").update({ tool_generations: currentToolCount + 1, last_tool_date: today }).eq("user_id", userId),
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "tool" }),
     ]);
 

@@ -55,12 +55,14 @@ serve(async (req) => {
 
     const { data: usage } = await adminClient
       .from("user_usage")
-      .select("is_premium, chat_messages")
+      .select("is_premium, chat_messages, last_chat_date")
       .eq("user_id", userId)
       .maybeSingle();
 
     const isPremium = usage?.is_premium ?? false;
-    const chatCount = usage?.chat_messages ?? 0;
+    const today = new Date().toISOString().split("T")[0];
+    const isNewDay = usage?.last_chat_date !== today;
+    const chatCount = isNewDay ? 0 : (usage?.chat_messages ?? 0);
 
     if (!isPremium && chatCount >= 10) {
       return new Response(

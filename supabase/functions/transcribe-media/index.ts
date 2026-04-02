@@ -19,12 +19,15 @@ serve(async (req) => {
     const userId = user.id;
 
     const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, transcriptions").eq("user_id", userId).maybeSingle();
+    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, transcriptions, last_transcription_date").eq("user_id", userId).maybeSingle();
     const isPremium = usageData?.is_premium ?? false;
-    if (!isPremium && (usageData?.transcriptions ?? 0) >= 2) return new Response(JSON.stringify({ error: "Você atingiu o limite de 2 transcrições gratuitas. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const today = new Date().toISOString().split("T")[0];
+    const isNewDay = usageData?.last_transcription_date !== today;
+    const currentTransCount = isNewDay ? 0 : (usageData?.transcriptions ?? 0);
+    if (!isPremium && currentTransCount >= 2) return new Response(JSON.stringify({ error: "Você atingiu o limite de 2 transcrições gratuitas. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     await Promise.all([
-      adminClient.from("user_usage").update({ transcriptions: (usageData?.transcriptions ?? 0) + 1 }).eq("user_id", userId),
+      adminClient.from("user_usage").update({ transcriptions: currentTransCount + 1, last_transcription_date: today }).eq("user_id", userId),
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "transcription" }),
     ]);
 
