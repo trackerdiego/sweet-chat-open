@@ -36,9 +36,12 @@ const INITIAL_STEPS: PipelineStep[] = [
 const Onboarding = () => {
   const { updateProfile, profile } = useUserProfile();
   const navigate = useNavigate();
+  const isReturningUser = !!profile && profile.primary_niche !== 'lifestyle' && profile.primary_niche.length < 80;
   const [step, setStep] = useState(0);
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
-  const [businessDescription, setBusinessDescription] = useState(profile?.primary_niche || '');
+  const [businessDescription, setBusinessDescription] = useState(
+    profile?.primary_niche && profile.primary_niche !== 'lifestyle' ? profile.primary_niche : ''
+  );
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
   const [saving, setSaving] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
