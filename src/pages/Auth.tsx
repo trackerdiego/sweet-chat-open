@@ -23,7 +23,7 @@ const Auth = () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: 'https://influlab.pro/reset-password',
       });
       if (error) throw error;
       toast.success('Email de recuperação enviado!');
@@ -48,7 +48,7 @@ const Auth = () => {
           password,
           options: {
             data: { display_name: displayName },
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: 'https://influlab.pro',
           },
         });
         if (error) throw error;
