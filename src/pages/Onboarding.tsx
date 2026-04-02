@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, Users, Brain, Calendar, RefreshCw, CheckCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
 const contentStyles = [
   { id: 'casual', label: 'Casual', description: 'Leve e descontraído, como conversa entre amigos', emoji: '😊' },
