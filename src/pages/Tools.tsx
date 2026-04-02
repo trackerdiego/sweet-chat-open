@@ -278,7 +278,7 @@ const Tools = () => {
   const handleBack = () => { setSelectedTool(null); setUserInput(''); setResult(null); };
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className={`${selectedTool?.id === 'chat' ? 'h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]' : 'min-h-screen pb-24 md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]'} max-w-lg mx-auto`}>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
       <AnimatePresence mode="wait">
         {!selectedTool ? (
