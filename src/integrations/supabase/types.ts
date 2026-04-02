@@ -202,6 +202,7 @@ export type Database = {
           audience_size: string | null
           content_style: string | null
           created_at: string | null
+          description_status: string
           display_name: string
           id: string
           onboarding_completed: boolean | null
@@ -213,6 +214,7 @@ export type Database = {
           audience_size?: string | null
           content_style?: string | null
           created_at?: string | null
+          description_status?: string
           display_name: string
           id?: string
           onboarding_completed?: boolean | null
@@ -224,6 +226,7 @@ export type Database = {
           audience_size?: string | null
           content_style?: string | null
           created_at?: string | null
+          description_status?: string
           display_name?: string
           id?: string
           onboarding_completed?: boolean | null

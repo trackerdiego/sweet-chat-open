@@ -11,6 +11,7 @@ export interface UserProfile {
   content_style: string;
   audience_size: string;
   onboarding_completed: boolean;
+  description_status: 'pending' | 'ok';
 }
 
 export function useUserProfile() {
@@ -51,6 +52,7 @@ export function useUserProfile() {
           display_name: 'Creator',
           primary_niche: 'lifestyle',
           onboarding_completed: false,
+          description_status: 'pending',
         }, { onConflict: 'user_id' })
         .select()
         .single();
@@ -66,13 +68,10 @@ export function useUserProfile() {
   const updateProfile = useCallback(async (updates: Partial<Omit<UserProfile, 'id' | 'user_id'>>) => {
     if (!session?.user) return;
     
+    // Use .update() with only the provided fields — no merging with old profile
     const { data, error } = await (supabase.from as any)('user_profiles')
-      .upsert({
-        user_id: session.user.id,
-        display_name: updates.display_name || profile?.display_name || 'Creator',
-        primary_niche: updates.primary_niche || profile?.primary_niche || 'lifestyle',
-        ...updates,
-      }, { onConflict: 'user_id' })
+      .update(updates)
+      .eq('user_id', session.user.id)
       .select()
       .single();
 
@@ -80,7 +79,7 @@ export function useUserProfile() {
       setProfile(data as UserProfile);
     }
     return { data, error };
-  }, [session, profile]);
+  }, [session]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
