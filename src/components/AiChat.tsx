@@ -108,7 +108,7 @@ export function AiChat() {
         )}
       </div>
       <div className="shrink-0 flex gap-2 items-end pt-2 border-t border-border">
-        <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pergunte algo sobre seu conteúdo..." className="min-h-[44px] max-h-[120px] resize-none" rows={1} disabled={isLoading} />
+        <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pergunte algo sobre seu conteúdo..." className="min-h-[44px] max-h-[100px] resize-none text-base" rows={1} disabled={isLoading} />
         <Button onClick={() => send(input)} disabled={!input.trim() || isLoading} size="icon" className="shrink-0 h-[44px] w-[44px] gold-gradient text-primary-foreground">
           {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
         </Button>
