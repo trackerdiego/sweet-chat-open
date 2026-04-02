@@ -155,7 +155,7 @@ export function Navigation() {
                 Redefinir perfil
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          <DropdownMenu>
         </div>
       </motion.nav>
 
