@@ -92,6 +92,26 @@ const Index = () => {
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
+        {profile && profile.onboarding_completed && profile.primary_niche.length < 80 && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="glass-card p-4 border border-amber-500/20 bg-amber-500/5"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-xl mt-0.5">⚠️</span>
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium">Sua descrição de público está incompleta</p>
+                <p className="text-xs text-muted-foreground">
+                  Sem uma descrição detalhada, o estudo de público e a matriz de conteúdo não serão precisos. Atualize para ter resultados melhores!
+                </p>
+                <Button size="sm" variant="outline" className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10" onClick={() => navigate('/onboarding')}>
+                  Atualizar descrição
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
         {!isPremium && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}
