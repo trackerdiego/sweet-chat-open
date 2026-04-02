@@ -1,35 +1,24 @@
 
 
-# Corrigir status pendente para usuários com descrição real
+# Corrigir status de descrição no painel admin
 
-## Causa raiz
+## Problema
 
-O backfill da migração anterior rodou **antes** do usuário preencher a descrição. Quando ele preencheu depois, o fluxo de onboarding pode ter falhado antes de chegar ao `finalizeOnboarding()`, ou o usuário pode ter atualizado a descrição fora do fluxo completo de onboarding. Resultado: `primary_niche` tem texto real, mas `description_status` ficou `pending`.
+A edge function `admin-dashboard` não inclui o campo `description_status` no objeto de cada usuário retornado. O frontend (`Admin.tsx`) tenta acessar `(u as any).description_status`, que é sempre `undefined`, então todos aparecem como "Pendente".
 
 ## Solução
 
-### 1. Migração SQL para corrigir dados inconsistentes
+### 1. Edge function `supabase/functions/admin-dashboard/index.ts`
 
-Rodar um UPDATE que marca como `ok` todos os usuários que:
-- Tem `primary_niche` diferente de `'lifestyle'` e não vazio
-- Mas ainda estão com `description_status = 'pending'`
+- Adicionar `description_status` ao select de `user_profiles`
+- Incluir `description_status` no objeto retornado para cada usuário
 
-```sql
-UPDATE public.user_profiles
-SET description_status = 'ok',
-    onboarding_completed = true
-WHERE primary_niche IS NOT NULL
-  AND primary_niche != 'lifestyle'
-  AND primary_niche != ''
-  AND description_status = 'pending';
-```
+### 2. Frontend `src/pages/Admin.tsx`
 
-Isso corrige o `agentevendeagente@gmail.com` e qualquer outro usuário na mesma situacao.
-
-### 2. Nenhuma mudanca de codigo necessaria
-
-O `updateProfile` e o `finalizeOnboarding` ja estao corretos. O problema foi apenas dados desatualizados no banco.
+- Adicionar `description_status` à interface `UserData`
+- Substituir `(u as any).description_status` por `u.description_status` (tabela e drawer)
 
 ### Arquivos impactados
-- Nova migracao SQL (apenas UPDATE de dados)
+- `supabase/functions/admin-dashboard/index.ts` — adicionar campo ao select e ao retorno
+- `src/pages/Admin.tsx` — tipar e usar corretamente `description_status`
 
