@@ -1,0 +1,1 @@
+UPDATE user_usage SET is_premium = true WHERE user_id = '6066bf74-e0ba-4043-a783-ecf5c78da462';
