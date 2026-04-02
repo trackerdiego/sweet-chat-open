@@ -1,0 +1,1 @@
+UPDATE user_profiles SET onboarding_completed = false WHERE primary_niche = 'lifestyle' AND onboarding_completed = true;
