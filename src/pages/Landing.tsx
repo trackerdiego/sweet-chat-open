@@ -169,6 +169,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      <InAppBrowserBanner />
       {/* ─── Nav ─── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm pt-[env(safe-area-inset-top)]">
         <div className="container max-w-6xl mx-auto flex items-center justify-between py-3 px-[max(1rem,env(safe-area-inset-left))]">

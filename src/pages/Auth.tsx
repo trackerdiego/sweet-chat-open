@@ -112,7 +112,7 @@ const Auth = () => {
             <form onSubmit={handleForgotPassword} className="glass-card p-6 space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required />
+                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
               </div>
               <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
                 {loading && <Loader2 size={16} className="animate-spin" />}
