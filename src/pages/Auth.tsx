@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
 import logo from '@/assets/influlab-logo.png';
+import { InAppBrowserBanner } from '@/components/InAppBrowserBanner';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -69,6 +70,7 @@ const Auth = () => {
   if (showConfirmation) {
     return (
       <div className="min-h-screen flex flex-col">
+        <InAppBrowserBanner />
         <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
           <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
           <h1 className="font-serif text-2xl font-bold text-white mt-4">Verifique seu email ✉️</h1>
@@ -99,6 +101,7 @@ const Auth = () => {
   if (isForgotPassword) {
     return (
       <div className="min-h-screen flex flex-col">
+        <InAppBrowserBanner />
         <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
           <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
           <h1 className="font-serif text-2xl font-bold text-white mt-4">Recuperar senha 🔑</h1>
@@ -109,7 +112,7 @@ const Auth = () => {
             <form onSubmit={handleForgotPassword} className="glass-card p-6 space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required />
+                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
               </div>
               <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
                 {loading && <Loader2 size={16} className="animate-spin" />}
@@ -127,6 +130,7 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <InAppBrowserBanner />
       <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
         <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
         <h1 className="font-serif text-2xl font-bold text-white mt-4">
@@ -147,7 +151,7 @@ const Auth = () => {
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required />
+              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -158,7 +162,7 @@ const Auth = () => {
                   </button>
                 )}
               </div>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" minLength={6} required />
+              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="off" minLength={6} required />
             </div>
             <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
               {loading && <Loader2 size={16} className="animate-spin" />}
