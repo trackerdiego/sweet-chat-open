@@ -48,7 +48,7 @@ const Auth = () => {
           password,
           options: {
             data: { display_name: displayName },
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: 'https://influlab.pro',
           },
         });
         if (error) throw error;
