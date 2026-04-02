@@ -1,34 +1,32 @@
 
 
-# Melhorar o Onboarding para garantir descrições mais completas
+# Adicionar visualizacao completa de usuarios no painel admin
 
 ## Problema
-Usuários estão preenchendo descrições rasas ou pulando o campo, resultando em nichos genéricos ("lifestyle") e conteúdo de IA pouco personalizado.
+Atualmente a tabela de usuarios no admin mostra apenas dados basicos (nome, email, nicho, plano, contadores). Nao ha como clicar em um usuario para ver todos os detalhes dele.
 
-## Alterações em `src/pages/Onboarding.tsx`
+## Plano
 
-### 1. Aumentar mínimo de caracteres de 30 para 80
-- Garante que o usuário escreva pelo menos 2 frases úteis
-- Atualizar a validação em `canAdvance()` e o contador visual
+### 1. Expandir a edge function `admin-dashboard` para retornar mais dados
+- Incluir `onboarding_completed`, `content_style`, `audience_size`, `secondary_niches` e `created_at` dos profiles
+- Incluir dados do `audience_profiles` (descricao do publico, avatar gerado)
+- Incluir dados do `user_strategies` (se tem matriz gerada)
+- Incluir `created_at` do auth user (data de cadastro)
 
-### 2. Reescrever textos do step 1 (descrição) para serem mais persuasivos
-- Título: "Quanto mais você descrever, melhor será sua experiência"
-- Subtítulo explicando que a IA usa isso para criar o estudo de público, matriz e roteiros
-- Placeholder mais detalhado com exemplo real completo
+### 2. Adicionar modal/drawer de detalhes do usuario no Admin.tsx
+- Ao clicar em uma linha da tabela, abrir um Sheet (drawer lateral) com todas as informacoes do usuario:
+  - Dados do perfil: nome, email, nicho, nichos secundarios, estilo de conteudo, tamanho da audiencia
+  - Status: onboarding completo ou nao, data de cadastro
+  - Uso: scripts, tools, chat, transcricoes com datas
+  - Plano: free/premium
+  - Se tem estudo de publico gerado (audience_profile)
+  - Se tem matriz de estrategias gerada
+- Cursor pointer nas linhas da tabela para indicar que sao clicaveis
 
-### 3. Adicionar dicas colapsáveis abaixo do textarea
-- Pequeno bloco com "💡 Dicas para uma descrição poderosa:" listando 3-4 perguntas guia:
-  - Qual seu nicho principal?
-  - Quem é seu público-alvo?
-  - Qual seu objetivo com o conteúdo?
-  - Que tipo de resultado você quer gerar?
+### 3. Adicionar coluna "Onboarding" na tabela principal
+- Badge verde "Completo" ou amarelo "Pendente" para identificar rapidamente quem completou
 
-### 4. Feedback visual progressivo no contador
-- Verde a partir de 80 chars (mínimo)
-- Amarelo entre 50-79 (quase lá)
-- Cinza abaixo de 50
-
-## Resultado
-- Descrições mais ricas → estudo de público mais profundo → experiência melhor desde o primeiro dia
-- Nenhuma mudança de banco de dados necessária
+### Arquivos alterados
+- `supabase/functions/admin-dashboard/index.ts` - retornar dados extras
+- `src/pages/Admin.tsx` - drawer de detalhes + coluna onboarding
 
