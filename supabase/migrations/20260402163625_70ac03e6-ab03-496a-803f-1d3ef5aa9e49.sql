@@ -1,0 +1,1 @@
+ALTER TABLE public.user_profiles ADD COLUMN active_session_token text;
