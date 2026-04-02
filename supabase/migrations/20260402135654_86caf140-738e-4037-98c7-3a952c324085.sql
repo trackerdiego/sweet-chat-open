@@ -1,0 +1,1 @@
+UPDATE user_profiles SET onboarding_completed = true WHERE length(primary_niche) >= 80 AND onboarding_completed = false;

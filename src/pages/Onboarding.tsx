@@ -36,9 +36,12 @@ const INITIAL_STEPS: PipelineStep[] = [
 const Onboarding = () => {
   const { updateProfile, profile } = useUserProfile();
   const navigate = useNavigate();
+  const isReturningUser = !!profile && profile.primary_niche !== 'lifestyle' && profile.primary_niche.length < 80;
   const [step, setStep] = useState(0);
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
-  const [businessDescription, setBusinessDescription] = useState(profile?.primary_niche || '');
+  const [businessDescription, setBusinessDescription] = useState(
+    profile?.primary_niche && profile.primary_niche !== 'lifestyle' ? profile.primary_niche : ''
+  );
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
   const [saving, setSaving] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
@@ -250,6 +253,12 @@ const Onboarding = () => {
     </motion.div>,
 
     <motion.div key="description" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-5">
+      {isReturningUser && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm space-y-1">
+          <p className="font-medium text-amber-600">⚠️ Sua descrição anterior ficou muito curta</p>
+          <p className="text-muted-foreground text-xs">Sem uma descrição detalhada, o estudo de público e a matriz de conteúdo não conseguem ser precisos. Descreva melhor para ter resultados incríveis!</p>
+        </motion.div>
+      )}
       <div className="text-center space-y-2">
         <span className="text-4xl">🎯</span>
         <h2 className="font-serif text-2xl font-bold">Quanto mais você descrever, melhor será sua experiência</h2>
