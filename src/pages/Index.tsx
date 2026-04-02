@@ -73,14 +73,9 @@ const Index = () => {
             <p className="text-white/70 text-sm flex items-center gap-1.5">
               <Calendar size={14} /> Dia {state.currentDay} de 30
             </p>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" onClick={() => isPremium ? setShowResetDialog(true) : setCheckoutOpen(true)} className="text-white/70 hover:text-white hover:bg-white/10">
-                {isPremium ? <RefreshCw size={18} /> : <Lock size={18} />}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={signOut} className="text-white/70 hover:text-white hover:bg-white/10">
-                <LogOut size={18} />
-              </Button>
-            </div>
+            <Button variant="ghost" size="icon" onClick={signOut} className="text-white/70 hover:text-white hover:bg-white/10">
+              <LogOut size={18} />
+            </Button>
           </div>
           <div className="space-y-1">
             <h1 className="font-serif text-3xl font-bold text-white">
