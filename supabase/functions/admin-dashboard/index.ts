@@ -76,6 +76,7 @@ serve(async (req) => {
         content_style: p.content_style,
         audience_size: p.audience_size,
         onboarding_completed: p.onboarding_completed ?? false,
+        description_status: p.description_status || "pending",
         profile_created_at: p.created_at,
         auth_created_at: auth.created_at,
         is_premium: (u as any).is_premium ?? false,
