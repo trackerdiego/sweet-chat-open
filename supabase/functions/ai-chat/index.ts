@@ -55,12 +55,14 @@ serve(async (req) => {
 
     const { data: usage } = await adminClient
       .from("user_usage")
-      .select("is_premium, chat_messages")
+      .select("is_premium, chat_messages, last_chat_date")
       .eq("user_id", userId)
       .maybeSingle();
 
     const isPremium = usage?.is_premium ?? false;
-    const chatCount = usage?.chat_messages ?? 0;
+    const today = new Date().toISOString().split("T")[0];
+    const isNewDay = usage?.last_chat_date !== today;
+    const chatCount = isNewDay ? 0 : (usage?.chat_messages ?? 0);
 
     if (!isPremium && chatCount >= 10) {
       return new Response(
@@ -99,7 +101,7 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
     systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.`;
 
     await Promise.all([
-      adminClient.from("user_usage").update({ chat_messages: chatCount + 1 }).eq("user_id", userId),
+      adminClient.from("user_usage").update({ chat_messages: chatCount + 1, last_chat_date: today }).eq("user_id", userId),
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "chat" }),
     ]);
 
