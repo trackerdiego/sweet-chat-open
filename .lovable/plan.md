@@ -1,56 +1,43 @@
 
-Objetivo
 
-- Resolver por que os emails ainda chegam como “Supabase Auth” e esclarecer se falta alguma ação manual.
+# Continuar: Aplicar branding InfluLab e fazer deploy
 
-Diagnóstico
+## Situacao Atual
+- O scaffold rodou com sucesso (dominio `notify.app.influlab.pro` alinhado)
+- Mas os templates voltaram ao padrao: ingles, cores pretas, `SITE_NAME = "sweet-chat-open"`
+- Falta reaplicar o branding e fazer deploy
 
-- O problema não está no `signUp()`:
-  - o cadastro já usa `emailRedirectTo: 'https://influlab.pro'`
-  - a recuperação já usa `redirectTo: 'https://influlab.pro/reset-password'`
-- O email de confirmação bem-sucedido mais recente saiu do fluxo padrão do Supabase:
-  - `mail_from = noreply@mail.app.supabase.io`
-- O fluxo customizado não está entrando:
-  - não há logs de execução do `auth-email-hook`
-  - `email_send_log` está vazio
-- Há um desencontro de configuração:
-  - o projeto ainda aparece vinculado ao domínio de email `app.influlab.pro`
-  - o código do hook está configurado para `notify.influlab.pro` / `influlab.pro`
-- Os últimos testes também estão batendo em limite de envio:
-  - `429 over_email_send_rate_limit`
+## Plano
 
-O que isso responde
+### 1. Atualizar auth-email-hook/index.ts
+- `SITE_NAME` → `"InfluLab"`
+- `SAMPLE_PROJECT_URL` → `"https://app.influlab.pro"`
+- `EMAIL_SUBJECTS` → traduzir para PT-BR:
+  - signup: "Confirme seu e-mail"
+  - recovery: "Redefinir sua senha"
+  - magiclink: "Seu link de acesso"
+  - invite: "Voce foi convidado(a)"
+  - email_change: "Confirme seu novo e-mail"
+  - reauthentication: "Seu codigo de verificacao"
 
-- Não parece que o primeiro ajuste seja manual dentro do Supabase Auth.
-- O problema persiste porque o fluxo brandado não está ativo de verdade no projeto: o envio continua caindo no remetente padrão, o hook não executa e os testes recentes ainda estão poluídos por rate limit.
-- Se houver um passo manual, ele é mais provavelmente no gerenciamento de email do projeto para alinhar o domínio ativo, não no formulário de signup nem no redirect.
+### 2. Aplicar branding nos 6 templates
+- Cores da marca: primary `hsl(258, 60%, 55%)`, foreground `hsl(260, 20%, 15%)`, muted `hsl(260, 10%, 45%)`
+- Botao: `backgroundColor: 'hsl(258, 60%, 55%)'`, `borderRadius: '1rem'`
+- Font: `'Inter, Arial, sans-serif'`
+- Traduzir todo o conteudo para PT-BR
+- Templates: signup, recovery, magic-link, invite, email-change, reauthentication
 
-Plano
+### 3. Deploy do auth-email-hook
+- Fazer deploy para ativar as mudancas
 
-1. Alinhar o domínio de email ativo do projeto
-   - Confirmar o domínio que o projeto vai usar de fato.
-   - Trocar o domínio ativo do projeto para o mesmo domínio usado no hook.
-   - Garantir que os emails do projeto estejam habilitados.
+### 4. Validar
+- Verificar nos previews que o branding esta correto
 
-2. Reconciliar o fluxo de auth email
-   - Regerar/reativar os templates de autenticação sobre o domínio ativo correto.
-   - Publicar novamente o hook para garantir que o Auth passe pela fila personalizada.
+## Detalhes Tecnicos
+- Primary: `hsl(258, 60%, 55%)` — botoes e destaques
+- Primary-foreground: `hsl(0, 0%, 100%)` — texto nos botoes
+- Foreground: `hsl(260, 20%, 15%)` — titulos
+- Muted-foreground: `hsl(260, 10%, 45%)` — texto do corpo
+- Border-radius: `1rem`
+- Font: Inter com fallback Arial
 
-3. Validar com teste limpo
-   - Esperar a janela do rate limit esfriar.
-   - Fazer apenas 1 teste de signup.
-   - Confirmar 3 sinais:
-     - aparece execução do `auth-email-hook`
-     - aparece registro em `email_send_log`
-     - não aparece novo envio via `mail.app.supabase.io`
-
-4. Só se ainda falhar depois disso
-   - Aí sim revisar a configuração do Auth no painel do Supabase como diagnóstico de exceção, porque hoje a evidência principal é que o hook nem está sendo acionado.
-
-Detalhes técnicos
-
-- Evidência de envio padrão: `noreply@mail.app.supabase.io`
-- Evidência de hook inativo: sem logs em `auth-email-hook`
-- Evidência de fila inativa: `email_send_log` vazio
-- Divergência atual: domínio ativo do projeto = `app.influlab.pro`; código do hook = `notify.influlab.pro` / `influlab.pro`
-- Ruído atual de teste: múltiplos `429` de rate limit no `/signup`
