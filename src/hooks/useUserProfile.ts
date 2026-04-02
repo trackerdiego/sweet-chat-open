@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 const SESSION_TOKEN_KEY = 'influlab_session_token';
 
+
 export interface UserProfile {
   id: string;
   user_id: string;
