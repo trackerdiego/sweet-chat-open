@@ -122,7 +122,21 @@ export function Navigation() {
               <span>{label}</span>
             </NavLink>
           ))}
-          <DropdownMenu>
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium ${
+                  isActive
+                    ? 'text-primary-foreground gold-gradient shadow-md shadow-primary/20'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <ShieldCheck size={20} />
+              <span>Admin</span>
+            </NavLink>
+          )}
             <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground">
               <Settings size={20} />
               <span>Config</span>
