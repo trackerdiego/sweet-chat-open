@@ -76,7 +76,7 @@ export function AiChat() {
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)] md:h-[calc(100vh-8rem)]">
+    <div className="flex flex-col h-full">
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 pb-4 pr-1">
         {messages.length === 0 && (
