@@ -1,53 +1,27 @@
 
 
-# Limitar acesso a 1 dispositivo por vez
+# Corrigir tela de carregamento infinito
 
-## Como funciona
+## Problema raiz
 
-Cada vez que o usuário faz login ou abre o app, registramos um "session token" unico no banco. Se outro dispositivo faz login com a mesma conta, o token muda e o dispositivo anterior e deslogado automaticamente na proxima verificacao.
+A função `fetchProfile` no `useUserProfile.ts` não tem `try/catch`. Se qualquer chamada ao Supabase falhar (rede instável, timeout, servidor lento), a função lança exceção e `setLoading(false)` nunca executa. O app fica preso em "Carregando..." eternamente.
 
-## Implementacao
+## Solução
 
-### 1. Migration: adicionar coluna `active_session_token` em `user_profiles`
+### 1. Adicionar try/catch com finally em `fetchProfile`
 
-```sql
-ALTER TABLE public.user_profiles
-ADD COLUMN active_session_token text;
-```
+Envolver toda a lógica de `fetchProfile` em try/catch/finally para garantir que `setLoading(false)` sempre execute, mesmo com falhas de rede.
 
-### 2. `src/hooks/useUserProfile.ts`
+Se houver erro, exibir um toast com opção de tentar novamente.
 
-- No login/carregamento da sessao, gerar um token unico (`crypto.randomUUID()`) e salvar no `localStorage` e na coluna `active_session_token` do perfil
-- Criar um intervalo (a cada 30s) que verifica se o `active_session_token` no banco ainda bate com o token local
-- Se nao bater, significa que outro dispositivo tomou a sessao: deslogar o usuario automaticamente e mostrar um toast ("Sua conta foi acessada em outro dispositivo")
+### 2. Adicionar timeout de segurança
 
-### 3. Fluxo
+Incluir um timeout de 10 segundos no carregamento inicial. Se `loading` ainda estiver `true` após esse tempo, forçar `setLoading(false)` e mostrar a tela de login (fail-safe).
 
-```text
-Dispositivo A faz login
-  → gera token "abc123"
-  → salva no banco e localStorage
+### 3. Proteger o preview do Lovable contra gerar token de sessão
 
-Dispositivo B faz login com mesma conta
-  → gera token "xyz789"
-  → atualiza banco para "xyz789"
-
-Dispositivo A verifica (polling 30s)
-  → banco tem "xyz789", local tem "abc123"
-  → mismatch → deslogar A automaticamente
-```
-
-### 4. Protecao extra na Auth page
-
-- Apos `signInWithPassword` ou `signUp` com sessao, imediatamente gravar o novo token
+No `fetchProfile`, verificar se o app está rodando dentro de um iframe ou em domínio de preview do Lovable. Se sim, pular a gravação do `active_session_token` no banco para evitar que o preview deslogue dispositivos reais.
 
 ### Arquivos impactados
-- **Migration SQL** — adicionar `active_session_token` a `user_profiles`
-- **`src/hooks/useUserProfile.ts`** — gerar token, gravar no banco, polling de verificacao, auto-logout
-- **`src/pages/Auth.tsx`** — gravar token apos login bem-sucedido (ou delegar ao hook)
-
-### Consideracoes
-- O polling de 30s e leve (1 query simples por usuario)
-- Se o usuario recarregar a pagina, o token local persiste no localStorage, nao precisa gerar outro
-- Se o usuario fizer logout manual, o token e limpo
+- **Editar** `src/hooks/useUserProfile.ts` — try/catch/finally + timeout de segurança + skip token em preview
 
