@@ -28,6 +28,14 @@ function getOrCreateSessionToken(): string {
   return token;
 }
 
+function isPreviewEnvironment(): boolean {
+  try {
+    if (window.self !== window.top) return true;
+  } catch { return true; }
+  const host = window.location.hostname;
+  return host.includes('id-preview--') || host.includes('lovableproject.com');
+}
+
 export function useUserProfile() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
