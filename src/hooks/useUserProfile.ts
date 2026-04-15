@@ -28,6 +28,14 @@ function getOrCreateSessionToken(): string {
   return token;
 }
 
+function isPreviewEnvironment(): boolean {
+  try {
+    if (window.self !== window.top) return true;
+  } catch { return true; }
+  const host = window.location.hostname;
+  return host.includes('id-preview--') || host.includes('lovableproject.com');
+}
+
 export function useUserProfile() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -39,6 +47,20 @@ export function useUserProfile() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+  }, []);
+
+  // Safety timeout: if loading takes more than 10s, force it off
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) {
+          console.warn('[useUserProfile] Loading timeout — forcing loading=false');
+          return false;
+        }
+        return prev;
+      });
+    }, 10000);
+    return () => clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
@@ -65,54 +87,62 @@ export function useUserProfile() {
   }, [session, stopPolling]);
 
   const fetchProfile = async (userId: string) => {
-    if (!profile) setLoading(true);
-    let { data, error } = await (supabase.from as any)('user_profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    try {
+      if (!profile) setLoading(true);
+      let { data, error } = await (supabase.from as any)('user_profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-    if (!error && !data) {
-      const { data: newData } = await (supabase.from as any)('user_profiles')
-        .upsert({
-          user_id: userId,
-          display_name: 'Creator',
-          primary_niche: 'lifestyle',
-          onboarding_completed: false,
-          description_status: 'pending',
-        }, { onConflict: 'user_id' })
-        .select()
-        .single();
-      data = newData;
-    }
+      if (!error && !data) {
+        const { data: newData } = await (supabase.from as any)('user_profiles')
+          .upsert({
+            user_id: userId,
+            display_name: 'Creator',
+            primary_niche: 'lifestyle',
+            onboarding_completed: false,
+            description_status: 'pending',
+          }, { onConflict: 'user_id' })
+          .select()
+          .single();
+        data = newData;
+      }
 
-    if (data) {
-      setProfile(data as UserProfile);
+      if (data) {
+        setProfile(data as UserProfile);
 
-      // Register session token
-      const token = getOrCreateSessionToken();
-      await (supabase.from as any)('user_profiles')
-        .update({ active_session_token: token })
-        .eq('user_id', userId);
+        // Skip session token in preview/iframe to avoid kicking real devices
+        if (!isPreviewEnvironment()) {
+          const token = getOrCreateSessionToken();
+          await (supabase.from as any)('user_profiles')
+            .update({ active_session_token: token })
+            .eq('user_id', userId);
 
-      // Start polling for session validity
-      stopPolling();
-      pollingRef.current = setInterval(async () => {
-        const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-        if (!localToken) return;
-        const { data: check } = await (supabase.from as any)('user_profiles')
-          .select('active_session_token')
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (check && check.active_session_token && check.active_session_token !== localToken) {
-          localStorage.removeItem(SESSION_TOKEN_KEY);
-          await supabase.auth.signOut();
-          setSession(null);
-          setProfile(null);
-          toast.error('Sua conta foi acessada em outro dispositivo. Você foi desconectado.');
+          // Start polling for session validity
+          stopPolling();
+          pollingRef.current = setInterval(async () => {
+            const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
+            if (!localToken) return;
+            const { data: check } = await (supabase.from as any)('user_profiles')
+              .select('active_session_token')
+              .eq('user_id', userId)
+              .maybeSingle();
+            if (check && check.active_session_token && check.active_session_token !== localToken) {
+              localStorage.removeItem(SESSION_TOKEN_KEY);
+              await supabase.auth.signOut();
+              setSession(null);
+              setProfile(null);
+              toast.error('Sua conta foi acessada em outro dispositivo. Você foi desconectado.');
+            }
+          }, 30000);
         }
-      }, 30000);
+      }
+    } catch (err) {
+      console.error('[useUserProfile] fetchProfile error:', err);
+      toast.error('Erro ao carregar perfil. Tente recarregar a página.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const updateProfile = useCallback(async (updates: Partial<Omit<UserProfile, 'id' | 'user_id'>>) => {
