@@ -1,4 +1,4 @@
-project_id = "gchncrlrmsyzumgmbplh"
+project_id = "default"
 
 [functions]
   [functions.auth-email-hook]
