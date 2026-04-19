@@ -1,26 +1,41 @@
 
 
-User quer que eu teste na prática a conexão com o self-hosted (`api.influlab.pro`). Mas tem um detalhe crítico que preciso explicar antes de prometer qualquer teste:
+Usuário gerou keys novas e quer atualizar. Preciso pedir as keys de forma segura e clara.
 
-**Minhas ferramentas Supabase (`supabase--read_query`, `supabase--curl_edge_functions`, `supabase--analytics_query`, etc.) estão ligadas ao projeto Lovable Cloud original (`gchncrlrmsyzumgmbplh.supabase.co`), NÃO ao self-hosted.**
+**O que preciso receber:**
+1. **JWT_SECRET** novo (idealmente gerado com `openssl rand -base64 48` localmente, NÃO em site online) — esse vai pro Easypanel apenas, não pro código
+2. **ANON_KEY** nova (assinada com o JWT_SECRET acima) — vai pro `client.ts` e `.env`
+3. **SERVICE_ROLE_KEY** nova — vai como secret no painel das edge functions do self-hosted, NÃO no chat idealmente
 
-Evidência:
-- `<supabase-info>` mostra project ref `gchncrlrmsyzumgmbplh`
-- `.env` ainda tem `VITE_SUPABASE_URL="https://gchncrlrmsyzumgmbplh.supabase.co"` (apesar do `client.ts` apontar pro self-hosted)
-- Secrets listados são do Lovable Cloud
-- Não tenho credenciais nem ferramenta nativa pra falar com `api.influlab.pro`
+**Risco a reforçar:** se gerou de novo no mesmo site online, o problema persiste. JWT_SECRET precisa ser secreto.
 
-O que EU consigo testar de verdade:
-1. ✅ HTTP genérico contra `api.influlab.pro` via `code--exec curl` (qualquer endpoint público — health, signup, webhook fake)
-2. ✅ Rodar todos os curls do `TESTE-CHECKLIST.md` etapas 1, 2, 3.2, 3.4 sem precisar de login
-3. ❌ Queries SQL no banco self-hosted (não tenho psql apontando pra lá)
-4. ❌ Functions autenticadas (precisaria de JWT de usuário real, posso pegar do signup do passo 2)
+## Plano de execução (quando aprovado)
 
-O que precisa do usuário:
-- ANON_KEY do self-hosted (não tenho — a do `client.ts` parece placeholder/inválida: `iat:1713456000` é 2024-04 e `exp:2028` é round demais)
-- Confirmação de quais functions já foram deployadas (pra não testar 404 desnecessário)
+**Etapa 1 — Validar antes de mudar código**
+Rodar curl com a ANON_KEY nova contra `https://api.influlab.pro/rest/v1/user_profiles?limit=1` (com header `apikey` + `Authorization: Bearer`). 
+- 200 → keys batem com JWT_SECRET do Easypanel ✅
+- 401 "invalid signature" → JWT_SECRET no Easypanel não bate com o que assinou as keys ❌ (parar e re-sincronizar)
 
-Plano: criar script `scripts/smoke-test-selfhost.sh` que roda tudo que dá pra rodar sem credencial extra, e pra etapas autenticadas usar o `access_token` retornado pelo próprio signup. Salvar resultados em `/tmp/smoke-results.txt`.
+**Etapa 2 — Atualizar frontend**
+- `src/integrations/supabase/client.ts` → trocar `SUPABASE_PUBLISHABLE_KEY` pela ANON_KEY nova
+- `.env` → atualizar `VITE_SUPABASE_URL="https://api.influlab.pro"` e `VITE_SUPABASE_PUBLISHABLE_KEY="<nova_anon>"`
 
-Mas antes de codar, preciso da ANON_KEY real e saber se já fez deploy das functions. Vou pedir.
+**Etapa 3 — Confirmar secrets no self-hosted**
+Lembrar usuário que precisa atualizar no Studio do `api.influlab.pro` (não no Lovable Cloud):
+- `SUPABASE_ANON_KEY` = nova anon
+- `SUPABASE_SERVICE_ROLE_KEY` = nova service_role
+- `SUPABASE_URL` = `https://api.influlab.pro`
+
+**Etapa 4 — Smoke test**
+Rodar bateria do `TESTE-CHECKLIST.md` etapas 1, 2, 3.2, 3.3 com curl direto.
+
+## Como me passar as keys (importante)
+
+- **ANON_KEY**: pode colar no chat (é pública por design)
+- **SERVICE_ROLE_KEY**: NÃO cole no chat. Confirme só que cadastrou nos secrets do self-hosted
+- **JWT_SECRET**: NUNCA cole. Só fica no Easypanel
+
+## Pergunta antes de prosseguir
+
+Onde você gerou o JWT_SECRET novo?
 
