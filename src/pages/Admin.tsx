@@ -88,17 +88,26 @@ export default function Admin() {
   useEffect(() => {
     const fetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/admin-dashboard`,
-        { headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" } }
-      );
-      if (!res.ok) { setError("Acesso negado"); setLoading(false); return; }
-      const json = await res.json();
-      setData(json);
+      if (!session) {
+        setError("Acesso negado");
+        setLoading(false);
+        return;
+      }
+
+      const { data: dashboardData, error: functionError } = await supabase.functions.invoke("admin-dashboard", {
+        method: "GET",
+      });
+
+      if (functionError || !dashboardData) {
+        setError("Acesso negado");
+        setLoading(false);
+        return;
+      }
+
+      setData(dashboardData as DashboardData);
       setLoading(false);
     };
+
     fetchData();
   }, []);
 
