@@ -1,62 +1,66 @@
 
 
-User wants:
-1. Check-up on payment integration (Asaas)
-2. Tell which webhook events to enable in Asaas panel
-3. Check if features are working right now for live users
+User confirms:
+1. Quer continuar self-hosted (`api.influlab.pro`)
+2. Tem acesso SSH ao servidor
+3. Anon key no `client.ts` é a real (gerada pelo JWT_SECRET do self-hosted)
 
-I'm in plan mode (read-only). Let me plan the investigation + deliverables.
+Então o problema NÃO é chave inválida em si — é que o backend self-hosted tá rejeitando como `UNAUTHORIZED_LEGACY_JWT`. Isso acontece quando:
+- O Supabase self-hosted foi atualizado pra versão nova que usa **signing keys** (assimétrico) em vez de JWT_SECRET (simétrico/legado)
+- A anon key foi gerada no formato HS256 antigo, mas o GoTrue/Kong agora exige RS256/ES256
+- OU as edge functions foram deployadas com versão de SDK que não aceita mais o legacy JWT
 
-What I'll inspect:
-- `asaas-webhook` and `create-asaas-subscription` code (already shown — I have it)
-- Edge function logs for both functions (recent activity)
-- DB queries: recent `user_usage` premium activations, recent signups, recent strategies generated, recent usage_logs
-- Edge logs for `ai-chat`, `generate-*` to see if Gemini-direct refactor is working
-- Auth logs for recent errors
+Outra possibilidade forte: o `verify_jwt` das functions privadas tá `true` (default), e o Kong/edge-runtime do self-hosted rejeita antes mesmo de chegar no código da function.
 
-## Plan
+Plano enxuto:
 
-### 1. Auditoria de pagamentos (código + dados reais)
-- Reler `asaas-webhook/index.ts` e `create-asaas-subscription/index.ts` (já em contexto) — validar fluxo end-to-end
-- Query no DB: últimas ativações `is_premium=true` em `user_usage` (últimos 7 dias)
-- Edge logs de `asaas-webhook` (últimas 24h) — confirmar se Asaas está chamando e respondendo 200
-- Edge logs de `create-asaas-subscription` — checar erros de criação de cliente/assinatura
-- Verificar se `ASAAS_WEBHOOK_TOKEN` confere com o que tá no painel Asaas (via teste de token rejeitado nos logs)
+## Diagnóstico (vou fazer no modo default)
 
-### 2. Lista de eventos Asaas pra ativar no webhook
-Baseado no código atual de `asaas-webhook`, os eventos tratados são:
+1. **Smoke test direto** no `api.influlab.pro`:
+   - `curl https://api.influlab.pro/auth/v1/health` → ver versão do GoTrue
+   - `curl -H "apikey: <anon>" https://api.influlab.pro/rest/v1/` → confirma se a anon key é aceita pelo PostgREST
+   - `curl -H "Authorization: Bearer <anon>" https://api.influlab.pro/functions/v1/ai-chat` → reproduzir o 401
 
-**Ativam premium:**
-- `PAYMENT_CONFIRMED` — pagamento confirmado (cartão/pix/boleto)
-- `PAYMENT_RECEIVED` — pagamento recebido (compensado)
+2. **Identificar a causa exata** do `UNAUTHORIZED_LEGACY_JWT`:
+   - Se PostgREST aceita mas Functions rejeita → problema é no edge-runtime do self-hosted (config de signing keys)
+   - Se PostgREST também rejeita → anon key precisa ser regerada
 
-**Desativam premium:**
-- `PAYMENT_OVERDUE` — pagamento atrasado
-- `PAYMENT_REFUNDED` — estornado
-- `PAYMENT_DELETED` — pagamento deletado
-- `SUBSCRIPTION_DELETED` — assinatura cancelada
-- `SUBSCRIPTION_INACTIVE` — assinatura inativa
+## Correção (depende do diagnóstico)
 
-Vou entregar a lista exata pra marcar no painel Asaas (Integrações → Webhooks → Eventos).
+**Cenário A — Signing keys habilitado no self-hosted (mais provável):**
+Você roda no servidor via SSH:
+```bash
+# Desabilitar signing keys e voltar pro JWT_SECRET legado
+docker exec supabase-auth env | grep JWT
+# Garantir GOTRUE_JWT_SECRET = mesmo valor do .env do supabase
+# Reiniciar:
+docker compose restart auth kong functions
+```
+Eu te entrego o checklist exato com comandos.
 
-### 3. Health-check funcional (uso real agora)
-- DB: `auth.users` últimos cadastros (24h), `user_profiles.onboarding_completed`, `audience_profiles` gerados, `user_strategies` gerados
-- Edge logs (últimas 24h) por function: `ai-chat`, `generate-audience-profile`, `generate-personalized-matrix`, `generate-daily-guide`, `generate-script`, `generate-tools-content`, `transcribe-media`
-- Buscar erros 5xx, timeouts, "GEMINI" key issues
-- Auth logs: erros de signup/login
+**Cenário B — Functions exigindo verify_jwt:**
+Editar `supabase/config.toml` adicionando `verify_jwt = false` pras 9 functions privadas (já que elas validam JWT no código com `getUser()`). Redeployar via `./scripts/deploy-selfhost.sh`.
 
-### 4. Relatório final consolidado
-Entrego em 3 blocos:
-- ✅/❌ **Pagamentos**: status do webhook, exemplos reais de ativação, gaps
-- 📋 **Eventos Asaas**: checklist exato pra marcar no painel
-- 🩺 **Saúde do app agora**: cada feature com status (auth, onboarding, IA generations, transcrição, push, pagamentos)
+**Cenário C — Anon key incompatível:**
+Regerar anon key no servidor:
+```bash
+# No servidor:
+docker exec supabase-kong cat /etc/kong/kong.yml | grep key
+# Ou gerar nova com:
+supabase gen anon-key
+```
+Atualizar `src/integrations/supabase/client.ts` com a nova chave.
 
-### Ferramentas que vou usar (modo default)
-- `supabase--read_query` — consultas no DB
-- `supabase--edge_function_logs` — logs por function
-- `supabase--analytics_query` — auth_logs e function_edge_logs agregados
-- `supabase--curl_edge_functions` — smoke test do `asaas-webhook` (com token inválido → deve retornar 401)
-- `code--view` em `supabase/functions/asaas-webhook/index.ts` (confirmar — já vi)
+## Validação final
+- `supabase--curl_edge_functions` no `ai-chat` autenticado → deve retornar 200
+- Painel admin reaparece pro `agentevendeagente@gmail.com`
+- Onboarding/matrix gera sem 401
 
-Sem mudanças de código nesta rodada — só diagnóstico. Se achar bug, reporto e proponho fix em mensagem separada.
+## Entregáveis
+1. Relatório do diagnóstico (qual cenário caiu)
+2. Checklist SSH com comandos exatos pra você rodar no servidor
+3. Edits necessários no repo (config.toml e/ou client.ts)
+4. Smoke test final confirmando
+
+Sem mexer em nada agora — só diagnóstico + plano cirúrgico de correção.
 
