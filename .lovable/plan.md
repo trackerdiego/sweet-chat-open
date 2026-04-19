@@ -1,56 +1,53 @@
 
-User quer:
-1. Memória persistente que registra: backend é **self-hosted `api.influlab.pro`**, não o projeto Lovable. Migrations da Lovable não chegam lá. Toda mudança de dados/schema premium precisa ser feita manualmente via SQL no painel self-hosted.
-2. Esclarecer/corrigir a questão da `UNIQUE(user_id)` na `user_usage` no self-hosted (que faltava e causou o erro `ON CONFLICT`).
+Erro: `user_progress` tem duplicatas pro user `fb358527...` então o `ALTER ADD UNIQUE` falha. O `DELETE` que dei antes provavelmente não pegou tudo (pode ter linhas com `updated_at` igual, ou a comparação `<` deixou pares empatados).
 
-Plano:
+Solução: usar `ctid` (identificador físico de linha do Postgres) como tiebreaker — garante que sempre fica exatamente 1 linha por user, independente de timestamps duplicados.
 
-## 1. Salvar memória do backend self-hosted
-
-Criar `mem://infra/backend-selfhosted` com regra clara:
-- App roda contra `https://api.influlab.pro` (Supabase self-hosted), não contra o projeto Lovable `gchncrlrmsyzumgmbplh`.
-- `src/integrations/supabase/client.ts` é hardcoded de propósito apontando pro self-hosted.
-- Migrations criadas no Lovable **não** afetam o banco real do app.
-- Para qualquer mudança de dados (premium, fixes, seeds) ou schema (constraints, colunas), gerar SQL pro user rodar manualmente no SQL Editor do self-hosted.
-- Edge functions são deployadas via `scripts/deploy-selfhost.sh`.
-
-Atualizar `mem://index.md` adicionando essa regra no Core (universal, aplica em toda ação) e referência na lista.
-
-## 2. Corrigir schema do self-hosted (UNIQUE user_id)
-
-Sim, **deveria** ter `UNIQUE(user_id)` no `user_usage` do self-hosted — o projeto Lovable tem, mas o self-hosted ficou sem. Mesmo problema pode existir em outras tabelas com 1 linha por user. Entregar SQL pro user rodar no painel self-hosted:
+## SQL pra rodar no Studio self-hosted
 
 ```sql
--- Limpa duplicatas em user_usage mantendo a mais recente
-DELETE FROM public.user_usage a
-USING public.user_usage b
-WHERE a.user_id = b.user_id
-  AND a.created_at < b.created_at;
+-- Limpa duplicatas em TODAS as tabelas 1-por-user usando ctid (sempre funciona)
+DELETE FROM public.user_progress
+WHERE ctid NOT IN (
+  SELECT max(ctid) FROM public.user_progress GROUP BY user_id
+);
 
-ALTER TABLE public.user_usage
-ADD CONSTRAINT user_usage_user_id_unique UNIQUE (user_id);
+DELETE FROM public.user_usage
+WHERE ctid NOT IN (
+  SELECT max(ctid) FROM public.user_usage GROUP BY user_id
+);
 
--- Mesmo tratamento preventivo nas demais tabelas 1-por-user
-ALTER TABLE public.user_progress
-ADD CONSTRAINT user_progress_user_id_unique UNIQUE (user_id);
+DELETE FROM public.user_strategies
+WHERE ctid NOT IN (
+  SELECT max(ctid) FROM public.user_strategies GROUP BY user_id
+);
 
-ALTER TABLE public.user_strategies
-ADD CONSTRAINT user_strategies_user_id_unique UNIQUE (user_id);
+DELETE FROM public.audience_profiles
+WHERE ctid NOT IN (
+  SELECT max(ctid) FROM public.audience_profiles GROUP BY user_id
+);
 
-ALTER TABLE public.audience_profiles
-ADD CONSTRAINT audience_profiles_user_id_unique UNIQUE (user_id);
+DELETE FROM public.user_profiles
+WHERE ctid NOT IN (
+  SELECT max(ctid) FROM public.user_profiles GROUP BY user_id
+);
 
-ALTER TABLE public.user_profiles
-ADD CONSTRAINT user_profiles_user_id_unique UNIQUE (user_id);
+-- Agora adiciona as constraints
+ALTER TABLE public.user_progress     ADD CONSTRAINT user_progress_user_id_unique     UNIQUE (user_id);
+ALTER TABLE public.user_usage        ADD CONSTRAINT user_usage_user_id_unique        UNIQUE (user_id);
+ALTER TABLE public.user_strategies   ADD CONSTRAINT user_strategies_user_id_unique   UNIQUE (user_id);
+ALTER TABLE public.audience_profiles ADD CONSTRAINT audience_profiles_user_id_unique UNIQUE (user_id);
+ALTER TABLE public.user_profiles     ADD CONSTRAINT user_profiles_user_id_unique     UNIQUE (user_id);
+
+-- Verifica
+SELECT conrelid::regclass AS tabela, conname FROM pg_constraint WHERE conname LIKE '%_user_id_unique';
 ```
 
-Se alguma dessas tiver duplicatas também, rodar `DELETE` análogo antes do `ALTER`.
+Se algum `ALTER` reclamar `already exists`, ignora (já foi criado antes). Se aparecer `23505` em outra tabela, o mesmo padrão de `DELETE ... ctid NOT IN ...` resolve.
 
-Depois disso, futuros UPSERTs com `ON CONFLICT (user_id)` funcionam direto, sem o fallback UPDATE+INSERT.
+## Por que isso é robusto
+- `max(ctid)` sempre retorna exatamente 1 linha por grupo, sem empate.
+- Funciona mesmo se `updated_at` for `NULL` ou idêntico entre as duplicatas.
+- Mantém a linha fisicamente mais nova (último insert/update).
 
-## Resultado
-
-- Memória garante que eu nunca mais vou tentar rodar migration esperando que afete o app real.
-- Schema do self-hosted fica consistente com o do Lovable, evitando o erro `42P10` no futuro.
-
-Sem mudança de código no frontend.
+Sem mudança de código.
