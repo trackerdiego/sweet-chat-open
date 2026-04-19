@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+const CHAT_URL = `${(supabase as unknown as { supabaseUrl: string }).supabaseUrl}/functions/v1/ai-chat`;
 
 const suggestions = [
   'Que tipo de conteúdo meu público mais engaja?',
