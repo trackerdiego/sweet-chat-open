@@ -1,32 +1,62 @@
 
 
-User is asking where to find `MIGRATION-FUNCTIONS.md`. Simple Q&A — no plan needed, but I'm in plan mode so I'll answer as a brief plan/info response.
+User wants:
+1. Check-up on payment integration (Asaas)
+2. Tell which webhook events to enable in Asaas panel
+3. Check if features are working right now for live users
 
-The file is at the **root do repositório**, no mesmo nível do `package.json` e `README.md`.
+I'm in plan mode (read-only). Let me plan the investigation + deliverables.
 
-## Como abrir
+What I'll inspect:
+- `asaas-webhook` and `create-asaas-subscription` code (already shown — I have it)
+- Edge function logs for both functions (recent activity)
+- DB queries: recent `user_usage` premium activations, recent signups, recent strategies generated, recent usage_logs
+- Edge logs for `ai-chat`, `generate-*` to see if Gemini-direct refactor is working
+- Auth logs for recent errors
 
-**Desktop (editor Lovable):**
-1. Abrir o **Code Editor** (ícone `</>` no topo da preview, ou `Cmd+Shift+F` / `Ctrl+Shift+F`)
-2. Na árvore de arquivos da esquerda, o `MIGRATION-FUNCTIONS.md` aparece logo no topo da raiz (junto com `README.md`, `package.json`, `index.html`)
-3. Clicar pra abrir — o markdown renderiza no painel
+## Plan
 
-**Mobile:**
-1. Modo Chat → ícone `…` no canto inferior direito → **Code Editor**
-2. Na sheet do file browser, é o primeiro `.md` da raiz
-3. Toque pra abrir
+### 1. Auditoria de pagamentos (código + dados reais)
+- Reler `asaas-webhook/index.ts` e `create-asaas-subscription/index.ts` (já em contexto) — validar fluxo end-to-end
+- Query no DB: últimas ativações `is_premium=true` em `user_usage` (últimos 7 dias)
+- Edge logs de `asaas-webhook` (últimas 24h) — confirmar se Asaas está chamando e respondendo 200
+- Edge logs de `create-asaas-subscription` — checar erros de criação de cliente/assinatura
+- Verificar se `ASAAS_WEBHOOK_TOKEN` confere com o que tá no painel Asaas (via teste de token rejeitado nos logs)
 
-**Via GitHub (se tiver o repo conectado):**
-- `https://github.com/<seu-usuario>/<repo>/blob/main/MIGRATION-FUNCTIONS.md`
+### 2. Lista de eventos Asaas pra ativar no webhook
+Baseado no código atual de `asaas-webhook`, os eventos tratados são:
 
-**Caminho completo no repo:** `./MIGRATION-FUNCTIONS.md` (raiz, não está dentro de `supabase/` nem `docs/`)
+**Ativam premium:**
+- `PAYMENT_CONFIRMED` — pagamento confirmado (cartão/pix/boleto)
+- `PAYMENT_RECEIVED` — pagamento recebido (compensado)
 
-Lá dentro você acha:
-- Lista das 14 functions (públicas vs privadas)
-- Comandos do `deploy-selfhost.sh`
-- **Bloco SQL** (seção "SQL pós-deploy") — é esse que você cola no SQL Editor do Studio depois do deploy
-- Tabela de secrets esperadas
-- Smoke tests com `curl`
+**Desativam premium:**
+- `PAYMENT_OVERDUE` — pagamento atrasado
+- `PAYMENT_REFUNDED` — estornado
+- `PAYMENT_DELETED` — pagamento deletado
+- `SUBSCRIPTION_DELETED` — assinatura cancelada
+- `SUBSCRIPTION_INACTIVE` — assinatura inativa
 
-Se preferir, posso colar o bloco SQL aqui no chat direto pra você não precisar abrir o arquivo.
+Vou entregar a lista exata pra marcar no painel Asaas (Integrações → Webhooks → Eventos).
+
+### 3. Health-check funcional (uso real agora)
+- DB: `auth.users` últimos cadastros (24h), `user_profiles.onboarding_completed`, `audience_profiles` gerados, `user_strategies` gerados
+- Edge logs (últimas 24h) por function: `ai-chat`, `generate-audience-profile`, `generate-personalized-matrix`, `generate-daily-guide`, `generate-script`, `generate-tools-content`, `transcribe-media`
+- Buscar erros 5xx, timeouts, "GEMINI" key issues
+- Auth logs: erros de signup/login
+
+### 4. Relatório final consolidado
+Entrego em 3 blocos:
+- ✅/❌ **Pagamentos**: status do webhook, exemplos reais de ativação, gaps
+- 📋 **Eventos Asaas**: checklist exato pra marcar no painel
+- 🩺 **Saúde do app agora**: cada feature com status (auth, onboarding, IA generations, transcrição, push, pagamentos)
+
+### Ferramentas que vou usar (modo default)
+- `supabase--read_query` — consultas no DB
+- `supabase--edge_function_logs` — logs por function
+- `supabase--analytics_query` — auth_logs e function_edge_logs agregados
+- `supabase--curl_edge_functions` — smoke test do `asaas-webhook` (com token inválido → deve retornar 401)
+- `code--view` em `supabase/functions/asaas-webhook/index.ts` (confirmar — já vi)
+
+Sem mudanças de código nesta rodada — só diagnóstico. Se achar bug, reporto e proponho fix em mensagem separada.
 
