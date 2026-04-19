@@ -31,8 +31,8 @@ serve(async (req) => {
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "transcription" }),
     ]);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (!GOOGLE_GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
 
     const { filePath, mimeType } = await req.json();
     if (!filePath || !mimeType) return new Response(JSON.stringify({ error: "filePath and mimeType are required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -55,11 +55,11 @@ serve(async (req) => {
     const mediaType = isVideo ? "vídeo" : "áudio";
     console.log(`Transcribing ${mediaType} (${mimeType})...`);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: `Você é um transcritor profissional. Transcreva o ${mediaType} enviado de forma precisa e completa em português brasileiro.\nRegras:\n- Transcreva EXATAMENTE o que é falado\n- Mantenha a linguagem original\n- NÃO adicione comentários ou timestamps\n- Retorne APENAS o texto transcrito` },
           { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }, { type: "text", text: `Transcreva este ${mediaType} completamente. Retorne apenas o texto falado.` }] },
