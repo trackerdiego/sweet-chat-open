@@ -111,11 +111,6 @@ serve(async (req) => {
     }
 
     let visceralContext = "";
-    const { data: audienceData } = await supabaseAuth
-      .from("audience_profiles")
-      .select("avatar_profile")
-      .eq("user_id", userId)
-      .maybeSingle();
 
     if (audienceData?.avatar_profile) {
       const ap = audienceData.avatar_profile as Record<string, unknown>;
