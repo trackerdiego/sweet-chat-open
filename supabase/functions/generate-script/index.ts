@@ -84,11 +84,14 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: usageData } = await adminClient
-      .from("user_usage")
-      .select("is_premium, script_generations, last_script_date")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const t0 = Date.now();
+    const [usageRes, audienceRes] = await Promise.all([
+      adminClient.from("user_usage").select("is_premium, script_generations, last_script_date").eq("user_id", userId).maybeSingle(),
+      supabaseAuth.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
+    ]);
+    const usageData = usageRes.data;
+    const audienceData = audienceRes.data;
+    console.log("[generate-script] db parallel fetch", { userId, ms: Date.now() - t0 });
 
     const isPremium = usageData?.is_premium ?? false;
     const today = new Date().toISOString().slice(0, 10);
@@ -109,7 +112,6 @@ serve(async (req) => {
     }
 
     let visceralContext = "";
-    const { data: audienceData } = await supabaseAuth.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle();
     if (audienceData?.avatar_profile) {
       const ap = audienceData.avatar_profile as Record<string, unknown>;
       visceralContext = `\n\nPERFIL PSICOLÓGICO DO PÚBLICO\nAvatar: ${ap.avatar || ''}\nObjetivo principal: ${ap.primaryGoal || ''}\nQueixa principal: ${ap.primaryComplaint || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto profundo: ${ap.deepOccultDesire || ''}\nInimigo comum: ${ap.commonEnemy || ''}\nGap de autoimagem: ${ap.selfImageGap || ''}\nFeridas centrais: ${JSON.stringify(ap.coreWounds || [])}\nObjeções: ${JSON.stringify(ap.objections || [])}\nGatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}\nGatilhos de vergonha: ${JSON.stringify(ap.shameTriggers || [])}\nÂncoras de esperança: ${JSON.stringify(ap.hopeAnchors || [])}\nFrustrações: ${JSON.stringify(ap.frustrations || [])}\nFalsas soluções: ${JSON.stringify(ap.falseSolutions || [])}\n\nINSTRUÇÕES:\nHOOK: ative shameTriggers/coreWounds, use verbalTriggers\nSTORYTELLING: explore frustrations, falseSolutions, commonEnemy, selfImageGap\nCTA: fale ao deepOccultDesire, use hopeAnchors`;
