@@ -1,130 +1,116 @@
 
 
-# Diagnóstico geral e correção conservadora das funções de IA
+# Causa raiz confirmada e correção cirúrgica
 
-## Resumo do problema
+## O que o diagnóstico provou
 
-Mesmo após os hotfixes anteriores, **todas as abas que dependem de IA** (Tarefas, Script, Ferramentas, possivelmente Chat e Matrix) continuam falhando para você logado como `agentevendeagente@gmail.com`, em aba anônima, cache limpo. Isso indica que o problema **não é cache nem sessão** — é estrutural no caminho até `api.influlab.pro` ou nas edge functions self-hosted.
-
-Você quer:
-1. Voltar ao estado fluido anterior
-2. Sem mudanças radicais
-3. Receber um plano + comandos prontos pra rodar na VPS
-
-## Hipóteses prováveis (em ordem de probabilidade)
-
-Baseado no histórico, na arquitetura self-hosted documentada na memória, e no fato de **todas** as funções de IA estarem quebradas ao mesmo tempo:
-
-### H1 — Código novo nunca chegou na VPS (mais provável)
-Lovable edita o repo do GitHub, mas se o `git pull` ou o `./scripts/deploy-selfhost.sh` não rodou na VPS, o container continua servindo o código antigo já com bugs acumulados de deploys anteriores. Você confirmou que o frontend é Vercel (auto-deploy), mas as functions exigem ação manual.
-
-### H2 — Secret `GOOGLE_GEMINI_API_KEY` não está no container `functions`
-Memória do projeto avisa: no self-hosted **não basta** colocar a chave em `~/supabase/docker/.env`. Precisa também adicionar `GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}` na seção `environment:` do service `functions` em `docker-compose.yml` e rodar `docker compose up -d --force-recreate functions`. Se isso foi perdido em algum restart, **todas** as funções de IA quebram juntas — exatamente o sintoma atual.
-
-### H3 — Quota / billing do Google Gemini estourou
-Se a chave esgotou créditos ou bateu em rate limit de projeto, todas as funções retornam erro ao mesmo tempo.
-
-### H4 — Container `functions` em estado ruim
-Restart parcial, OOM, ou Deno cache corrompido. Resolve com recriação completa.
-
-## Plano de revisão (sem mudar arquitetura)
-
-### Fase 1 — Diagnóstico remoto (você roda, me devolve output)
-
-Vou te entregar **um único bloco de diagnóstico** que coleta tudo que preciso pra confirmar a causa raiz, sem alterar nada:
-
-```bash
-# === DIAGNÓSTICO INFLULAB — só leitura, não muda nada ===
-
-# 1. Confirma estado do repo na VPS
-cd /root/app && git log --oneline -5 && git status
-
-# 2. Confirma se a chave Gemini está visível DENTRO do container functions
-cd ~/supabase/docker
-docker compose exec functions printenv | grep -E "GEMINI|LOVABLE_API|SUPABASE_URL" | sed 's/=.*/=<set>/'
-
-# 3. Últimos 80 logs do container functions filtrando os 3 endpoints quebrados
-docker compose logs functions --tail 200 2>&1 | grep -E "generate-script|generate-daily-guide|generate-tools-content|GEMINI|error" | tail -80
-
-# 4. Testa a chave Gemini direto, sem passar pelo Supabase
-source ~/supabase/docker/.env
-curl -s -o /dev/null -w "Gemini direct status: %{http_code}\n" \
-  -X POST "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" \
-  -H "Authorization: Bearer ${GOOGLE_GEMINI_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"ping"}]}'
-
-# 5. Confirma se docker-compose.yml expõe a chave pro container functions
-grep -A 30 "functions:" ~/supabase/docker/docker-compose.yml | grep -E "GEMINI|environment" | head -20
-```
-
-Com a saída desses 5 comandos eu confirmo qual das 4 hipóteses é a real, sem chute.
-
-### Fase 2 — Correção alvo única (depende do diagnóstico)
-
-Cada hipótese tem um caminho de correção diferente, **todos não-invasivos**:
-
-| Hipótese confirmada | Ação na VPS |
+| Evidência | Conclusão |
 |---|---|
-| H1 (código antigo) | `git pull origin main` + `./scripts/deploy-selfhost.sh` |
-| H2 (secret faltando no container) | Editar `docker-compose.yml` adicionando `GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}` no service `functions` + `docker compose up -d --force-recreate functions` |
-| H3 (quota Gemini) | Renovar billing no Google AI Studio, sem mexer em código |
-| H4 (container ruim) | `docker compose down functions && docker compose up -d functions` |
+| Repo na VPS está em `a43ed18` (HEAD = origin/main) | ✅ Código novo já está lá — H1 descartada |
+| `printenv` no container mostra `GOOGLE_GEMINI_API_KEY=<set>` | ✅ Secret existe — mas só no escopo "shell" |
+| Gemini direto retorna **200 OK** com `"Pong."` | ✅ Chave válida, sem quota, sem billing — H3 descartada |
+| Container `supabase-edge-functions` rodando há 2h, sem restart loop | ✅ H4 descartada |
+| **Logs do container repetem 51× `[Error] Missing required environment variables`** | 🎯 **Causa raiz** |
 
-Vou te entregar **o bloco exato** assim que você me devolver a saída do diagnóstico.
+A mensagem `Missing required environment variables` **não vem do nosso código** — vem do próprio `edge-runtime:v1.71.2` (boot check). Isso significa que a variável que o runtime precisa ler **antes** de carregar qualquer função está ausente. Como `GOOGLE_GEMINI_API_KEY` está visível no `printenv`, a falta é de outra variável obrigatória — quase certamente uma das que o runtime do Supabase exige no boot:
 
-### Fase 3 — Reverter pra versão estável se nada resolver (plano B seguro)
+- `SUPABASE_DB_URL`
+- `JWT_SECRET` (ou `SUPABASE_AUTH_JWT_SECRET`)
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `VERIFY_JWT`
 
-Se mesmo com diagnóstico + correção a IA não voltar, vou usar a memória do projeto pra **identificar o último commit conhecido como funcional** e te dar o comando de rollback:
+O `printenv` filtrado só mostrou 4 variáveis (`ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `SUPABASE_URL`, `GOOGLE_GEMINI_API_KEY`). **Está faltando `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_DB_URL` dentro do container.** Isso explica matematicamente por que **toda função de IA falha**: o runtime aborta antes de invocar o handler — e como o handler nunca roda, o frontend recebe 500 / timeout.
+
+Por que isso só atinge IA visivelmente? Porque as funções de IA são as únicas que o usuário invoca de forma intensiva e visível; webhooks de pagamento e push também estão quebrados, só que silenciosamente.
+
+## Plano de correção (não muda código, só docker-compose)
+
+### Fase A — confirmar quais variáveis estão faltando
+
+Você roda mais um diagnóstico curto pra eu não chutar:
 
 ```bash
-cd /root/app
-git log --oneline | head -20      # você escolhe o SHA estável
-git checkout <sha-estavel> -- supabase/functions/generate-script supabase/functions/generate-daily-guide supabase/functions/generate-tools-content
-./scripts/deploy-selfhost.sh
+cd ~/supabase/docker
+docker compose exec functions printenv \
+  | grep -E "^(SUPABASE_|JWT_|VERIFY_JWT|ANON_|SERVICE_ROLE)" \
+  | sed 's/=.*/=<set>/' \
+  | sort
 ```
 
-Isso reverte **só as 3 functions de IA** pro estado validado, sem tocar em frontend, banco, auth ou pagamentos.
+Isso lista **só** as variáveis-base do Supabase que o runtime exige. Tudo que **não** aparecer é o que precisa ser adicionado.
 
-## O que NÃO vou fazer
+### Fase B — corrigir `docker-compose.yml`
 
-- Não vou refatorar arquitetura
-- Não vou trocar provedor de IA
-- Não vou criar tabelas novas
-- Não vou mexer em onboarding, matrix, chat, push, asaas
-- Não vou mudar o frontend nessa rodada
-- Não vou aplicar fixes "por cima" sem antes confirmar a causa real
+Com base no resultado da Fase A, vou te entregar um patch exato pro bloco `services.functions.environment:` em `~/supabase/docker/docker-compose.yml`. O padrão será:
 
-## Fluxo combinado
-
-```text
-Você roda bloco de diagnóstico
-        │
-        ▼
-Me manda a saída (cola aqui)
-        │
-        ▼
-Confirmo qual hipótese é (H1/H2/H3/H4)
-        │
-        ▼
-Te entrego bloco único de correção
-        │
-        ▼
-Você roda na VPS
-        │
-        ▼
-Testa /tarefas, /script, /tools logado
-        │
-        ▼
-Se voltou ao normal → fim
-Se não → Fase 3 (rollback cirúrgico)
+```yaml
+services:
+  functions:
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}                  # ou SUPABASE_ANON_KEY conforme .env
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}  # idem
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      VERIFY_JWT: "false"
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}
+      ASAAS_API_KEY: ${ASAAS_API_KEY}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
 ```
 
-## O que aprovar
+E o comando final:
 
-Quando você aprovar este plano:
+```bash
+cd ~/supabase/docker
+docker compose up -d --force-recreate functions
+docker compose logs functions --tail 50 | grep -i "missing\|booted\|listening"
+```
+
+Esperado: as linhas `Missing required environment variables` somem e aparece algo como `Edge runtime listening` / `serving`.
+
+### Fase C — validação no app
+
+Logado como `agentevendeagente@gmail.com`, em aba anônima:
+1. `/tasks` → "Gerar com IA" → deve retornar conteúdo
+2. `/script` → gerar variação → deve retornar
+3. `/tools` → qualquer ferramenta IA → deve retornar
+4. Se algum ainda falhar, vou usar o supabase--edge_function_logs (no Lovable Cloud espelho) só pra leitura comparativa — mas a correção real fica na VPS.
+
+## O que eu **não** vou tocar
+
+- Nenhum arquivo `.ts` das edge functions
+- Nenhum schema, RLS, migration
+- Frontend, auth, push, asaas
+- O `.env` da VPS (já está OK — o problema é só **mapear** essas vars pro service `functions` no compose)
+
+## Plano B (se Fase B não resolver)
+
+Restart completo do stack mantendo dados:
+
+```bash
+cd ~/supabase/docker
+docker compose down
+docker compose up -d
+docker compose logs functions --tail 50
+```
+
+Se mesmo assim aparecer `Missing required environment variables`, o problema está na ordem de carregamento do `.env` pelo compose — entrego um terceiro bloco que injeta as vars via `env_file:` direto no service.
+
+## Resumo executivo
+
+- **Causa**: o service `functions` no `docker-compose.yml` não está recebendo todas as variáveis Supabase obrigatórias no boot.
+- **Sintoma**: 100% das chamadas a edge functions falham silenciosamente.
+- **Correção**: adicionar 4-5 linhas no bloco `environment:` do `docker-compose.yml` e recriar o container.
+- **Risco**: baixíssimo. Não toca código, não toca banco, é reversível em 30 segundos.
+- **Tempo**: ~2 minutos de execução na VPS depois da Fase A.
+
+## Próximo passo
+
+Quando aprovar este plano:
 1. Volto em modo default
-2. Não vou alterar arquivos ainda
-3. Vou fechar a resposta com o **bloco de diagnóstico exato** acima, formatado pra você colar direto no terminal da VPS
-4. Aguardo a saída pra dar o próximo passo certo
+2. Te entrego **apenas o bloco da Fase A** pra colar
+3. Você cola a saída
+4. Eu retorno com o patch exato do `docker-compose.yml` adaptado às variáveis que estão de fato faltando
+5. Você aplica e testa
 
