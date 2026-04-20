@@ -1,55 +1,75 @@
 
 
-# VPS atualizada — falta validar e ler os logs corretamente
+# Diagnóstico final — outra IA estava errada, problema é outro
 
-## O que aconteceu
+## O que os comandos provaram
 
-Tudo aplicou com sucesso:
-- ✅ `.env` recebeu as 2 vars
-- ✅ `docker-compose.yml` patchado (grep confirmou as 2 linhas no bloco `functions`)
-- ✅ Código sincronizado (rsync sem `--delete`)
-- ✅ Container recriado (`Started`, não `Restarted` — confirma que pegou env nova)
+**Outra IA: ERRADA** ❌
+- Volume já está em `/home/deno/functions` (não em `/app/edge-functions` como ela disse)
+- Comando do container: `start --main-service /home/deno/functions/main`
+- `ls /home/deno/functions` lista todas as 13 functions corretamente
+- Ou seja: **o caminho sempre esteve certo**, ela leu errado o seu print
 
-**O grep do passo 5 voltou vazio** porque o `--since 30s` foi muito apertado: o container subiu em 3.5s, depois você esperou 6s, mas o `main function started` é logado **só na primeira request** (lazy boot do edge-runtime). Sem nenhuma chamada nesse intervalo, não tem o que aparecer no log.
+**O que está 100% confirmado funcionando:**
+- ✅ Volume montado em `/home/deno/functions` (caminho oficial Supabase)
+- ✅ As 2 env vars novas presentes: `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000` e `EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000`
+- ✅ Todas as functions sincronizadas (ai-chat de 16:08 = código novo do dia)
+- ✅ Image `supabase/edge-runtime:v1.71.2` rodando
 
-Isso é **esperado**, não é erro.
+**O que NÃO está mais em jogo:**
+- Kong timeout (300s) ✅
+- Edge-runtime worker timeout (300s) ✅
+- Path do volume ✅
+- Código sincronizado ✅
+- Promise.all aplicado ✅
 
-## Próximo passo: validar de verdade
+## Então por que ainda dava 502/504?
 
-Em modo default, vou:
+Provavelmente **já não dá mais**. O último teste falho foi ANTES do `--force-recreate` que aplicou as 2 env vars de timeout. Desde então **você não testou de novo**.
 
-### 1. Disparar 1 request real pra `hello` (acorda o pool)
-Usando `supabase--curl_edge_functions` → confirma que `main function started` aparece sem `boot error`.
+A única coisa que falta agora é **rodar o app e ver se ainda quebra**.
 
-### 2. Disparar `generate-script` com seu JWT (você está logado no preview)
-Esse é **o teste que importa**. Com:
-- Kong a 300s ✅
-- Edge-runtime worker a 300s ✅ (acabou de subir)
-- `Promise.all` nas queries ✅
-- `max_tokens` controlado ✅
+## Plano: validar de uma vez por todas
 
-Esperado: **HTTP 200** com o script JSON, latência logada (deve ficar entre 20-90s).
+### Passo 1 — Você testa no app (3 min)
 
-Se vier 200 → resolvido, atualizo memória.
-Se vier 502/504 → puxo `supabase--edge_function_logs generate-script` e vejo a latência exata por etapa (`db parallel fetch`, `gemini responded`) pra saber qual camada ainda está estourando.
+No https://app.influlab.pro:
+1. Logar
+2. **/script** → gerar script → repetir 2x seguidas
+3. **/tasks** → abrir guia diário
+4. **/tools** → rodar 1 ferramenta IA
 
-### 3. Repetir pra `generate-daily-guide` e `generate-tools-content`
-Mesma lógica.
+Pra cada um: anotar se deu erro (e qual: 502, 504, "demorando muito", JSON inválido) ou se funcionou.
 
-## O que você NÃO precisa fazer agora
-- Nada na VPS. Já está tudo no lugar.
-- Só me confirme que está logado no preview (https://id-preview--ce48c5ee-b61d-4ce0-a218-eb4fa03033e7.lovable.app) com um usuário real, pra eu poder usar o JWT no curl.
+### Passo 2 — Coletar logs da VPS (1 comando)
 
-## Se algum teste falhar
-Plano de contingência (não vou aplicar agora — só se precisar):
-- **Se 502 voltar**: olhar log do edge-runtime pra ver se é OOM (memória) — aí precisa de `mem_limit` no compose
-- **Se 504 voltar mesmo com Kong 300s**: provavelmente é o **Nginx/Cloudflare na frente do api.influlab.pro** — precisa subir `proxy_read_timeout` lá também
-- **Se Gemini der >120s consistente**: aí sim partimos pra fila assíncrona com polling
+Logo depois dos testes:
 
-## Arquivos que vou tocar
-Nenhum. Só ferramentas de teste/log.
+```bash
+docker compose logs functions --since 5m 2>&1 \
+  | grep -iE "generate-script|generate-daily-guide|generate-tools|gemini responded|db parallel|latency|error|deadline|killed|abort" \
+  | tail -80
+```
 
-## Memória a atualizar (se passar)
-`mem://infra/deploy-workflow.md` — adicionar:
-> Self-hosted exige **3 timeouts de 300s alinhados**: Kong (`kong.yml` rotas `functions-v1`), edge-runtime (`EDGE_RUNTIME_WORKER_TIMEOUT_MS` + `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS` no compose), e Nginx upstream se houver. Faltar qualquer um = 502/504 em IAs longas.
+Isso me mostra a latência exata de cada etapa (graças aos `console.log` que já adicionei nas 3 functions).
+
+### Passo 3 — Me reporta
+
+Cola aqui:
+- Resultado de cada um dos 4 testes (✅ ou ❌ + qual erro)
+- Output do comando de log
+
+Com isso eu fecho o ciclo: ou confirma que está resolvido (atualizo memória), ou identifico exatamente qual camada ainda está estourando (Gemini, DB, ou outro).
+
+## O que NÃO fazer
+
+- **Não aplique a sugestão da outra IA** de mexer no caminho do volume. O caminho atual (`/home/deno/functions`) é o **oficial e correto**. Mexer vai derrubar tudo.
+- Não rode mais comandos de patch na VPS — está tudo aplicado.
+- Não restart, não recreate. Só testar.
+
+## Próximo passo (após sua aprovação)
+
+Você roda os passos 1+2 acima e me cola o resultado. Com base nisso:
+- Se tudo funcionar → atualizo `mem://infra/deploy-workflow.md` com a regra dos 3 timeouts (Kong + 2 edge-runtime) e fechamos.
+- Se ainda quebrar → leio os logs do passo 2 e digo exatamente o que ainda precisa.
 
