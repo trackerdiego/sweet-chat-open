@@ -6,6 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 90000): Promise<Response> {
   const attempt = async (): Promise<Response> => {
     const controller = new AbortController();
@@ -24,14 +31,14 @@ async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string
   try {
     const r = await attempt();
     if (r.status >= 500) {
-      console.warn("Gemini 5xx, retrying once:", r.status);
+      console.warn("[tools-content] Gemini 5xx, retrying once:", r.status);
       try { await r.text(); } catch { /* ignore */ }
       return await attempt();
     }
     return r;
   } catch (e) {
     if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
-      console.warn("Gemini timeout, retrying once");
+      console.warn("[tools-content] Gemini timeout, retrying once");
       return await attempt();
     }
     throw e;
@@ -60,34 +67,37 @@ const TOOL_PROMPTS: Record<string, { system: (ap: Record<string, unknown>, niche
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let userId: string | null = null;
+  let adminClient: ReturnType<typeof createClient> | null = null;
+
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!authHeader?.startsWith("Bearer ")) return jsonResponse({ error: "Não autorizado" }, 401);
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    const userId = user.id;
+    if (authError || !user) return jsonResponse({ error: "Não autorizado" }, 401);
+    userId = user.id;
 
-    const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: usageData } = await adminClient.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle();
     const isPremium = usageData?.is_premium ?? false;
     const today = new Date().toISOString().split("T")[0];
     const isNewDay = usageData?.last_tool_date !== today;
     const currentToolCount = isNewDay ? 0 : (usageData?.tool_generations ?? 0);
-    if (!isPremium && currentToolCount >= 2) return new Response(JSON.stringify({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-    await Promise.all([
-      adminClient.from("user_usage").update({ tool_generations: currentToolCount + 1, last_tool_date: today }).eq("user_id", userId),
-      adminClient.from("usage_logs").insert({ user_id: userId, feature: "tool" }),
-    ]);
+    if (!isPremium && currentToolCount >= 2) return jsonResponse({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }, 429);
 
     const { toolType, userInput, primaryNiche, contentStyle } = await req.json();
+    console.log("[tools-content] start", { userId, toolType, isPremium, currentToolCount });
+
     const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GOOGLE_GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
+    if (!GOOGLE_GEMINI_API_KEY) {
+      console.error("[tools-content] missing GOOGLE_GEMINI_API_KEY");
+      return jsonResponse({ error: "Configuração do servidor incompleta (chave da IA ausente)." }, 500);
+    }
 
     const toolConfig = TOOL_PROMPTS[toolType];
-    if (!toolConfig) return new Response(JSON.stringify({ error: "Tipo de ferramenta inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!toolConfig) return jsonResponse({ error: "Tipo de ferramenta inválido" }, 400);
 
     const { data: audienceData } = await supabase.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle();
     const ap = (audienceData?.avatar_profile as Record<string, unknown>) || {};
@@ -102,30 +112,67 @@ serve(async (req) => {
       viral: { type: "object", properties: { structureAnalysis: { type: "string" }, adaptedScript: { type: "object", properties: { hook: { type: "string" }, body: { type: "string" }, cta: { type: "string" } }, required: ["hook", "body", "cta"] }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "adaptedScript", "filmingInstructions", "whyItWillWork"], additionalProperties: false },
     };
 
+    const startedAt = Date.now();
     const response = await callGeminiWithRetry({
       model: "gemini-2.5-flash",
       messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
       tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
       tool_choice: { type: "function", function: { name: "generate_result" } },
     }, GOOGLE_GEMINI_API_KEY);
+    const latencyMs = Date.now() - startedAt;
+    console.log("[tools-content] gemini responded", { userId, toolType, status: response.status, latencyMs });
 
     if (!response.ok) {
-      if (response.status === 429) return new Response(JSON.stringify({ error: "Muitas requisições. Aguarde." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const text = await response.text(); console.error("AI error:", response.status, text);
-      return new Response(JSON.stringify({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }), { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const text = await response.text().catch(() => "");
+      console.error("[tools-content] gemini error", { status: response.status, body: text.slice(0, 500) });
+      if (response.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
+      if (response.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+      return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
     }
 
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) throw new Error("Resposta da IA sem dados estruturados");
-    const result = JSON.parse(toolCall.function.arguments);
-    return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const data = await response.json().catch((e) => {
+      console.error("[tools-content] failed to parse gemini json envelope", e);
+      return null;
+    });
+    if (!data) return jsonResponse({ error: "A IA retornou resposta inválida. Tente novamente." }, 502);
+
+    const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
+    const args = toolCall?.function?.arguments;
+    if (!args) {
+      console.error("[tools-content] no tool_calls in response", {
+        finishReason: data?.choices?.[0]?.finish_reason,
+        messageKeys: Object.keys(data?.choices?.[0]?.message || {}),
+        sample: JSON.stringify(data).slice(0, 800),
+      });
+      return jsonResponse({ error: "A IA retornou resposta sem dados estruturados. Tente novamente." }, 502);
+    }
+
+    let result: Record<string, unknown>;
+    try {
+      result = typeof args === "string" ? JSON.parse(args) : args;
+    } catch (e) {
+      console.error("[tools-content] failed to parse tool arguments JSON", { sample: String(args).slice(0, 500), err: String(e) });
+      return jsonResponse({ error: "A IA retornou JSON inválido. Tente novamente." }, 502);
+    }
+
+    // Sucesso: agora sim contabiliza uso
+    try {
+      await Promise.all([
+        adminClient.from("user_usage").update({ tool_generations: currentToolCount + 1, last_tool_date: today }).eq("user_id", userId),
+        adminClient.from("usage_logs").insert({ user_id: userId, feature: "tool" }),
+      ]);
+    } catch (e) {
+      console.warn("[tools-content] usage update failed (non-fatal)", e);
+    }
+
+    console.log("[tools-content] success", { userId, toolType, latencyMs });
+    return jsonResponse(result);
   } catch (e) {
-    console.error("generate-tools-content error:", e);
+    console.error("[tools-content] uncaught error:", e, { userId });
     const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-    return new Response(
-      JSON.stringify({ error: isAbort ? "A IA está demorando mais que o normal. Tente novamente em alguns segundos." : (e instanceof Error ? e.message : "Erro desconhecido") }),
-      { status: isAbort ? 504 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    return jsonResponse(
+      { error: isAbort ? "A IA está demorando mais que o normal. Tente novamente em alguns segundos." : (e instanceof Error ? e.message : "Erro interno") },
+      isAbort ? 504 : 500
     );
   }
 });
