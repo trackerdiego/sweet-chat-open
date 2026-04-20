@@ -1,66 +1,126 @@
 
+Corrigir a falha de geração com IA em Tarefas, onde `generate-daily-guide` está retornando `500` após ~21s, e deixar o fluxo robusto no backend self-hosted sem perder a regra do produto de manter 5 exemplos práticos por tarefa.
 
-## Problema
+## Diagnóstico provável
 
-Geração com IA na tela **Tarefas** (`generate-daily-guide`) demora muito e falha. Causa raiz: schema de tool calling grande (7 categorias + 7 sub-arrays = ~50 strings) + Gemini 2.5 Flash + sem timeout/retry no fetch + sem feedback de progresso.
+Pelo código atual e pelos screenshots, o erro não parece ser:
+- autenticação (`401`)
+- limite gratuito (`429`)
+- timeout tratado (`504`)
 
-## Plano de correção
+O `500` mais provável vem de uma exceção interna depois da resposta da IA, principalmente em um destes pontos:
+1. `tool_calls` não veio no formato esperado
+2. `toolCall.function.arguments` veio vazio/inválido
+3. `JSON.parse(...)` falhou
+4. a function consumiu quota antes de concluir e depois quebrou
+5. o front está escondendo o erro real com toast genérico
 
-### 1. Adicionar timeout explícito + retry em `generate-daily-guide`
+## O que será ajustado
 
-Envolver o `fetch` da Gemini em `AbortController` com timeout de 90s. Se der timeout ou 5xx, retry uma vez automaticamente. Hoje fica pendurado até morrer sem aviso.
+### 1. Endurecer o parser da resposta da IA em `generate-daily-guide`
+Arquivo: `supabase/functions/generate-daily-guide/index.ts`
 
-### 2. Reduzir tamanho do payload de saída
+- Adicionar logs estruturados antes e depois da chamada à IA:
+  - `userId`
+  - `day`
+  - `pillar`
+  - latência
+  - status HTTP da Gemini
+- Logar o shape da resposta quando `tool_calls` não vier.
+- Envolver o parse em tratamento explícito:
+  - se não vier `tool_calls`, registrar payload resumido e retornar erro claro
+  - se `JSON.parse` falhar, retornar erro claro
+- Manter timeout/retry já existente, mas separar melhor:
+  - erro de gateway/timeout
+  - erro de formato da resposta
+  - erro interno da function
 
-O schema pede **50 strings** numa só chamada. Vou cortar para o essencial sem perder UX:
-- Manter as 6 categorias principais (5 itens cada = 30 strings)
-- `taskExamples`: reduzir de 5 para 3 exemplos por tarefa (7 × 3 = 21 strings em vez de 35)
+### 2. Não cobrar tentativa que falhou
+Arquivos:
+- `supabase/functions/generate-daily-guide/index.ts`
+- `supabase/functions/generate-tools-content/index.ts`
 
-Isso corta ~30% do tempo de geração e do risco de truncamento.
+Hoje a contagem de uso é incrementada antes do sucesso real. Vou mover o update de `user_usage` e o insert em `usage_logs` para depois do parse válido da resposta da IA.
 
-### 3. Trocar modelo desta function pra `gemini-2.5-flash-lite` OU manter `flash` com prompt enxuto
+Isso evita:
+- gastar quota quando a IA falha
+- mascarar diagnósticos
+- gerar frustração no usuário
 
-Recomendo manter `gemini-2.5-flash` mas enxugar o `visceralContext` (hoje despeja 15+ campos do avatar — é overkill pra gerar exemplos de tarefa). Reduzir pra 6 campos chave (avatar, ultimateFear, deepOccultDesire, coreWounds, verbalTriggers, frustrations).
+### 3. Preservar a regra de negócio dos 5 exemplos por tarefa
+Memória do projeto exige exatamente 5 exemplos práticos por tarefa personalizados por IA.
 
-### 4. Mensagens de erro mais claras no front
+Então não vou consolidar a redução para 3 exemplos. Em vez disso, a correção seguirá este caminho:
+- manter 5 exemplos
+- otimizar prompt e validação
+- tornar `taskExamples` resiliente sem quebrar o restante da resposta
+- se necessário, aceitar fallback parcial: categorias principais aparecem mesmo se algum bloco opcional falhar, sem derrubar a geração inteira
 
-No `DailyGuide.tsx` (e onde chama a function): se `AbortError` ou erro 504/500, mostrar toast "A IA está demorando mais que o normal. Tente novamente em alguns segundos." em vez de erro genérico.
+### 4. Melhorar o contrato de erro da edge function
+Arquivo: `supabase/functions/generate-daily-guide/index.ts`
 
-### 5. Aplicar mesmo padrão (timeout + retry) em `generate-tools-content`
+Padronizar respostas JSON com mensagens específicas, por exemplo:
+- `Não autorizado`
+- `Limite gratuito atingido`
+- `Rate limit exceeded`
+- `A IA retornou resposta sem dados estruturados`
+- `A IA retornou JSON inválido`
+- `A IA está demorando mais que o normal`
 
-Mesma vulnerabilidade. Mesmo fix.
+Isso facilita o front interpretar corretamente.
 
-## O que NÃO muda
+### 5. Melhorar feedback no frontend
+Arquivo: `src/components/DailyGuide.tsx`
 
-- `generate-audience-profile` permanece em `gemini-2.5-pro` (decisão anterior, não é o problema atual)
-- `ai-chat`, `generate-script`, `generate-personalized-matrix` — não tocaremos agora
-- Schema do banco
-- Frontend de Tarefas/Tools (só ajuste de toast)
+- Fazer `console.error` completo do objeto retornado por `supabase.functions.invoke(...)`
+- Diferenciar toasts por status:
+  - `401` sessão expirada
+  - `402` créditos esgotados
+  - `429` limite/requisições
+  - `504` timeout
+  - `500` mostrar mensagem retornada pelo backend quando existir
+- Evitar toast genérico quando o backend já explicou o problema
+
+### 6. Aplicar a mesma correção estrutural em `generate-tools-content`
+Arquivo: `supabase/functions/generate-tools-content/index.ts`
+
+Mesmo problema potencial existe lá:
+- parse rígido de `tool_calls`
+- consumo de quota antes do sucesso
+- pouca observabilidade
+
+Vou alinhar o comportamento com `generate-daily-guide` para não repetir o bug em Ferramentas.
+
+## Resultado esperado
+
+Após a implementação:
+- Tarefas deixa de falhar silenciosamente com `500` genérico
+- falhas passam a indicar causa real
+- tentativas com erro não consomem uso diário
+- o backend self-hosted fica mais fácil de diagnosticar
+- a regra de 5 exemplos por tarefa continua preservada
 
 ## Arquivos afetados
 
-- `supabase/functions/generate-daily-guide/index.ts` — timeout+retry, prompt enxuto, schema reduzido
-- `supabase/functions/generate-tools-content/index.ts` — timeout+retry
-- `src/components/DailyGuide.tsx` — toast de erro melhor (a confirmar arquivo após investigar)
-
-## Deploy no self-hosted ⚠️
-
-Lovable atualiza o código aqui, mas você precisa redeployar no `api.influlab.pro`:
-
-```bash
-cd ~/supabase/docker && docker compose restart functions
-```
+- `supabase/functions/generate-daily-guide/index.ts`
+- `supabase/functions/generate-tools-content/index.ts`
+- `src/components/DailyGuide.tsx`
 
 ## Validação
 
-1. Tela **Tarefas** → clica "gerar com IA" → deve responder em 15-30s consistentemente
-2. Se falhar, toast claro aparece e botão volta ao estado clicável
-3. Conferir logs:
-   ```bash
-   docker compose logs functions --tail 100 | grep -E "generate-daily-guide|generate-tools-content"
-   ```
+1. Fazer login com usuário de teste
+2. Ir em `Tarefas` e clicar em “Gerar sugestões com IA”
+3. Confirmar:
+   - sucesso com conteúdo renderizado
+   - ou erro específico, não genérico
+4. Confirmar que falha não incrementa `tool_generations`
+5. Em caso de nova falha, usar os logs estruturados do container para identificar o ponto exato
 
-## Decisão alternativa (não recomendo agora)
+## Deploy no self-hosted
 
-Migrar pra padrão **job assíncrono** (`EdgeRuntime.waitUntil` + tabela de fila + polling no front). Funciona mas é uma refatoração bem maior — só vale se mesmo após o fix acima a UX continuar ruim.
+Como o backend real é `api.influlab.pro`, depois da implementação será necessário reiniciar as functions no servidor:
 
+```bash
+cd ~/supabase/docker
+docker compose restart functions
+```
