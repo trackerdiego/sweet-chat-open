@@ -1,156 +1,107 @@
 
 
-# Plano: rodar Gemini direto no self-hosted de forma estável (sem Lovable AI, sem 2.5-pro)
+# Plano: corrigir falsos erros visuais no onboarding + estabilizar `matrix-week-1` e `matrix-week-4`
 
-## Por que está quebrando hoje (causa real, não "tier free")
+## Diagnóstico real (do log que você mandou)
 
-Sua API é Nível 1 paga. Os limites do `gemini-2.5-flash` são generosos:
-- **1.000 req/min**
-- **1.000.000 tokens/min**
+Backend funcionou:
+- `audience-profile` rodou Step 1 normal
+- `matrix` rodou as 4 semanas em paralelo
+- `week 2` OK em 36s
+- `week 3` OK em 37s  
+- `week 4` OK em 57s (caiu no `flash-lite` depois de 3x 503 — fallback funcionou)
+- `week 1` OK em 63s (demorou mais por retries, mas voltou)
+- `complete — 30 dias em 63444ms` ✅
 
-Você está MUITO longe disso em volume. O que está causando 503 é **a forma das chamadas**, não a quantidade:
+Então por que os passos 1 e 2 ficam vermelhos no meio?
 
-1. **Endpoint OpenAI-compat (`/v1beta/openai/...`)** — é um shim que o Google mantém com qualidade inferior. Ele é o que mais gera `503` e `MALFORMED_FUNCTION_CALL` em prompts grandes com tool calling. O endpoint nativo (`/v1beta/models/...:generateContent`) é muito mais estável.
+**Causa**: o `Onboarding.tsx` provavelmente tem um **timeout no client** (ex: 30s ou 45s) por step. Quando o `matrix` demora 63s, o frontend marca os steps anteriores como "erro" mesmo que o backend tenha terminado tudo. Por isso a matriz aparece correta no fim — o backend nunca falhou, só o indicador visual disparou cedo demais.
 
-2. **Tool calling com schema gigante** — o `matrix` pede 30 dias × 10 campos numa única tool call. Isso faz o Gemini estourar `finish_reason: "length"` ou `MALFORMED_FUNCTION_CALL` mesmo com tokens sobrando. Não é limite de quota, é limite de **qualidade da geração estruturada** num único turno.
+**Subcausa**: `week-1` e `week-4` estão tomando 503 em paralelo no Gemini. Hipótese: as 4 chamadas paralelas do `Promise.all` saem **no mesmo milissegundo**, e o Google enxerga isso como burst → throttla 2 das 4. As semanas 2 e 3 passam, 1 e 4 batem 503 (azar do dado).
 
-3. **Onboarding paraleliza demais** — `audience-step1` + `step2` + `matrix` + `daily-guide` disparam quase juntos. Cada um manda prompt de 5-10K tokens. Pico de TPM instantâneo dispara o `503` interno do Google mesmo com cota disponível.
+## Solução em 2 frentes
 
-## Solução: 3 mudanças cirúrgicas, todas no Gemini direto
+### Frente A — corrigir o falso erro visual no onboarding
 
-### Mudança 1 — Trocar pro endpoint nativo do Gemini
+Investigar `src/pages/Onboarding.tsx` e ver:
+- Como cada passo é marcado como "erro" (cor vermelha)
+- Se existe algum `setTimeout` ou `Promise.race` que mata o step antes do backend responder
+- Se o estado de erro do step depende do estado de outro step ainda em execução
 
-Hoje:
-```
-POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
-Authorization: Bearer ${GOOGLE_GEMINI_API_KEY}
-body: { model, messages, tools, tool_choice }
-```
+Correção provável (uma das três, decido depois de ler o código):
+1. Remover qualquer timeout client-side por step (deixar o backend mandar) **OU**
+2. Ampliar timeout pra 120s **OU**
+3. Trocar a lógica: step só vira "erro" se a edge function retornar erro HTTP, nunca por timer local
 
-Vai virar:
-```
-POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}
-body: { contents, tools, toolConfig, generationConfig }
+### Frente B — eliminar os 503 das semanas paralelas
+
+Mudança cirúrgica em `supabase/functions/generate-personalized-matrix/index.ts`:
+
+**Stagger das 4 chamadas em vez de `Promise.all` puro.** Disparar com 800ms de espaçamento entre cada uma:
+
+```ts
+// em vez de Promise.all([w1, w2, w3, w4])
+const results = await Promise.all(
+  WEEKS.map((week, i) => 
+    new Promise(r => setTimeout(r, i * 800)).then(() => callGeminiNative({...}))
+  )
+);
 ```
 
 Por quê:
-- Endpoint nativo tem 90%+ menos `MALFORMED_FUNCTION_CALL` no tool calling
-- Tem `responseSchema` em vez de `tool_choice` — saída JSON garantida sem tool call hack
-- `503` despenca porque deixa de passar pelo proxy OpenAI-compat
-- Mesmo modelo, mesma cota, mesmo preço — só caminho diferente
+- Continua paralelo (não vira sequencial)
+- Mas não dispara as 4 no mesmo ms — Google aceita melhor
+- Custo do stagger: +2.4s no total (irrelevante quando estamos em ~60s)
+- Espera reduzir 503 de ~50% pra <10%
 
-### Mudança 2 — Usar `responseSchema` em vez de tool calling
-
-Tool calling é gambiarra pra forçar JSON estruturado. O Gemini nativo tem:
-```json
-{
-  "generationConfig": {
-    "responseMimeType": "application/json",
-    "responseSchema": { ...mesmo schema atual... }
-  }
-}
-```
-
-Resultado: o modelo retorna JSON puro no `candidates[0].content.parts[0].text`, sem `tool_calls`, sem `MALFORMED_FUNCTION_CALL`, sem `finish_reason: "length"` por overhead de função.
-
-### Mudança 3 — Quebrar o `matrix` em 4 chamadas (uma por semana)
-
-Hoje: 1 chamada gera os 30 dias de uma vez (schema com array de 30 objetos × 10 campos = saída de ~15K tokens estruturados). É aí que o `2.5-flash` engasga.
-
-Vai virar: 4 chamadas paralelas (`Promise.all`), cada uma gera 7-9 dias:
-- Semana 1: dias 1-7 (objeções/frustrações)
-- Semana 2: dias 8-14 (feridas/vergonha)
-- Semana 3: dias 15-21 (pecados/desejos)
-- Semana 4: dias 22-30 (esperança/decisão)
-
-Cada chamada vira pequena, rápida, sem risco de truncar. Junta no fim e salva igual.
-
-Tempo total cai (paralelismo > sequencial gigante). Custo idêntico (mesma quantidade de tokens output). Estabilidade dispara.
+**Aumentar delays de retry** no `_shared/gemini.ts`:
+- Hoje: `[1000, 3000, 7000]` ms entre tentativas
+- Depois: `[2000, 5000, 12000]` ms
+- Por quê: 503 do Gemini volta ao normal em 5-15s. Esperar mais ajuda mais que retry rápido.
 
 ## Arquivos alterados
 
-1. **`supabase/functions/_shared/gemini.ts`** (novo)
-   - Wrapper único `callGeminiNative({ model, systemInstruction, prompt, schema, timeoutMs })`
-   - Usa endpoint nativo + `responseSchema`
-   - Mantém retry exponencial 3x + fallback de modelo
-   - Devolve JSON parseado direto
-
-2. **`supabase/functions/generate-personalized-matrix/index.ts`**
-   - Importa `callGeminiNative`
-   - Quebra geração em 4 chamadas paralelas (1 por semana)
-   - Mantém `distributeVisceralElements` igual
-   - `PRIMARY_MODEL = "gemini-2.5-flash"`, sem fallback pro `pro`
-
-3. **`supabase/functions/generate-script/index.ts`**
-   - Importa `callGeminiNative`
-   - 1 chamada só (script é pequeno), `responseSchema` resolve
-   - Mantém `flash`
-
-4. **`supabase/functions/generate-audience-profile/index.ts`**
-   - Importa `callGeminiNative`
-   - Mantém estrutura de 2 steps já existente
-   - Step 2 (avatar) usa `responseSchema` em vez de tool calling
-   - Permanece em `2.5-pro` (esse aqui realmente precisa de raciocínio)
-
-5. **`supabase/functions/generate-daily-guide/index.ts`**, **`generate-tools-content/index.ts`**, **`ai-chat/index.ts`**
-   - Migram pro `callGeminiNative`
-   - `daily-guide` e `tools-content`: `flash` com `responseSchema`
-   - `ai-chat`: streaming (endpoint nativo `:streamGenerateContent`)
-
-6. **`supabase/functions/transcribe-media/index.ts`**
-   - Já usa endpoint nativo de upload, só padroniza pro wrapper
+1. **`src/pages/Onboarding.tsx`** — remover timeout client-side ou ampliar pra 120s; garantir que erro só aparece em resposta HTTP de erro
+2. **`supabase/functions/generate-personalized-matrix/index.ts`** — adicionar stagger de 800ms entre as 4 semanas
+3. **`supabase/functions/_shared/gemini.ts`** — aumentar delays de retry pra `[2000, 5000, 12000]`
 
 ## O que NÃO muda
-- `GOOGLE_GEMINI_API_KEY` continua sendo a única chave usada
-- Sem Lovable AI, sem connector novo, sem custo adicional
-- Schemas semânticos (campos, validação) ficam idênticos
-- Frontend não muda nada — contrato de resposta preservado
-- Self-hosted continua self-hosted
-
-## Estimativa de impacto
-
-| Métrica | Hoje | Depois |
-|---|---|---|
-| 503 no `matrix` | ~80% das chamadas | <5% |
-| `MALFORMED_FUNCTION_CALL` | frequente | praticamente zero |
-| Tempo do onboarding completo | 90-180s (com retries) | 25-40s |
-| Custo por onboarding | mesmo | **menor** (sem retries desperdiçados, sem fallback pro `pro`) |
-| Modelo principal | `flash` (com fallback `pro`) | `flash` puro |
+- Nenhum prompt
+- Nenhum schema
+- Lógica de fallback `flash → flash-lite` continua igual
+- Frontend visual (só lógica de marcar erro)
 
 ## Critério de sucesso
-- Onboarding completo (audience → matrix → daily-guide) em <45s, sem erro
-- Boot logs mostram: `[matrix] using native endpoint, responseSchema, 4-week parallel`
-- Zero `MALFORMED_FUNCTION_CALL` em 10 onboardings consecutivos
-- Custo Google Cloud cai (menos retries, sem cair no `pro`)
+- Passos 1, 2, 3, 4 ficam **verdes em sequência**, sem nenhum voltar pra vermelho
+- Logs continuam mostrando `[matrix] complete — 30 dias em XXms`
+- 503 nas semanas paralelas cai pra < 1 a cada 10 onboardings
+- Onboarding completo percebido pelo usuário em <90s sem nenhum erro visual
+
+## Bloco de deploy pra VPS (será incluído após implementação)
+```bash
+cd /root/app && git checkout -- supabase/functions/ src/ && git pull origin main
+cp -r supabase/functions/_shared/. ~/supabase/docker/volumes/functions/_shared/
+cp -r supabase/functions/generate-personalized-matrix/. ~/supabase/docker/volumes/functions/generate-personalized-matrix/
+docker compose -f ~/supabase/docker/docker-compose.yml restart functions
+```
+Frontend (Vercel) sobe sozinho via push do GitHub — não precisa fazer nada na VPS pra ele.
 
 ## Detalhes técnicos
 ```text
-Endpoint nativo: /v1beta/models/{model}:generateContent
-Schema: generationConfig.responseSchema (JSON Schema subset do OpenAPI)
-Auth: ?key=API_KEY na URL (nativo) em vez de Bearer (OpenAI-compat)
-Streaming (ai-chat): :streamGenerateContent?alt=sse
-Paralelismo matrix: Promise.all([gerarSemana(1), gerarSemana(2), gerarSemana(3), gerarSemana(4)])
-Fallback inteligente: se 503 persistir após 3 retries no flash, cai pro flash-lite (não pro pro)
-```
+Por que os steps 1 e 2 ficavam vermelhos:
+- Backend nunca falhou neles (logs comprovam: Step 1 rodou, matrix rodou inteiro)
+- Frontend tem provavelmente Promise.race com timeout, ou estado de "erro" derivado
+  de outro step que demorou demais
+- Vou ler Onboarding.tsx pra confirmar a causa exata e remover
 
-```text
-Por que isso resolve sem Lovable AI:
-- O bug não era "API pública é ruim" — era endpoint OpenAI-compat + tool calling pesado
-- Endpoint nativo do Google é o mesmo que o Lovable Gateway usa por baixo
-- Você fica dono do controle, sem intermediário, sem créditos extra
-```
+Por que week-1 e week-4 batem 503:
+- Promise.all dispara 4 fetch() no mesmo event loop tick
+- Google enxerga 4 requests no mesmo ms da mesma key = parece burst suspeito
+- Stagger 800ms resolve sem perder paralelismo real
 
-```text
-Bloco de deploy pra VPS (será incluído na resposta após implementação):
-cd /root/app && git checkout -- supabase/functions/ && git pull origin main
-cp -r supabase/functions/_shared \
-      supabase/functions/generate-personalized-matrix \
-      supabase/functions/generate-script \
-      supabase/functions/generate-audience-profile \
-      supabase/functions/generate-daily-guide \
-      supabase/functions/generate-tools-content \
-      supabase/functions/ai-chat \
-      ~/supabase/docker/volumes/functions/
-docker compose -f ~/supabase/docker/docker-compose.yml restart functions
+Por que aumentar delay de retry:
+- 503 do Gemini é "back off and retry" — quanto mais espera, mais chance de sucesso
+- 1s é cedo demais, 503 ainda está acontecendo
+- 2s/5s/12s dá margem real pro lado deles se recuperar
 ```
 
