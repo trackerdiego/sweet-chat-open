@@ -1,75 +1,66 @@
 
 
-# Diagnóstico final — outra IA estava errada, problema é outro
+# Diagnóstico: o que está rodando onde + por que `daily-guide` nunca funciona
 
-## O que os comandos provaram
+## Resposta direta da sua dúvida
 
-**Outra IA: ERRADA** ❌
-- Volume já está em `/home/deno/functions` (não em `/app/edge-functions` como ela disse)
-- Comando do container: `start --main-service /home/deno/functions/main`
-- `ls /home/deno/functions` lista todas as 13 functions corretamente
-- Ou seja: **o caminho sempre esteve certo**, ela leu errado o seu print
+**Tudo já está rodando 100% no self-hosted (`api.influlab.pro`)**, nada mais toca o Lovable Cloud.
 
-**O que está 100% confirmado funcionando:**
-- ✅ Volume montado em `/home/deno/functions` (caminho oficial Supabase)
-- ✅ As 2 env vars novas presentes: `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000` e `EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000`
-- ✅ Todas as functions sincronizadas (ai-chat de 16:08 = código novo do dia)
-- ✅ Image `supabase/edge-runtime:v1.71.2` rodando
+Prova: o `src/integrations/supabase/client.ts` aponta hardcoded pra `https://api.influlab.pro`. As próprias screenshots que você mandou mostram os erros vindo de `api.influlab.pro/functions/v1/generate-script` e `/generate-tools-content`. Lovable Cloud nem está mais no caminho.
 
-**O que NÃO está mais em jogo:**
-- Kong timeout (300s) ✅
-- Edge-runtime worker timeout (300s) ✅
-- Path do volume ✅
-- Código sincronizado ✅
-- Promise.all aplicado ✅
+Então o que você está vendo (Tools quase sempre OK, Script intermitente, Daily Guide nunca) é **comportamento real do self-hosted depois dos patches** (Kong 300s + edge-runtime 300s + Promise.all).
 
-## Então por que ainda dava 502/504?
+## Leitura dos sintomas
 
-Provavelmente **já não dá mais**. O último teste falho foi ANTES do `--force-recreate` que aplicou as 2 env vars de timeout. Desde então **você não testou de novo**.
+| Function | Status | O que isso significa |
+|---|---|---|
+| `generate-tools-content` | Quase sempre OK, falha eventual | Prompt curto/médio, Gemini responde em 15-40s. Eventual 502 = cold start ou Gemini lento pontual. **Aceitável.** |
+| `generate-script` | Intermitente | Prompt mais longo (analisa nicho + gera roteiro completo). Latência beira o limite. Quando Gemini demora >2-3min, estoura. |
+| `generate-daily-guide` | **Nunca funciona** | Padrão diferente. Não é timeout aleatório — é falha **consistente**. Provavelmente erro de runtime, não de tempo. |
 
-A única coisa que falta agora é **rodar o app e ver se ainda quebra**.
+O fato de `daily-guide` **nunca** funcionar (não "às vezes") indica que o problema dela é **outro**, não o mesmo timeout que afeta `script`. Pode ser: payload mal formado, falta de coluna no DB, prompt que sempre gera resposta fora do schema esperado, ou erro de parse do retorno.
 
-## Plano: validar de uma vez por todas
+## Plano de investigação
 
-### Passo 1 — Você testa no app (3 min)
+### Passo 1 — Ler o código atual de `generate-daily-guide` (read-only)
+Eu vou inspecionar `supabase/functions/generate-daily-guide/index.ts` pra ver:
+- Estrutura do prompt e tamanho esperado da resposta
+- Se tem `Promise.all` ou ainda faz queries em série (você falou que aplicou nas 3, mas vou confirmar)
+- Schema de validação da resposta (se tem `try/catch` no `JSON.parse` que mascara erro real)
+- Tabelas/colunas que ele lê e escreve
 
-No https://app.influlab.pro:
-1. Logar
-2. **/script** → gerar script → repetir 2x seguidas
-3. **/tasks** → abrir guia diário
-4. **/tools** → rodar 1 ferramenta IA
-
-Pra cada um: anotar se deu erro (e qual: 502, 504, "demorando muito", JSON inválido) ou se funcionou.
-
-### Passo 2 — Coletar logs da VPS (1 comando)
-
-Logo depois dos testes:
+### Passo 2 — Pedir log específico da VPS (1 comando focado)
+Você roda **depois** de tentar abrir o guia diário no app:
 
 ```bash
-docker compose logs functions --since 5m 2>&1 \
-  | grep -iE "generate-script|generate-daily-guide|generate-tools|gemini responded|db parallel|latency|error|deadline|killed|abort" \
-  | tail -80
+docker compose logs functions --since 3m 2>&1 | grep -iE "daily-guide" -A 3 | tail -100
 ```
 
-Isso me mostra a latência exata de cada etapa (graças aos `console.log` que já adicionei nas 3 functions).
+Esse comando puxa toda linha que cita `daily-guide` + as 3 linhas seguintes (contexto). Vou ver o erro **exato** que está acontecendo.
 
-### Passo 3 — Me reporta
+### Passo 3 — Comparar com `generate-script`
+Mesmo comando trocando `daily-guide` por `generate-script`, pra ver a diferença de comportamento entre uma function que funciona às vezes e uma que nunca funciona.
 
-Cola aqui:
-- Resultado de cada um dos 4 testes (✅ ou ❌ + qual erro)
-- Output do comando de log
+### Passo 4 — Diagnóstico definitivo
+Com base nos logs:
+- **Se for erro de schema/parse** → corrijo o prompt/parser na function (mudança de código + redeploy via `deploy-selfhost.sh`)
+- **Se for timeout puro** (latência consistente >5min) → reduzo `max_tokens` do daily-guide ou simplifico o prompt
+- **Se for erro de DB** (coluna faltando) → SQL pra você rodar no Studio self-hosted
+- **Se for OOM** (worker morto por memória) → ajuste `mem_limit` no compose
 
-Com isso eu fecho o ciclo: ou confirma que está resolvido (atualizo memória), ou identifico exatamente qual camada ainda está estourando (Gemini, DB, ou outro).
+### Passo 5 — Estabilizar `generate-script`
+Mesma lógica: ler logs, identificar gargalo, atacar. Provavelmente Gemini com `max_tokens` alto demais — solução é dividir em 2 chamadas ou reduzir tokens.
 
-## O que NÃO fazer
+## O que NÃO vou fazer agora
 
-- **Não aplique a sugestão da outra IA** de mexer no caminho do volume. O caminho atual (`/home/deno/functions`) é o **oficial e correto**. Mexer vai derrubar tudo.
-- Não rode mais comandos de patch na VPS — está tudo aplicado.
-- Não restart, não recreate. Só testar.
+- Mexer em config da VPS (já está tudo aplicado)
+- Mudar caminho de volume (já confirmado correto)
+- Tocar em `generate-tools-content` (está aceitável)
 
-## Próximo passo (após sua aprovação)
+## Próximo passo
 
-Você roda os passos 1+2 acima e me cola o resultado. Com base nisso:
-- Se tudo funcionar → atualizo `mem://infra/deploy-workflow.md` com a regra dos 3 timeouts (Kong + 2 edge-runtime) e fechamos.
-- Se ainda quebrar → leio os logs do passo 2 e digo exatamente o que ainda precisa.
+Após sua aprovação:
+1. Eu leio `generate-daily-guide/index.ts` e `generate-script/index.ts` em modo default
+2. Você roda os 2 comandos de log da VPS (passos 2 e 3) e cola o output
+3. Eu fecho o diagnóstico e entrego: ou patch de código + bloco da VPS, ou SQL pro Studio
 
