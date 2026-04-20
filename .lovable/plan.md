@@ -1,70 +1,67 @@
 
+## Corrigir o runtime que ainda está executando código antigo
 
-# Validação final + diagnóstico se ainda falhar
+### Diagnóstico confirmado
+- O log `Missing required environment variables` **não existe mais no código atual do repositório**.
+- Mesmo assim ele continua aparecendo na VPS.
+- Isso indica com alta confiança que o self-hosted está rodando **bundle antigo de edge function** ou **container órfão/stale**, não o source atualizado que foi copiado.
 
-## Status atual
+### O que será feito
+1. **Identificar a origem exata do log no runtime ativo**
+   - Verificar qual function/container ainda emite `Missing required environment variables`
+   - Checar se o container órfão `supabase-functions-run-...` ainda existe e está participando da execução
+   - Conferir se o código carregado dentro do runtime corresponde ao commit atual
 
-O deploy foi aplicado com sucesso na VPS:
-- ✅ `git pull` trouxe commit `16dabcf` ("Corrigiu fallback no email hook")
-- ✅ Os 2 arquivos contêm o fix (`lovable_email_disabled`)
-- ✅ Código novo foi copiado pra dentro do container
-- ✅ Container reiniciado
+2. **Parar de depender de restart/copy como correção principal**
+   - Tratar `docker compose cp + restart` como workaround incompleto
+   - Aplicar o caminho oficial deste projeto: **deploy real das edge functions self-hosted**
+   - Prioridade inicial: `auth-email-hook` e `process-email-queue`
+   - Se necessário, redeployar o conjunto completo listado em `scripts/deploy-selfhost.sh`
 
-O log do passo 4 saiu **vazio** (nenhuma linha com `missing required|booted|error`), o que é exatamente o que queríamos: **o erro 51× sumiu**. O container foi reiniciado limpo.
+3. **Limpar resíduos do runtime antigo**
+   - Remover órfãos do compose
+   - Garantir que o serviço `functions` suba sem reaproveitar instâncias antigas
+   - Validar que só existe um runtime ativo respondendo
 
-## Próximo passo: validar no app + bloco de diagnóstico se travar
+4. **Validar as functions de IA após o redeploy**
+   - Testar `generate-script`
+   - Testar `generate-daily-guide`
+   - Testar `generate-tools-content`
+   - Confirmar que o erro residual desapareceu dos logs
 
-### Bloco 1 — Validação rápida no navegador
+### Implementação proposta
+#### Fase A — confirmação operacional
+- Inspecionar:
+  - `scripts/deploy-selfhost.sh`
+  - lista de functions públicas/privadas
+  - presença de órfãos no stack
+- Verificar se o projeto depende de **`supabase functions deploy`** para atualizar o bundle real do edge-runtime
 
-Logado como `agentevendeagente@gmail.com`, em **aba anônima, cache limpo**:
+#### Fase B — correção principal
+- Executar deploy self-hosted das functions alteradas usando o fluxo do projeto
+- Limpar órfãos
+- Reiniciar o serviço `functions` de forma consistente com o deploy
 
-1. `/tasks` → clicar "Gerar com IA" em qualquer tarefa
-2. `/script` → gerar variação de roteiro de qualquer dia
-3. `/tools` → usar qualquer ferramenta de IA
-4. `/` → "Gerar sugestões com IA" no Guia do Dia
+#### Fase C — validação
+- Confirmar ausência do log antigo
+- Validar no app os fluxos:
+  - `/tasks`
+  - `/script`
+  - `/tools`
+- Se sobrar falha, rastrear por function específica em vez de tratar o pool inteiro
 
-### Bloco 2 — Se QUALQUER uma falhar, cole na VPS
+## Resultado esperado
+- O runtime deixa de carregar código legado
+- O log `Missing required environment variables` desaparece
+- As ferramentas de IA voltam a responder no app
+- O deploy futuro fica padronizado no fluxo correto do self-hosted
 
-```bash
-cd ~/supabase/docker
-
-# Logs gerais das últimas requisições às functions
-docker compose logs functions --tail 200 2>&1 | tail -80
-
-# Filtra erros específicos das 3 functions de IA
-docker compose logs functions --tail 300 2>&1 \
-  | grep -iE "generate-script|generate-daily-guide|generate-tools-content|gemini" \
-  | tail -40
-```
-
-Cole o output completo aqui. Com isso eu identifico em segundos qual é o ponto de falha real (se houver).
-
-### Bloco 3 — Se TUDO funcionar
-
-Me avisa "funcionou" e eu fecho o ciclo:
-1. Atualizo a memória do projeto registrando esse fix como referência futura
-2. Documento no `mem://infra/deploy-workflow` que `docker compose cp + restart` é o caminho válido pra hotfix de edge function sem rebuild
-
-## Cenários possíveis após validação
-
-| Resultado | Diagnóstico | Ação |
-|---|---|---|
-| Tudo funciona | Pool estabilizou | Fim. Documenta na memória. |
-| Só 1 das 3 IAs falha | Bug específico daquela function | Leio logs daquela function, patch cirúrgico |
-| Todas as 3 ainda falham | Container não recarregou o código copiado | `docker compose down functions && docker compose up -d functions` |
-| Erro de auth (401/403) | Token JWT do frontend não chega na function | Inspeciono `Navigation.tsx`/cliente Supabase |
-
-## O que NÃO vou fazer agora
-
-- Não vou tocar em nenhum arquivo de IA preventivamente
-- Não vou mudar `.env` da VPS
-- Não vou recriar todo o stack
-- Não vou propor rollback enquanto não tiver evidência de regressão
-
-## Próximo passo (após sua aprovação)
-
-1. Volto em modo default
-2. Te entrego os Blocos 1 e 2 prontos pra colar
-3. Aguardo sua resposta com "funcionou" OU com o output dos logs
-4. Ato apropriadamente conforme a tabela acima
-
+## Detalhes técnicos
+- `auth-email-hook` e `process-email-queue` já têm fallback `lovable_email_disabled` no código atual
+- Como a string antiga não aparece no repo, o problema mais provável é:
+  - bundle antigo ainda servido pelo edge runtime, ou
+  - container órfão ainda ativo no projeto docker
+- Neste projeto, mudanças de edge function em self-hosted devem seguir o fluxo documentado em:
+  - `mem://infra/deploy-workflow.md`
+  - `scripts/deploy-selfhost.sh`
+- A correção não envolve banco, frontend, RLS ou schema
