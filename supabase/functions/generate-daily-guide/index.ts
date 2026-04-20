@@ -36,7 +36,7 @@ async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 60000,
+  timeoutMs = 120000,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();

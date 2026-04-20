@@ -26,7 +26,7 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
 }
 
 const PRIMARY_MODEL = "gemini-2.5-pro";
-const FALLBACK_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.5-pro";
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,7 +35,7 @@ async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 60000,
+  timeoutMs = 120000,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();
