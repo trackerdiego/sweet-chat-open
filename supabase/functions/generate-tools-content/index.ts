@@ -102,21 +102,17 @@ serve(async (req) => {
       viral: { type: "object", properties: { structureAnalysis: { type: "string" }, adaptedScript: { type: "object", properties: { hook: { type: "string" }, body: { type: "string" }, cta: { type: "string" } }, required: ["hook", "body", "cta"] }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "adaptedScript", "filmingInstructions", "whyItWillWork"], additionalProperties: false },
     };
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
-        tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
-        tool_choice: { type: "function", function: { name: "generate_result" } },
-      }),
-    });
+    const response = await callGeminiWithRetry({
+      model: "gemini-2.5-flash",
+      messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
+      tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
+      tool_choice: { type: "function", function: { name: "generate_result" } },
+    }, GOOGLE_GEMINI_API_KEY);
 
     if (!response.ok) {
       if (response.status === 429) return new Response(JSON.stringify({ error: "Muitas requisições. Aguarde." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const text = await response.text(); console.error("AI error:", response.status, text);
-      return new Response(JSON.stringify({ error: "Erro ao gerar conteúdo" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }), { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const data = await response.json();
