@@ -29,9 +29,16 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
+// === Model config (locked) ===
 const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.5-flash";
+const TIMEOUT_MS = 60000;
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
+if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
+  console.error("[generate-script] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
+}
+console.log("[generate-script] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -39,7 +46,7 @@ async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 60000,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();

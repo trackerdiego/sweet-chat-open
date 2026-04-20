@@ -14,7 +14,6 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-// Resilient JSON parse: handles markdown fences, control chars, trailing commas.
 function parseLooseJson(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object") return raw as Record<string, unknown>;
   let s = String(raw ?? "").trim();
@@ -26,9 +25,17 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
+// === Model config (locked) ===
 const PRIMARY_MODEL = "gemini-2.5-pro";
 const FALLBACK_MODEL = "gemini-2.5-pro";
+const TIMEOUT_MS = 120000;
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
+
+if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
+  console.error("[daily-guide] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
+}
+console.log("[daily-guide] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -36,7 +43,7 @@ async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 120000,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();
@@ -91,6 +98,14 @@ async function callGeminiResilient(
   return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
 }
 
+// Helpers para extrair tool_call args (json string ou object)
+function extractToolArgs(data: any): Record<string, unknown> | null {
+  const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
+  const args = toolCall?.function?.arguments;
+  if (!args) return null;
+  try { return parseLooseJson(args); } catch { return null; }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -143,10 +158,9 @@ serve(async (req) => {
     }
 
     let visceralContext = "";
-
     if (audienceData?.avatar_profile) {
       const ap = audienceData.avatar_profile as Record<string, unknown>;
-      visceralContext = `\n\nPERFIL DO PÚBLICO (use em todas as categorias):\nAvatar: ${ap.avatar || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto: ${ap.deepOccultDesire || ''}\nFeridas centrais: ${JSON.stringify(ap.coreWounds || [])}\nGatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}\nFrustrações: ${JSON.stringify(ap.frustrations || [])}`;
+      visceralContext = `\n\nPERFIL DO PÚBLICO:\nAvatar: ${ap.avatar || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto: ${ap.deepOccultDesire || ''}\nFeridas centrais: ${JSON.stringify(ap.coreWounds || [])}\nGatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}\nFrustrações: ${JSON.stringify(ap.frustrations || [])}`;
     }
 
     const styleMap: Record<string, string> = { casual: "leve, descontraído, como conversa entre amigos", profissional: "autoritário, informativo, com dados e dicas práticas", divertido: "engraçado, irreverente, usando memes e trends" };
@@ -154,55 +168,108 @@ serve(async (req) => {
     const nicheContext = primaryNiche ? `O nicho principal do(a) criador(a) de conteúdo é: ${primaryNiche}.` : '';
     const visceralInstruction = visceralElement ? `\n\nGATILHO VISCERAL OBRIGATÓRIO PARA ESTE DIA: ${visceralElement} — base emocional dos hooks, storytelling, CTAs e cliffhangers.` : "";
 
-    const systemPrompt = `Você é especialista em marketing digital para criadores de conteúdo brasileiros. Use linguagem neutra de gênero.\n${nicheContext}\nEstilo: ${styleDesc}.${visceralContext}${visceralInstruction}\nGere conteúdo autêntico, pessoal e que soe natural.\nConteúdo é para o nicho "${pillarLabel}" no dia "${dayTitle}". Tema semanal: "${weeklyTheme}".\nAdapte TODO o conteúdo ao nicho "${primaryNiche || 'lifestyle'}".`;
+    const baseSystem = `Você é especialista em marketing digital para criadores de conteúdo brasileiros. Use linguagem neutra de gênero.\n${nicheContext}\nEstilo: ${styleDesc}.${visceralContext}${visceralInstruction}\nGere conteúdo autêntico, pessoal e que soe natural.\nConteúdo é para o nicho "${pillarLabel}" no dia "${dayTitle}". Tema semanal: "${weeklyTheme}".\nAdapte TODO o conteúdo ao nicho "${primaryNiche || 'lifestyle'}".`;
 
-    const userPrompt = `Gere conteúdo para o dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo do dia: ${dayTitle}\nNicho: ${primaryNiche || 'lifestyle'}\n\nGere as 7 categorias:\n1. contentTypes: 5 tipos\n2. hooks: 5 hooks virais\n3. videoFormats: 5 formatos\n4. storytelling: 5 ideias\n5. ctas: 5 CTAs\n6. cliffhangers: 5 cliffhangers\n7. taskExamples: objeto com 7 chaves (morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost), cada uma com array de EXATAMENTE 5 exemplos PRÁTICOS, prontos para uso, no nicho "${primaryNiche || 'lifestyle'}".\n\nRetorne EXATAMENTE no formato da function tool.`;
+    // ============================================================
+    // CHAMADA A — 6 listas (mais leve, alta taxa de sucesso)
+    // ============================================================
+    const userPromptA = `Gere conteúdo para o dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo do dia: ${dayTitle}\nNicho: ${primaryNiche || 'lifestyle'}\n\nGere as 6 categorias (cada uma com EXATAMENTE 5 itens):\n1. contentTypes\n2. hooks\n3. videoFormats\n4. storytelling\n5. ctas\n6. cliffhangers\n\nRetorne EXATAMENTE no formato da function tool.`;
 
-    const startedAt = Date.now();
-    const response = await callGeminiResilient({
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      tools: [{ type: "function", function: { name: "generate_daily_content", description: "Generate personalized daily content", parameters: { type: "object", properties: { contentTypes: { type: "array", items: { type: "string" } }, hooks: { type: "array", items: { type: "string" } }, videoFormats: { type: "array", items: { type: "string" } }, storytelling: { type: "array", items: { type: "string" } }, ctas: { type: "array", items: { type: "string" } }, cliffhangers: { type: "array", items: { type: "string" } }, taskExamples: { type: "object", properties: { morningInsight: { type: "array", items: { type: "string" } }, morningPoll: { type: "array", items: { type: "string" } }, reel: { type: "array", items: { type: "string" } }, reelEngagement: { type: "array", items: { type: "string" } }, valueStories: { type: "array", items: { type: "string" } }, lifestyleStory: { type: "array", items: { type: "string" } }, feedPost: { type: "array", items: { type: "string" } } }, required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"] } }, required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers", "taskExamples"], additionalProperties: false } } }],
-      tool_choice: { type: "function", function: { name: "generate_daily_content" } },
-      max_tokens: 2500,
-    }, GOOGLE_GEMINI_API_KEY, "daily-guide");
-    const latencyMs = Date.now() - startedAt;
-    console.log("[daily-guide] gemini responded", { userId, status: response.status, latencyMs });
+    const startedA = Date.now();
+    const responseA = await callGeminiResilient({
+      messages: [{ role: "system", content: baseSystem }, { role: "user", content: userPromptA }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "generate_daily_lists",
+          description: "Generate 6 content list categories for the day",
+          parameters: {
+            type: "object",
+            properties: {
+              contentTypes: { type: "array", items: { type: "string" } },
+              hooks: { type: "array", items: { type: "string" } },
+              videoFormats: { type: "array", items: { type: "string" } },
+              storytelling: { type: "array", items: { type: "string" } },
+              ctas: { type: "array", items: { type: "string" } },
+              cliffhangers: { type: "array", items: { type: "string" } },
+            },
+            required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers"],
+          },
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "generate_daily_lists" } },
+      max_tokens: 1500,
+    }, GOOGLE_GEMINI_API_KEY, "daily-guide-A");
+    const latencyA = Date.now() - startedA;
+    console.log("[daily-guide] call A responded", { userId, status: responseA.status, latencyMs: latencyA });
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.error("[daily-guide] gemini error", { status: response.status, body: text.slice(0, 500) });
-      if (response.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
-      if (response.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
-      if (response.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora (Gemini 503). Aguarde 1-2 minutos e tente novamente." }, 503);
+    if (!responseA.ok) {
+      const text = await responseA.text().catch(() => "");
+      console.error("[daily-guide] call A error", { status: responseA.status, body: text.slice(0, 400) });
+      if (responseA.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
+      if (responseA.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+      if (responseA.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente." }, 503);
       return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
     }
 
-    const data = await response.json().catch((e) => {
-      console.error("[daily-guide] failed to parse gemini json envelope", e);
-      return null;
-    });
-    if (!data) return jsonResponse({ error: "A IA retornou resposta inválida. Tente novamente." }, 502);
-
-    const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
-    const args = toolCall?.function?.arguments;
-    if (!args) {
-      console.error("[daily-guide] no tool_calls in response", {
-        finishReason: data?.choices?.[0]?.finish_reason,
-        messageKeys: Object.keys(data?.choices?.[0]?.message || {}),
-        sample: JSON.stringify(data).slice(0, 800),
-      });
-      return jsonResponse({ error: "A IA retornou resposta sem dados estruturados. Tente novamente." }, 502);
+    const dataA = await responseA.json().catch(() => null);
+    if (!dataA) return jsonResponse({ error: "A IA retornou resposta inválida (A). Tente novamente." }, 502);
+    const partA = extractToolArgs(dataA);
+    if (!partA) {
+      console.error("[daily-guide] no tool_calls A", { finishReason: dataA?.choices?.[0]?.finish_reason, sample: JSON.stringify(dataA).slice(0, 600) });
+      return jsonResponse({ error: "A IA retornou resposta sem dados estruturados (listas). Tente novamente." }, 502);
     }
 
-    let content: Record<string, unknown>;
-    try {
-      content = parseLooseJson(args);
-    } catch (e) {
-      console.error("[daily-guide] failed to parse tool arguments JSON", { sample: String(args).slice(0, 500), err: String(e) });
-      return jsonResponse({ error: "A IA retornou JSON inválido. Tente novamente." }, 502);
+    // ============================================================
+    // CHAMADA B — taskExamples (objeto aninhado, schema isolado)
+    // ============================================================
+    const userPromptB = `Para o dia ${day} (pilar ${pillarLabel}, título "${dayTitle}", nicho "${primaryNiche || 'lifestyle'}"), gere o objeto taskExamples com 7 chaves: morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost. Cada chave deve ter um array com EXATAMENTE 5 exemplos PRÁTICOS, prontos para uso, no nicho "${primaryNiche || 'lifestyle'}". Retorne usando a function tool.`;
+
+    const startedB = Date.now();
+    const responseB = await callGeminiResilient({
+      messages: [{ role: "system", content: baseSystem }, { role: "user", content: userPromptB }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "generate_task_examples",
+          description: "Generate 7 categories of practical task examples",
+          parameters: {
+            type: "object",
+            properties: {
+              morningInsight: { type: "array", items: { type: "string" } },
+              morningPoll: { type: "array", items: { type: "string" } },
+              reel: { type: "array", items: { type: "string" } },
+              reelEngagement: { type: "array", items: { type: "string" } },
+              valueStories: { type: "array", items: { type: "string" } },
+              lifestyleStory: { type: "array", items: { type: "string" } },
+              feedPost: { type: "array", items: { type: "string" } },
+            },
+            required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"],
+          },
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "generate_task_examples" } },
+      max_tokens: 1800,
+    }, GOOGLE_GEMINI_API_KEY, "daily-guide-B");
+    const latencyB = Date.now() - startedB;
+    console.log("[daily-guide] call B responded", { userId, status: responseB.status, latencyMs: latencyB });
+
+    let taskExamples: Record<string, unknown> = {};
+    if (responseB.ok) {
+      const dataB = await responseB.json().catch(() => null);
+      const partB = dataB ? extractToolArgs(dataB) : null;
+      if (partB) {
+        taskExamples = partB;
+      } else {
+        console.warn("[daily-guide] call B sem dados estruturados — retornando sem taskExamples");
+      }
+    } else {
+      console.warn("[daily-guide] call B falhou — retornando sem taskExamples", { status: responseB.status });
     }
 
-    // Sucesso: agora sim contabiliza uso
+    const content = { ...partA, taskExamples };
+
+    // Sucesso: contabiliza uso
     try {
       await Promise.all([
         adminClient.from("user_usage").update({
@@ -215,7 +282,7 @@ serve(async (req) => {
       console.warn("[daily-guide] usage update failed (non-fatal)", e);
     }
 
-    console.log("[daily-guide] success", { userId, day, latencyMs });
+    console.log("[daily-guide] success", { userId, day, latencyA, latencyB, hasTaskExamples: Object.keys(taskExamples).length > 0 });
     return jsonResponse(content);
   } catch (e) {
     console.error("[daily-guide] uncaught error:", e, { userId });
