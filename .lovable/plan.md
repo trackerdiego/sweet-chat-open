@@ -1,79 +1,70 @@
 
+## Validar se o `main` já foi recuperado e isolar a falha real
 
-# Causa raiz IDENTIFICADA — falta o `main` worker
+### Diagnóstico atualizado
+O sinal mais importante no seu último log é este:
 
-## O que o passo 6 revelou
+- `main function started`
 
-```
-worker boot error: failed to bootstrap runtime: could not find an appropriate entrypoint
-```
+Isso indica que o entrypoint `/home/deno/functions/main` passou a existir e foi carregado pelo runtime. Então o erro anterior de “could not find an appropriate entrypoint” pode já estar resolvido, e o `tail` ainda estar misturando linhas antigas do boot quebrado com o boot novo.
 
-E o `command:` do compose mostra:
-```
-command: start --main-service /home/deno/functions/main
-```
+### O que será feito
+1. **Confirmar o estado atual do runtime com logs frescos**
+   - Verificar somente logs gerados após o último restart
+   - Confirmar se aparecem novas linhas de `boot error` depois de `main function started`
+   - Separar “erro histórico no buffer” de “erro ainda ativo”
 
-O edge-runtime do Supabase exige um worker chamado `main` em `/home/deno/functions/main/index.ts` que faz o roteamento pras outras functions. Esse `main` (e o `hello`) **existiam antes** no volume mas foram **deletados pelo `rsync --delete`** do passo 3:
+2. **Validar o roteador principal antes de culpar as IAs**
+   - Testar a function `hello` para provar que o `main` está roteando corretamente
+   - Testar uma function pública simples (`send-push`) para confirmar que o runtime inteiro responde
+   - Se essas duas responderem, o problema deixa de ser boot do runtime e passa a ser function específica
 
-```
-deleting main/index.ts
-deleting main/
-deleting hello/index.ts
-deleting hello/
-```
+3. **Testar as functions de IA diretamente**
+   - Validar `generate-script`
+   - Validar `generate-daily-guide`
+   - Validar `generate-tools-content`
+   - Se uma falhar, inspecionar logs daquela function em vez do pool inteiro
 
-Eles não existem no repo `/root/app/supabase/functions/` porque são artefatos de bootstrap do self-hosted, não do projeto. O `rsync --delete` foi agressivo demais.
+4. **Só se o runtime continuar instável**
+   - Conferir se o container realmente enxerga `/home/deno/functions/main/index.ts` e `/home/deno/functions/hello/index.ts`
+   - Confirmar que o bind mount `/root/supabase/docker/volumes/functions -> /home/deno/functions` está refletido dentro do container
+   - Se houver divergência, corrigir o volume/mount em vez de mexer nas functions de IA
 
-**Daí o sintoma original ("Missing required environment variables") aparecia 51× no log antigo**: era o `main` worker tentando bootar, falhando no check de env do **próprio main**, e cada request invocando uma function nova fazia o pool tentar rebootar. Agora sem o `main` o erro mudou de cara mas a causa raiz é a mesma família: **o `main` está quebrado/ausente**.
+### Implementação proposta
+#### Fase A — prova de vida do runtime
+- Reiniciar `functions`
+- Ler logs apenas desde o restart
+- Confirmar ausência de novo `worker boot error`
 
-## Plano de correção (3 passos curtos)
+#### Fase B — prova de roteamento
+- Chamar `/functions/v1/hello`
+- Chamar `/functions/v1/send-push`
+- Se ambas responderem, o `main` está funcional
 
-### Passo 1 — Recuperar `main/index.ts` e `hello/index.ts`
+#### Fase C — prova das IAs
+- Testar `generate-script`, `generate-daily-guide` e `generate-tools-content`
+- Correlacionar cada teste com logs específicos
+- Identificar se a falha é:
+  - autenticação/JWT
+  - variável da própria function
+  - resposta inválida do Gemini
+  - erro interno isolado
 
-Eles existem no template oficial do Supabase self-hosted. Vou te entregar o conteúdo exato dos 2 arquivos pra colar via heredoc na VPS — `main` é o roteador padrão, `hello` é só placeholder de healthcheck.
+### Resultado esperado
+- Confirmar se o erro de entrypoint já foi resolvido de fato
+- Evitar continuar tratando o runtime inteiro quando o problema já pode ter migrado para uma function específica
+- Voltar a ter as ferramentas de IA funcionando no app ou, no mínimo, identificar exatamente qual function ainda está falhando
 
-### Passo 2 — Restart do serviço
-
-```
-docker compose restart functions
-sleep 5
-docker compose logs functions --tail 50 | grep -iE "boot|listening|error"
-```
-
-Esperado: `serving requests on 0.0.0.0:9000` ou similar, sem erro.
-
-### Passo 3 — Validar IAs no app
-
-`/tasks`, `/script`, `/tools`, dashboard. Se funcionar, atualizo a memória:
-- **`mem://infra/deploy-workflow`** ganha aviso explícito: "Nunca usar `rsync --delete` no volume de functions — precisa preservar `main/` e `hello/`. Usar rsync sem `--delete` ou copiar function por function."
-
-## Por que essa é a correção certa (e não outra)
-
-| Hipótese alternativa | Por que NÃO é |
-|---|---|
-| Bug nas functions de IA | Erro é no boot do `main`, antes de qualquer function de IA carregar |
-| Falta de env var | `printenv` da Fase A já provou que tudo está setado |
-| Cache antigo do Deno | `down + up` recriou o container do zero |
-| Bundle stale | Volume foi sincronizado e a string antiga sumiu (passo 4) |
-
-A pista decisiva é a **mudança da mensagem de erro** depois do `rsync --delete`: de "Missing required environment variables" pra "could not find an appropriate entrypoint". Isso só acontece quando o entrypoint configurado no `command:` deixa de existir no filesystem.
-
-## Risco
-
-Mínimo. São 2 arquivos `index.ts` de roteamento padrão do Supabase, sem lógica de negócio. Reversível em 10 segundos.
-
-## O que NÃO vou fazer
-
-- Não vou tocar em nenhuma function de IA
-- Não vou mudar o `command:` do compose
-- Não vou mexer em env vars
-- Não vou usar rsync com `--delete` de novo
+## Detalhes técnicos
+- `main function started` é evidência de que o entrypoint foi encontrado
+- `docker compose logs --tail 80` pode incluir linhas antigas; por isso ele não prova sozinho que o erro continua ativo
+- Como `main/` e `hello/` foram recriados no volume bindado, o próximo passo correto é validar o runtime com logs novos e requests reais
+- Não há indício, neste ponto, de necessidade de mudar frontend, banco, RLS ou schema
 
 ## Próximo passo
-
-Quando aprovar:
-1. Volto em modo default
-2. Te entrego um **bloco único** com os 2 heredocs (`main/index.ts` + `hello/index.ts`) + restart + validação
-3. Você cola, testa as IAs, me dá o veredito final
-4. Eu atualizo `mem://infra/deploy-workflow` com a regra "nunca usar rsync --delete no volume de functions"
-
+Quando aprovado, a execução será:
+1. coletar logs frescos após restart
+2. testar `hello`
+3. testar uma public function simples
+4. testar as 3 IAs
+5. agir só no componente que realmente falhar
