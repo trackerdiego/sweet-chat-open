@@ -1,116 +1,93 @@
 
 
-# Causa raiz confirmada e correção cirúrgica
+# Reavaliação: causa raiz NÃO é variável de ambiente
 
-## O que o diagnóstico provou
+## O que mudou no diagnóstico
 
-| Evidência | Conclusão |
-|---|---|
-| Repo na VPS está em `a43ed18` (HEAD = origin/main) | ✅ Código novo já está lá — H1 descartada |
-| `printenv` no container mostra `GOOGLE_GEMINI_API_KEY=<set>` | ✅ Secret existe — mas só no escopo "shell" |
-| Gemini direto retorna **200 OK** com `"Pong."` | ✅ Chave válida, sem quota, sem billing — H3 descartada |
-| Container `supabase-edge-functions` rodando há 2h, sem restart loop | ✅ H4 descartada |
-| **Logs do container repetem 51× `[Error] Missing required environment variables`** | 🎯 **Causa raiz** |
+O printenv da Fase A provou que **todas as variáveis obrigatórias do runtime já estão dentro do container**:
 
-A mensagem `Missing required environment variables` **não vem do nosso código** — vem do próprio `edge-runtime:v1.71.2` (boot check). Isso significa que a variável que o runtime precisa ler **antes** de carregar qualquer função está ausente. Como `GOOGLE_GEMINI_API_KEY` está visível no `printenv`, a falta é de outra variável obrigatória — quase certamente uma das que o runtime do Supabase exige no boot:
+```
+JWT_SECRET=<set>
+SUPABASE_ANON_KEY=<set>
+SUPABASE_DB_URL=<set>
+SUPABASE_PUBLIC_URL=<set>
+SUPABASE_PUBLISHABLE_KEYS=<set>
+SUPABASE_SECRET_KEYS=<set>
+SUPABASE_SERVICE_ROLE_KEY=<set>
+SUPABASE_URL=<set>
+VERIFY_JWT=<set>
+GOOGLE_GEMINI_API_KEY=<set>  (visto na rodada anterior)
+```
 
-- `SUPABASE_DB_URL`
-- `JWT_SECRET` (ou `SUPABASE_AUTH_JWT_SECRET`)
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `VERIFY_JWT`
+Ou seja: H2 (secret faltando) está **descartada**. A mensagem `[Error] Missing required environment variables` que aparece 51× nos logs **não é do edge-runtime base** — é do **nosso próprio código** dentro de uma das edge functions, que checa env vars na inicialização e loga essa frase exata quando algo falta no escopo dele.
 
-O `printenv` filtrado só mostrou 4 variáveis (`ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN`, `SUPABASE_URL`, `GOOGLE_GEMINI_API_KEY`). **Está faltando `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_DB_URL` dentro do container.** Isso explica matematicamente por que **toda função de IA falha**: o runtime aborta antes de invocar o handler — e como o handler nunca roda, o frontend recebe 500 / timeout.
+## Nova hipótese (alta confiança)
 
-Por que isso só atinge IA visivelmente? Porque as funções de IA são as únicas que o usuário invoca de forma intensiva e visível; webhooks de pagamento e push também estão quebrados, só que silenciosamente.
+Existe uma function nossa (provavelmente `auth-email-hook` ou `process-email-queue`, dado o `RESEND_API_KEY` que aparece como "not set" nos warnings do compose) que faz algo do tipo:
 
-## Plano de correção (não muda código, só docker-compose)
+```ts
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+if (!RESEND_API_KEY) {
+  console.error("[Error] Missing required environment variables");
+  // throw ou return 500
+}
+```
 
-### Fase A — confirmar quais variáveis estão faltando
+Como o edge-runtime do Supabase carrega **todas** as functions no boot quando uma é invocada, **uma function que falha no boot pode derrubar o pool inteiro** — o que faria o sintoma "todas as funções de IA falham" sem que as functions de IA tenham qualquer bug.
 
-Você roda mais um diagnóstico curto pra eu não chutar:
+Os WARN do compose confirmam: `RESEND_API_KEY` está ausente do `.env` da VPS.
+
+## Plano de correção em 3 passos
+
+### Passo 1 — Identificar exatamente qual function loga a frase
+
+Comando único de leitura na VPS:
 
 ```bash
-cd ~/supabase/docker
-docker compose exec functions printenv \
-  | grep -E "^(SUPABASE_|JWT_|VERIFY_JWT|ANON_|SERVICE_ROLE)" \
-  | sed 's/=.*/=<set>/' \
-  | sort
+cd /root/app
+grep -rn "Missing required environment variables" supabase/functions/
 ```
 
-Isso lista **só** as variáveis-base do Supabase que o runtime exige. Tudo que **não** aparecer é o que precisa ser adicionado.
+Isso aponta o arquivo e a linha. Aposta forte: `auth-email-hook/index.ts` ou `process-email-queue/index.ts` checando `RESEND_API_KEY`.
 
-### Fase B — corrigir `docker-compose.yml`
-
-Com base no resultado da Fase A, vou te entregar um patch exato pro bloco `services.functions.environment:` em `~/supabase/docker/docker-compose.yml`. O padrão será:
-
-```yaml
-services:
-  functions:
-    environment:
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${ANON_KEY}                  # ou SUPABASE_ANON_KEY conforme .env
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}  # idem
-      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      VERIFY_JWT: "false"
-      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}
-      ASAAS_API_KEY: ${ASAAS_API_KEY}
-      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
-```
-
-E o comando final:
+### Passo 2 — Confirmar quais env vars o app realmente lê e o que falta
 
 ```bash
-cd ~/supabase/docker
-docker compose up -d --force-recreate functions
-docker compose logs functions --tail 50 | grep -i "missing\|booted\|listening"
+cd /root/app
+grep -rEn "Deno\.env\.get\(" supabase/functions/ | grep -v "//"
 ```
 
-Esperado: as linhas `Missing required environment variables` somem e aparece algo como `Edge runtime listening` / `serving`.
+Lista todas as env vars consumidas. Cruzo com o printenv pra te dizer exatamente o que falta no `.env`.
 
-### Fase C — validação no app
+### Passo 3 — Correção (a definir após o passo 1)
 
-Logado como `agentevendeagente@gmail.com`, em aba anônima:
-1. `/tasks` → "Gerar com IA" → deve retornar conteúdo
-2. `/script` → gerar variação → deve retornar
-3. `/tools` → qualquer ferramenta IA → deve retornar
-4. Se algum ainda falhar, vou usar o supabase--edge_function_logs (no Lovable Cloud espelho) só pra leitura comparativa — mas a correção real fica na VPS.
+Dois caminhos possíveis, sem mudança de arquitetura:
 
-## O que eu **não** vou tocar
+**Caminho A — adicionar a env faltante (recomendado se a função é usada):**
+1. Editar `~/supabase/docker/.env` adicionando `RESEND_API_KEY=<valor>` (ou a que for)
+2. Editar `~/supabase/docker/docker-compose.yml` no service `functions` adicionando `RESEND_API_KEY: ${RESEND_API_KEY}` em `environment:`
+3. `docker compose up -d --force-recreate functions`
 
-- Nenhum arquivo `.ts` das edge functions
-- Nenhum schema, RLS, migration
-- Frontend, auth, push, asaas
-- O `.env` da VPS (já está OK — o problema é só **mapear** essas vars pro service `functions` no compose)
+**Caminho B — tornar o check não-fatal (recomendado se a feature está desligada):**
+- Patch cirúrgico na function: trocar `throw` / `Deno.exit` por log + early return só dentro do handler. Assim a function continua "viva" no pool sem matar as outras. Não toca nenhuma function de IA.
 
-## Plano B (se Fase B não resolver)
+Vou escolher entre A e B baseado no que o passo 1 revelar e no fato de você usar Resend ou não hoje.
 
-Restart completo do stack mantendo dados:
+## O que NÃO vou fazer
 
-```bash
-cd ~/supabase/docker
-docker compose down
-docker compose up -d
-docker compose logs functions --tail 50
-```
+- Não vou tocar em nenhuma das 3 functions de IA (`generate-script`, `generate-daily-guide`, `generate-tools-content`) — elas estão saudáveis
+- Não vou mexer no `.env` sem você confirmar o valor
+- Não vou recriar todo o stack
+- Não vou mudar arquitetura, schema, frontend ou auth
 
-Se mesmo assim aparecer `Missing required environment variables`, o problema está na ordem de carregamento do `.env` pelo compose — entrego um terceiro bloco que injeta as vars via `env_file:` direto no service.
+## Risco
 
-## Resumo executivo
-
-- **Causa**: o service `functions` no `docker-compose.yml` não está recebendo todas as variáveis Supabase obrigatórias no boot.
-- **Sintoma**: 100% das chamadas a edge functions falham silenciosamente.
-- **Correção**: adicionar 4-5 linhas no bloco `environment:` do `docker-compose.yml` e recriar o container.
-- **Risco**: baixíssimo. Não toca código, não toca banco, é reversível em 30 segundos.
-- **Tempo**: ~2 minutos de execução na VPS depois da Fase A.
+Mínimo. Passos 1 e 2 são leitura pura. Passo 3 é uma linha de env ou um `if` defensivo numa única function não-IA.
 
 ## Próximo passo
 
-Quando aprovar este plano:
-1. Volto em modo default
-2. Te entrego **apenas o bloco da Fase A** pra colar
-3. Você cola a saída
-4. Eu retorno com o patch exato do `docker-compose.yml` adaptado às variáveis que estão de fato faltando
-5. Você aplica e testa
+Quando aprovar, eu volto em modo default e:
+1. Te entrego **o bloco único dos passos 1 e 2** pra colar na VPS
+2. Você cola a saída
+3. Eu identifico o arquivo culpado e te entrego o patch (caminho A ou B) + comando de aplicação
 
