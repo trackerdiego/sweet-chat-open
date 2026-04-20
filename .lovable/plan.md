@@ -1,34 +1,41 @@
-# Escudo de IA aplicado nas 2 functions do onboarding
+# Fallback Gemini corrigido + escudo MALFORMED_FUNCTION_CALL
 
-Adicionado retry 3x + fallback `gemini-1.5-flash` em:
-- `generate-audience-profile` (cobre os 2 fetches: step1 e step2)
-- `generate-personalized-matrix`
+## Mudanças aplicadas nas 5 functions
 
-Mesmo padrão `callGeminiResilient` das outras 3.
+1. `FALLBACK_MODEL` trocado de `gemini-1.5-flash` (404 no endpoint OpenAI-compat) para `gemini-2.0-flash` (existe e é estável).
+2. `tryModel` agora detecta `finish_reason === "MALFORMED_FUNCTION_CALL"` (ou `function_call_filter:*`) em respostas 200 OK e trata como falha → retry → fallback automático pro `gemini-2.0-flash`.
 
-## Deploy VPS (depois de resolver o git pull travado)
+Arquivos:
+- `supabase/functions/generate-script/index.ts`
+- `supabase/functions/generate-daily-guide/index.ts`
+- `supabase/functions/generate-tools-content/index.ts`
+- `supabase/functions/generate-audience-profile/index.ts`
+- `supabase/functions/generate-personalized-matrix/index.ts`
+
+## Deploy VPS
 
 ```bash
 cd /root/app
-
-git checkout -- supabase/functions/generate-daily-guide/index.ts \
-                supabase/functions/generate-script/index.ts \
-                supabase/functions/generate-tools-content/index.ts
-
-git status
+git checkout -- supabase/functions/
 git pull origin main
-
-export SUPABASE_ACCESS_TOKEN="<TOKEN_REAL_DO_STUDIO>"
-export PROJECT_REF="default"
-
-./scripts/deploy-selfhost.sh
+cp -r supabase/functions/generate-audience-profile \
+      supabase/functions/generate-personalized-matrix \
+      supabase/functions/generate-script \
+      supabase/functions/generate-daily-guide \
+      supabase/functions/generate-tools-content \
+      ~/supabase/docker/volumes/functions/
+docker compose -f ~/supabase/docker/docker-compose.yml restart functions
 ```
 
 ## Validação
 
 ```bash
-docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 5m 2>&1 \
-  | grep -iE "audience-step|matrix|gemini|fallback|attempt" | tail -40
+docker compose -f ~/supabase/docker/docker-compose.yml logs functions --follow 2>&1 \
+  | grep -iE "audience|matrix|daily-guide|gemini|fallback|MALFORMED|error"
 ```
 
-Depois testa: regenerar matriz / refazer onboarding.
+Esperado:
+- Sucesso direto OU
+- Log `Gemini MALFORMED_FUNCTION_CALL on gemini-2.5-flash` → `falling back to gemini-2.0-flash` → sucesso.
+
+Depois testa: refazer onboarding / regenerar matriz.

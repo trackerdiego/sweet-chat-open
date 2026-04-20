@@ -57,7 +57,19 @@ async function callGeminiResilient(
     for (let i = 0; i < 3; i++) {
       try {
         const r = await attempt(model);
-        if (!RETRIABLE_STATUSES.has(r.status)) return r;
+        if (!RETRIABLE_STATUSES.has(r.status)) {
+          const bodyText = await r.text();
+          try {
+            const parsed = JSON.parse(bodyText);
+            const finish = parsed?.choices?.[0]?.finish_reason as string | undefined;
+            if (finish && (finish === "MALFORMED_FUNCTION_CALL" || finish.startsWith("function_call_filter"))) {
+              console.warn(`[${tag}] Gemini MALFORMED_FUNCTION_CALL on ${model} attempt ${i + 1}/3 (finish_reason=${finish})`);
+              if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
+              continue;
+            }
+          } catch { /* not JSON, fall through */ }
+          return new Response(bodyText, { status: r.status, headers: r.headers });
+        }
         console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
         try { await r.text(); } catch { /* ignore */ }
       } catch (e) {
