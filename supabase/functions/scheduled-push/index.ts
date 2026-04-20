@@ -273,12 +273,27 @@ Deno.serve(async (req) => {
     const progressMap = new Map<string, any>();
     if (progressRes.data) for (const p of progressRes.data) progressMap.set(p.user_id, p);
 
+    // Dedup: skip users that already received a push for this block today (BR time)
+    const nowBR = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const todayBR = nowBR.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const { data: alreadySent } = await supabase
+      .from('push_send_log')
+      .select('user_id')
+      .eq('send_date', todayBR)
+      .eq('block', block)
+      .in('user_id', uniqueUserIds);
+
+    const sentSet = new Set((alreadySent ?? []).map((r: any) => r.user_id));
+    const targetUserIds = uniqueUserIds.filter((id) => !sentSet.has(id));
+
     let totalSent = 0;
+    let skipped = sentSet.size;
     const segmentCounts: Record<Segment, number> = {
       PREMIUM: 0, FREE_EARLY: 0, FREE_TRIAL_END: 0, FREE_EXHAUSTED: 0, FREE_INACTIVE: 0,
     };
 
-    for (const userId of uniqueUserIds) {
+    for (const userId of targetUserIds) {
       try {
         const usage = usageMap.get(userId);
         const progress = progressMap.get(userId);
@@ -288,6 +303,18 @@ Deno.serve(async (req) => {
 
         const message = getMessage(segment, block, day, streak);
         const url = getUrl(segment);
+
+        // Reserve the slot BEFORE sending to avoid double-send if cron overlaps.
+        // Unique (user_id, send_date, block) prevents races.
+        const { error: logErr } = await supabase
+          .from('push_send_log')
+          .insert({ user_id: userId, send_date: todayBR, block });
+
+        if (logErr) {
+          // Already logged by a parallel run — skip
+          skipped++;
+          continue;
+        }
 
         const response = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
           method: 'POST',
@@ -305,9 +332,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[scheduled-push] Block: ${block}, Segments: ${JSON.stringify(segmentCounts)}, Sent: ${totalSent}`);
+    console.log(`[scheduled-push] Block: ${block}, Segments: ${JSON.stringify(segmentCounts)}, Sent: ${totalSent}, Skipped(dedup): ${skipped}`);
 
-    return new Response(JSON.stringify({ block, users: uniqueUserIds.length, sent: totalSent, segments: segmentCounts }), {
+    return new Response(JSON.stringify({ block, users: uniqueUserIds.length, sent: totalSent, skipped, segments: segmentCounts }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
