@@ -207,6 +207,7 @@ const Onboarding = () => {
 
     if (audienceError) {
       // Marca como erro APENAS as etapas ainda não concluídas — sem cascata visual enganosa.
+      // CRÍTICO: nunca rebaixar um step já 'done' para 'error'.
       setPipelineSteps(prev => prev.map(s => {
         if ((s.id === 'audience' || s.id === 'visceral') && s.status !== 'done') {
           return { ...s, status: 'error' };
@@ -218,11 +219,16 @@ const Onboarding = () => {
       return;
     }
 
-    updateStepStatus('audience', 'done');
-    updateStepStatus('visceral', 'done');
+    // Marca como done de forma idempotente — só promove, nunca rebaixa.
+    setPipelineSteps(prev => prev.map(s => {
+      if ((s.id === 'audience' || s.id === 'visceral') && s.status !== 'done') {
+        return { ...s, status: 'done' };
+      }
+      return s;
+    }));
     setPipelineProgress(52);
 
-    // --- Step 3: Matrix ---
+    // --- Step 3: Matrix (pode levar ~60-90s com 4 chamadas Gemini paralelas) ---
     updateStepStatus('matrix', 'active');
     startProgressTick(85);
 
@@ -243,7 +249,8 @@ const Onboarding = () => {
       setPipelineProgress(92);
       await finalizeOnboarding();
     } else {
-      updateStepStatus('matrix', 'error');
+      // Erro APENAS no matrix — não tocar audience/visceral que já estão 'done'.
+      setPipelineSteps(prev => prev.map(s => s.id === 'matrix' ? { ...s, status: 'error' } : s));
       setPipelineProgress(75);
       setMatrixRetryAvailable(true);
     }
