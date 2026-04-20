@@ -55,27 +55,32 @@ serve(async (req) => {
     const mediaType = isVideo ? "vídeo" : "áudio";
     console.log(`Transcribing ${mediaType} (${mimeType})...`);
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`;
+    const response = await fetch(url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: `Você é um transcritor profissional. Transcreva o ${mediaType} enviado de forma precisa e completa em português brasileiro.\nRegras:\n- Transcreva EXATAMENTE o que é falado\n- Mantenha a linguagem original\n- NÃO adicione comentários ou timestamps\n- Retorne APENAS o texto transcrito` },
-          { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }, { type: "text", text: `Transcreva este ${mediaType} completamente. Retorne apenas o texto falado.` }] },
-        ],
+        systemInstruction: { parts: [{ text: `Você é um transcritor profissional. Transcreva o ${mediaType} enviado de forma precisa e completa em português brasileiro.\nRegras:\n- Transcreva EXATAMENTE o que é falado\n- Mantenha a linguagem original\n- NÃO adicione comentários ou timestamps\n- Retorne APENAS o texto transcrito` }] },
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data: base64Data } },
+            { text: `Transcreva este ${mediaType} completamente. Retorne apenas o texto falado.` },
+          ],
+        }],
+        generationConfig: { maxOutputTokens: 8192 },
       }),
     });
 
     if (!response.ok) {
       if (response.status === 429) return new Response(JSON.stringify({ error: "Limite de requisições atingido." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (response.status === 402) return new Response(JSON.stringify({ error: "Créditos insuficientes." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const errorText = await response.text(); console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      const errorText = await response.text(); console.error("Gemini native error:", response.status, errorText);
+      throw new Error(`Gemini error: ${response.status}`);
     }
 
     const data = await response.json();
-    const transcription = data.choices?.[0]?.message?.content?.trim() || "";
+    const transcription = (data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
     if (!transcription) return new Response(JSON.stringify({ error: "Não foi possível transcrever o conteúdo." }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     console.log(`Transcription complete: ${transcription.length} chars`);

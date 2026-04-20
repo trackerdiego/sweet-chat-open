@@ -1,110 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
-function parseLooseJson(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === "object") return raw as Record<string, unknown>;
-  let s = String(raw ?? "").trim();
-  s = s.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-  try { return JSON.parse(s); } catch { /* fall through */ }
-  const cleaned = s
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-    .replace(/,\s*([}\]])/g, "$1");
-  return JSON.parse(cleaned);
-}
-
-// === Model config (locked) ===
-const PRIMARY_MODEL = "gemini-2.5-pro";
-const FALLBACK_MODEL = "gemini-2.5-pro";
-const TIMEOUT_MS = 120000;
-const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
-const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
-
-if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
-  console.error("[daily-guide] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
-}
-console.log("[daily-guide] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function callGeminiResilient(
-  body: Record<string, unknown>,
-  apiKey: string,
-  tag: string,
-  timeoutMs = TIMEOUT_MS,
-): Promise<Response> {
-  const attempt = async (model: string): Promise<Response> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, model }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const delays = [1000, 3000, 7000];
-  const tryModel = async (model: string): Promise<Response | null> => {
-    for (let i = 0; i < 3; i++) {
-      try {
-        const r = await attempt(model);
-        if (!RETRIABLE_STATUSES.has(r.status)) {
-          const bodyText = await r.text();
-          try {
-            const parsed = JSON.parse(bodyText);
-            const finish = parsed?.choices?.[0]?.finish_reason as string | undefined;
-            if (finish && (finish === "MALFORMED_FUNCTION_CALL" || finish.startsWith("function_call_filter"))) {
-              console.warn(`[${tag}] Gemini MALFORMED_FUNCTION_CALL on ${model} attempt ${i + 1}/3 (finish_reason=${finish})`);
-              if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
-              continue;
-            }
-          } catch { /* not JSON, fall through */ }
-          return new Response(bodyText, { status: r.status, headers: r.headers });
-        }
-        console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
-        try { await r.text(); } catch { /* ignore */ }
-      } catch (e) {
-        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-        console.warn(`[${tag}] Gemini ${isAbort ? "timeout" : "network error"} on ${model} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
-        if (i === 2 && !isAbort) throw e;
-      }
-      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
-    }
-    return null;
-  };
-
-  const primary = await tryModel(PRIMARY_MODEL);
-  if (primary) return primary;
-  console.warn(`[${tag}] Primary model ${PRIMARY_MODEL} exhausted, falling back to ${FALLBACK_MODEL}`);
-  const fallback = await tryModel(FALLBACK_MODEL);
-  if (fallback) return fallback;
-  return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
-}
-
-// Helpers para extrair tool_call args (json string ou object)
-function extractToolArgs(data: any): Record<string, unknown> | null {
-  const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
-  const args = toolCall?.function?.arguments;
-  if (!args) return null;
-  try { return parseLooseJson(args); } catch { return null; }
-}
+console.log("[daily-guide] boot — using native endpoint, responseSchema, parallel A+B");
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -116,19 +23,12 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) return jsonResponse({ error: "Não autorizado" }, 401);
 
-    const supabaseAuth = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabaseAuth = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     if (authError || !user) return jsonResponse({ error: "Não autorizado" }, 401);
     userId = user.id;
 
-    adminClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     const t0 = Date.now();
     const [usageRes, audienceRes] = await Promise.all([
@@ -152,10 +52,7 @@ serve(async (req) => {
     console.log("[daily-guide] start", { userId, day, pillar, isPremium, currentCount });
 
     const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
-    if (!GOOGLE_GEMINI_API_KEY) {
-      console.error("[daily-guide] missing GOOGLE_GEMINI_API_KEY");
-      return jsonResponse({ error: "Configuração do servidor incompleta (chave da IA ausente)." }, 500);
-    }
+    if (!GOOGLE_GEMINI_API_KEY) return jsonResponse({ error: "Configuração do servidor incompleta (chave da IA ausente)." }, 500);
 
     let visceralContext = "";
     if (audienceData?.avatar_profile) {
@@ -170,126 +67,66 @@ serve(async (req) => {
 
     const baseSystem = `Você é especialista em marketing digital para criadores de conteúdo brasileiros. Use linguagem neutra de gênero.\n${nicheContext}\nEstilo: ${styleDesc}.${visceralContext}${visceralInstruction}\nGere conteúdo autêntico, pessoal e que soe natural.\nConteúdo é para o nicho "${pillarLabel}" no dia "${dayTitle}". Tema semanal: "${weeklyTheme}".\nAdapte TODO o conteúdo ao nicho "${primaryNiche || 'lifestyle'}".`;
 
-    // ============================================================
-    // CHAMADA A — 6 listas (mais leve, alta taxa de sucesso)
-    // ============================================================
-    const userPromptA = `Gere conteúdo para o dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo do dia: ${dayTitle}\nNicho: ${primaryNiche || 'lifestyle'}\n\nGere as 6 categorias (cada uma com EXATAMENTE 5 itens):\n1. contentTypes\n2. hooks\n3. videoFormats\n4. storytelling\n5. ctas\n6. cliffhangers\n\nRetorne EXATAMENTE no formato da function tool.`;
+    const promptA = `Gere conteúdo para o dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo do dia: ${dayTitle}\nNicho: ${primaryNiche || 'lifestyle'}\n\nGere as 6 categorias (cada uma com EXATAMENTE 5 itens):\n1. contentTypes\n2. hooks\n3. videoFormats\n4. storytelling\n5. ctas\n6. cliffhangers`;
 
-    const startedA = Date.now();
-    const responseA = await callGeminiResilient({
-      messages: [{ role: "system", content: baseSystem }, { role: "user", content: userPromptA }],
-      tools: [{
-        type: "function",
-        function: {
-          name: "generate_daily_lists",
-          description: "Generate 6 content list categories for the day",
-          parameters: {
-            type: "object",
-            properties: {
-              contentTypes: { type: "array", items: { type: "string" } },
-              hooks: { type: "array", items: { type: "string" } },
-              videoFormats: { type: "array", items: { type: "string" } },
-              storytelling: { type: "array", items: { type: "string" } },
-              ctas: { type: "array", items: { type: "string" } },
-              cliffhangers: { type: "array", items: { type: "string" } },
-            },
-            required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers"],
-          },
-        },
-      }],
-      tool_choice: { type: "function", function: { name: "generate_daily_lists" } },
-      max_tokens: 1500,
-    }, GOOGLE_GEMINI_API_KEY, "daily-guide-A");
-    const latencyA = Date.now() - startedA;
-    console.log("[daily-guide] call A responded", { userId, status: responseA.status, latencyMs: latencyA });
+    const promptB = `Para o dia ${day} (pilar ${pillarLabel}, título "${dayTitle}", nicho "${primaryNiche || 'lifestyle'}"), gere o objeto taskExamples com 7 chaves: morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost. Cada chave deve ter um array com EXATAMENTE 5 exemplos PRÁTICOS, prontos para uso, no nicho "${primaryNiche || 'lifestyle'}".`;
 
-    if (!responseA.ok) {
-      const text = await responseA.text().catch(() => "");
-      console.error("[daily-guide] call A error", { status: responseA.status, body: text.slice(0, 400) });
-      if (responseA.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
-      if (responseA.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
-      if (responseA.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente." }, 503);
-      return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
-    }
+    const schemaA = { type: "object", properties: {
+      contentTypes: { type: "array", items: { type: "string" } },
+      hooks: { type: "array", items: { type: "string" } },
+      videoFormats: { type: "array", items: { type: "string" } },
+      storytelling: { type: "array", items: { type: "string" } },
+      ctas: { type: "array", items: { type: "string" } },
+      cliffhangers: { type: "array", items: { type: "string" } },
+    }, required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers"] };
 
-    const dataA = await responseA.json().catch(() => null);
-    if (!dataA) return jsonResponse({ error: "A IA retornou resposta inválida (A). Tente novamente." }, 502);
-    const partA = extractToolArgs(dataA);
-    if (!partA) {
-      console.error("[daily-guide] no tool_calls A", { finishReason: dataA?.choices?.[0]?.finish_reason, sample: JSON.stringify(dataA).slice(0, 600) });
-      return jsonResponse({ error: "A IA retornou resposta sem dados estruturados (listas). Tente novamente." }, 502);
-    }
+    const schemaB = { type: "object", properties: {
+      morningInsight: { type: "array", items: { type: "string" } },
+      morningPoll: { type: "array", items: { type: "string" } },
+      reel: { type: "array", items: { type: "string" } },
+      reelEngagement: { type: "array", items: { type: "string" } },
+      valueStories: { type: "array", items: { type: "string" } },
+      lifestyleStory: { type: "array", items: { type: "string" } },
+      feedPost: { type: "array", items: { type: "string" } },
+    }, required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"] };
 
-    // ============================================================
-    // CHAMADA B — taskExamples (objeto aninhado, schema isolado)
-    // ============================================================
-    const userPromptB = `Para o dia ${day} (pilar ${pillarLabel}, título "${dayTitle}", nicho "${primaryNiche || 'lifestyle'}"), gere o objeto taskExamples com 7 chaves: morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost. Cada chave deve ter um array com EXATAMENTE 5 exemplos PRÁTICOS, prontos para uso, no nicho "${primaryNiche || 'lifestyle'}". Retorne usando a function tool.`;
+    const startedAt = Date.now();
+    const [resA, resB] = await Promise.allSettled([
+      callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptA, schema: schemaA, tag: "daily-guide-A", maxOutputTokens: 1800, timeoutMs: 60000 }),
+      callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B", maxOutputTokens: 2200, timeoutMs: 60000 }),
+    ]);
 
-    const startedB = Date.now();
-    const responseB = await callGeminiResilient({
-      messages: [{ role: "system", content: baseSystem }, { role: "user", content: userPromptB }],
-      tools: [{
-        type: "function",
-        function: {
-          name: "generate_task_examples",
-          description: "Generate 7 categories of practical task examples",
-          parameters: {
-            type: "object",
-            properties: {
-              morningInsight: { type: "array", items: { type: "string" } },
-              morningPoll: { type: "array", items: { type: "string" } },
-              reel: { type: "array", items: { type: "string" } },
-              reelEngagement: { type: "array", items: { type: "string" } },
-              valueStories: { type: "array", items: { type: "string" } },
-              lifestyleStory: { type: "array", items: { type: "string" } },
-              feedPost: { type: "array", items: { type: "string" } },
-            },
-            required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"],
-          },
-        },
-      }],
-      tool_choice: { type: "function", function: { name: "generate_task_examples" } },
-      max_tokens: 1800,
-    }, GOOGLE_GEMINI_API_KEY, "daily-guide-B");
-    const latencyB = Date.now() - startedB;
-    console.log("[daily-guide] call B responded", { userId, status: responseB.status, latencyMs: latencyB });
-
-    let taskExamples: Record<string, unknown> = {};
-    if (responseB.ok) {
-      const dataB = await responseB.json().catch(() => null);
-      const partB = dataB ? extractToolArgs(dataB) : null;
-      if (partB) {
-        taskExamples = partB;
-      } else {
-        console.warn("[daily-guide] call B sem dados estruturados — retornando sem taskExamples");
+    if (resA.status === "rejected") {
+      const e = resA.reason;
+      console.error("[daily-guide] call A failed", e);
+      if (e instanceof GeminiError) {
+        if (e.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
+        if (e.status === 402) return jsonResponse({ error: "Créditos da IA esgotados." }, 402);
+        return jsonResponse({ error: "Serviço de IA instável. Tente novamente em 1-2 minutos." }, 503);
       }
-    } else {
-      console.warn("[daily-guide] call B falhou — retornando sem taskExamples", { status: responseB.status });
+      return jsonResponse({ error: "Erro ao gerar guia diário." }, 500);
     }
+
+    const partA = resA.value.json as Record<string, unknown>;
+    const taskExamples: Record<string, unknown> = resB.status === "fulfilled" ? (resB.value.json as Record<string, unknown>) : {};
+    if (resB.status === "rejected") console.warn("[daily-guide] call B falhou — sem taskExamples", resB.reason);
 
     const content = { ...partA, taskExamples };
 
-    // Sucesso: contabiliza uso
     try {
       await Promise.all([
-        adminClient.from("user_usage").update({
-          tool_generations: currentCount + 1,
-          last_tool_date: today,
-        }).eq("user_id", userId),
+        adminClient.from("user_usage").update({ tool_generations: currentCount + 1, last_tool_date: today }).eq("user_id", userId),
         adminClient.from("usage_logs").insert({ user_id: userId, feature: "daily_guide" }),
       ]);
     } catch (e) {
       console.warn("[daily-guide] usage update failed (non-fatal)", e);
     }
 
-    console.log("[daily-guide] success", { userId, day, latencyA, latencyB, hasTaskExamples: Object.keys(taskExamples).length > 0 });
+    console.log("[daily-guide] success", { userId, day, totalMs: Date.now() - startedAt, hasTaskExamples: Object.keys(taskExamples).length > 0 });
     return jsonResponse(content);
   } catch (e) {
     console.error("[daily-guide] uncaught error:", e, { userId });
     const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-    return jsonResponse(
-      { error: isAbort ? "A IA está demorando mais que o normal. Tente novamente em alguns segundos." : (e instanceof Error ? e.message : "Erro interno") },
-      isAbort ? 504 : 500
-    );
+    return jsonResponse({ error: isAbort ? "A IA está demorando mais que o normal. Tente novamente." : (e instanceof Error ? e.message : "Erro interno") }, isAbort ? 504 : 500);
   }
 });

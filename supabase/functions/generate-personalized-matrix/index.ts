@@ -1,79 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// === Model config (locked) ===
-const PRIMARY_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-2.5-pro";
-const TIMEOUT_MS = 120000;
-const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
-const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
-if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
-  console.error("[matrix] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
-}
-console.log("[matrix] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function callGeminiResilient(
-  body: Record<string, unknown>,
-  apiKey: string,
-  tag: string,
-  timeoutMs = TIMEOUT_MS,
-): Promise<Response> {
-  const attempt = async (model: string): Promise<Response> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, model }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  const delays = [1000, 3000, 7000];
-  const tryModel = async (model: string): Promise<Response | null> => {
-    for (let i = 0; i < 3; i++) {
-      try {
-        const r = await attempt(model);
-        if (!RETRIABLE_STATUSES.has(r.status)) {
-          const bodyText = await r.text();
-          try {
-            const parsed = JSON.parse(bodyText);
-            const finish = parsed?.choices?.[0]?.finish_reason as string | undefined;
-            if (finish && (finish === "MALFORMED_FUNCTION_CALL" || finish.startsWith("function_call_filter"))) {
-              console.warn(`[${tag}] Gemini MALFORMED_FUNCTION_CALL on ${model} attempt ${i + 1}/3 (finish_reason=${finish})`);
-              if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
-              continue;
-            }
-          } catch { /* not JSON, fall through */ }
-          return new Response(bodyText, { status: r.status, headers: r.headers });
-        }
-        console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
-        try { await r.text(); } catch { /* ignore */ }
-      } catch (e) {
-        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-        console.warn(`[${tag}] Gemini ${isAbort ? "timeout" : "network error"} on ${model} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
-        if (i === 2 && !isAbort) throw e;
-      }
-      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
-    }
-    return null;
-  };
-  const primary = await tryModel(PRIMARY_MODEL);
-  if (primary) return primary;
-  console.warn(`[${tag}] Primary model ${PRIMARY_MODEL} exhausted, falling back to ${FALLBACK_MODEL}`);
-  const fallback = await tryModel(FALLBACK_MODEL);
-  if (fallback) return fallback;
-  return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
-}
+console.log("[matrix] boot — using native endpoint, responseSchema, 4-week parallel");
 
 function distributeVisceralElements(ap: Record<string, unknown>): Record<number, string> {
   const pool: { category: string; item: string }[] = [];
@@ -106,6 +40,30 @@ function distributeVisceralElements(ap: Record<string, unknown>): Record<number,
   return result;
 }
 
+const STRATEGY_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    day: { type: "number" },
+    title: { type: "string" },
+    pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] },
+    pillarLabel: { type: "string" },
+    viralHook: { type: "string" },
+    storytellingBody: { type: "string" },
+    subtleConversion: { type: "string" },
+    visualInstructions: { type: "string" },
+    taskType: { type: "string", enum: ["connection", "value"] },
+    visceralElement: { type: "string" },
+  },
+  required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"],
+};
+
+const WEEKS: { num: number; range: [number, number]; theme: string }[] = [
+  { num: 1, range: [1, 7],   theme: "OBJEÇÕES e FRUSTRAÇÕES" },
+  { num: 2, range: [8, 14],  theme: "FERIDAS e VERGONHA" },
+  { num: 3, range: [15, 21], theme: "PECADOS e DESEJOS" },
+  { num: 4, range: [22, 30], theme: "ESPERANÇA e DECISÃO" },
+];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -121,49 +79,95 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    let visceralContext = "";
-    let dayAssignments = "";
     const { data: audienceData } = await supabase.from("audience_profiles").select("audience_description, avatar_profile").eq("user_id", user.id).maybeSingle();
 
+    let baseAudienceContext = "";
+    let dayAssignments: Record<number, string> = {};
     if (audienceData?.avatar_profile) {
       const ap = audienceData.avatar_profile as Record<string, unknown>;
-      const distribution = distributeVisceralElements(ap);
-      dayAssignments = Object.entries(distribution).sort(([a], [b]) => Number(a) - Number(b)).map(([day, element]) => `Dia ${day}: GATILHO OBRIGATÓRIO → ${element}`).join("\n");
-      visceralContext = `\n\n═══════════════════════════════════════════════════════════\nESTUDO VISCERAL DO PÚBLICO — DISTRIBUIÇÃO OBRIGATÓRIA\n═══════════════════════════════════════════════════════════\n\nDescrição do público: ${audienceData.audience_description || ''}\nAvatar: ${ap.avatar || ''}\nObjetivo principal: ${ap.primaryGoal || ''}\nQueixa principal: ${ap.primaryComplaint || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto profundo: ${ap.deepOccultDesire || ''}\nInimigo comum: ${ap.commonEnemy || ''}\nGap de autoimagem: ${ap.selfImageGap || ''}\n\n═══════════════════════════════════════════════════════════\nMAPEAMENTO OBRIGATÓRIO — CADA DIA TEM UM GATILHO NOMEADO:\n═══════════════════════════════════════════════════════════\n${dayAssignments}\n\nREGRAS:\n1. O HOOK de cada dia DEVE ativar o gatilho listado\n2. O STORYTELLING deve explorar o tema emocional do gatilho\n3. O CTA deve conectar o gatilho à transformação\n4. O campo "visceralElement" deve conter EXATAMENTE o gatilho designado\n5. NUNCA ignore o gatilho designado\n\nSEMANA 1: OBJEÇÕES e FRUSTRAÇÕES\nSEMANA 2: FERIDAS e VERGONHA\nSEMANA 3: PECADOS e DESEJOS\nSEMANA 4: ESPERANÇA e DECISÃO\n═══════════════════════════════════════════════════════════`;
+      dayAssignments = distributeVisceralElements(ap);
+      baseAudienceContext = `\n\nESTUDO VISCERAL DO PÚBLICO:\nDescrição: ${audienceData.audience_description || ''}\nAvatar: ${ap.avatar || ''}\nObjetivo principal: ${ap.primaryGoal || ''}\nQueixa principal: ${ap.primaryComplaint || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto profundo: ${ap.deepOccultDesire || ''}\nInimigo comum: ${ap.commonEnemy || ''}\nGap de autoimagem: ${ap.selfImageGap || ''}`;
     }
 
     const secondaryList = (secondaryNiches || []).join(", ");
     const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
     const styleDesc = styleMap[contentStyle] || styleMap.casual;
 
-    const systemPrompt = `Você é estrategista de conteúdo digital expert em criar planos de 30 dias para criadores de conteúdo brasileiros. Use linguagem neutra de gênero.\nO nicho principal é: ${primaryNiche}\nNichos secundários: ${secondaryList || "nenhum"}\nEstilo: ${styleDesc}\n${visceralContext}\n\nCrie 30 dias de estratégias ÚNICAS. Cada dia deve ter título, pilar, hook viral, storytelling, CTA sutil, instruções visuais e visceralElement.\n\nIMPORTANTE: NÃO mencione rifa, sorteio ou jogos de azar.`;
+    const buildSystem = (week: typeof WEEKS[number]) => {
+      const triggers = Object.entries(dayAssignments)
+        .filter(([d]) => { const n = Number(d); return n >= week.range[0] && n <= week.range[1]; })
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([day, el]) => `Dia ${day}: GATILHO OBRIGATÓRIO → ${el}`)
+        .join("\n");
+      return `Você é estrategista de conteúdo digital expert em criar planos de 30 dias para criadores brasileiros. Use linguagem neutra de gênero.
+Nicho principal: ${primaryNiche}
+Nichos secundários: ${secondaryList || "nenhum"}
+Estilo: ${styleDesc}
+${baseAudienceContext}
 
-    const userPrompt = `Gere a matriz completa de 30 dias para um(a) criador(a) de conteúdo do nicho "${primaryNiche}". Retorne usando a function tool.`;
+═══════════════════════════════════════════════════════════
+SEMANA ${week.num} — TEMA: ${week.theme}
+DIAS ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} dias)
+═══════════════════════════════════════════════════════════
+${triggers ? `\nGATILHOS POR DIA (OBRIGATÓRIOS):\n${triggers}\n` : ""}
+REGRAS:
+1. O HOOK deve ativar o gatilho do dia
+2. O STORYTELLING deve explorar o tema emocional
+3. O CTA deve conectar o gatilho à transformação
+4. visceralElement DEVE conter EXATAMENTE o gatilho designado
+5. Cada dia ÚNICO, não repita estruturas
+6. NÃO mencione rifa, sorteio ou jogos de azar`;
+    };
 
-    const response = await callGeminiResilient({
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      tools: [{ type: "function", function: { name: "generate_matrix", description: "Retorna a matriz de 30 dias", parameters: { type: "object", properties: { strategies: { type: "array", items: { type: "object", properties: { day: { type: "number" }, title: { type: "string" }, pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] }, pillarLabel: { type: "string" }, viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" }, visualInstructions: { type: "string" }, taskType: { type: "string", enum: ["connection", "value"] }, visceralElement: { type: "string" } }, required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"] } } }, required: ["strategies"], additionalProperties: false } } }],
-      tool_choice: { type: "function", function: { name: "generate_matrix" } },
-    }, GOOGLE_GEMINI_API_KEY, "matrix");
+    const buildPrompt = (week: typeof WEEKS[number]) =>
+      `Gere a estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) do nicho "${primaryNiche}". Retorne EXATAMENTE no formato JSON definido pelo schema, com o array "strategies" contendo um objeto por dia, na ordem.`;
 
-    if (!response.ok) {
-      if (response.status === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (response.status === 402) return new Response(JSON.stringify({ error: "Créditos de IA esgotados." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const text = await response.text(); console.error("AI error:", response.status, text);
-      return new Response(JSON.stringify({ error: "Erro ao gerar matriz personalizada" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const t0 = Date.now();
+    const weekResults = await Promise.all(
+      WEEKS.map(async (week) => {
+        try {
+          const r = await callGeminiNative({
+            apiKey: GOOGLE_GEMINI_API_KEY,
+            systemInstruction: buildSystem(week),
+            prompt: buildPrompt(week),
+            schema: { type: "object", properties: { strategies: { type: "array", items: STRATEGY_ITEM_SCHEMA } }, required: ["strategies"] },
+            tag: `matrix-week-${week.num}`,
+            maxOutputTokens: 8192,
+            timeoutMs: 90000,
+          });
+          const obj = r.json as { strategies?: unknown[] };
+          if (!Array.isArray(obj?.strategies)) throw new Error(`Semana ${week.num}: resposta sem strategies`);
+          console.log(`[matrix] week ${week.num} ok — ${obj.strategies.length} dias, model=${r.modelUsed}, ${r.latencyMs}ms`);
+          return obj.strategies;
+        } catch (e) {
+          console.error(`[matrix] week ${week.num} failed`, e);
+          throw e;
+        }
+      })
+    );
+
+    const allStrategies = weekResults.flat()
+      .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+      .sort((a, b) => Number(a.day) - Number(b.day));
+
+    if (allStrategies.length < 28) {
+      console.error(`[matrix] insufficient strategies generated: ${allStrategies.length}`);
+      return new Response(JSON.stringify({ error: "Matriz incompleta. Tente novamente." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) throw new Error("Resposta da IA sem dados estruturados");
-    const result = JSON.parse(toolCall.function.arguments);
+    console.log(`[matrix] complete — ${allStrategies.length} dias em ${Date.now() - t0}ms`);
 
-    const { error: upsertError } = await supabase.from("user_strategies").upsert({ user_id: user.id, strategies: result.strategies, generated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    const { error: upsertError } = await supabase.from("user_strategies").upsert({ user_id: user.id, strategies: allStrategies, generated_at: new Date().toISOString() }, { onConflict: "user_id" });
     if (upsertError) console.error("Error saving strategies:", upsertError);
 
-    return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ strategies: allStrategies }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("generate-personalized-matrix error:", e);
+    if (e instanceof GeminiError) {
+      const status = e.status === 429 ? 429 : e.status === 402 ? 402 : 503;
+      const msg = e.status === 429 ? "Limite de requisições excedido." : e.status === 402 ? "Créditos de IA esgotados." : "Erro no serviço de IA. Tente novamente.";
+      return new Response(JSON.stringify({ error: msg }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
