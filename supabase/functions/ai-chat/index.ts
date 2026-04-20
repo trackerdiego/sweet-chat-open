@@ -8,7 +8,30 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-console.log("[ai-chat] boot — using native streaming endpoint");
+console.log("[ai-chat] boot — native streaming, maxOutputTokens=4000, avatar summary");
+
+function take(arr: unknown, n: number): string {
+  if (!Array.isArray(arr)) return "";
+  return arr.slice(0, n).map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("; ");
+}
+
+function buildAvatarSummary(ap: Record<string, unknown>): string {
+  const lines: string[] = [];
+  if (ap.avatar) lines.push(`Avatar: ${ap.avatar}`);
+  if (ap.ultimateFear) lines.push(`Medo supremo: ${ap.ultimateFear}`);
+  if (ap.deepOccultDesire) lines.push(`Desejo oculto: ${ap.deepOccultDesire}`);
+  const wounds = take(ap.coreWounds, 3);
+  if (wounds) lines.push(`Feridas centrais: ${wounds}`);
+  const triggers = take(ap.verbalTriggers, 5);
+  if (triggers) lines.push(`Gatilhos verbais: ${triggers}`);
+  const frustrations = take(ap.frustrations, 3);
+  if (frustrations) lines.push(`Frustrações: ${frustrations}`);
+  const desires = take(ap.desires, 3);
+  if (desires) lines.push(`Desejos: ${desires}`);
+  const objections = take(ap.objections, 3);
+  if (objections) lines.push(`Objeções: ${objections}`);
+  return lines.join("\n");
+}
 
 // Converte stream nativo Gemini SSE → OpenAI-compatible SSE (frontend já parseia esse formato)
 function geminiToOpenAiStream(geminiBody: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
@@ -141,7 +164,10 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
     }
 
     if (avatar && typeof avatar === "object") {
-      systemPrompt += `\n\n## Estudo Visceral do Avatar (Perfil Psicológico do Público)\n${JSON.stringify(avatar, null, 2)}`;
+      const summary = buildAvatarSummary(avatar as Record<string, unknown>);
+      if (summary) {
+        systemPrompt += `\n\n## Estudo Visceral do Avatar (Resumo)\n${summary}`;
+      }
     }
 
     systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.
@@ -162,7 +188,7 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
       systemInstruction: systemPrompt,
       messages: messages as { role: "user" | "assistant"; content: string }[],
       model: "gemini-2.5-flash",
-      maxOutputTokens: 1500,
+      maxOutputTokens: 4000,
       tag: "ai-chat",
     });
 
