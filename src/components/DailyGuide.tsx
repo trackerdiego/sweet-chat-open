@@ -29,12 +29,27 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-daily-guide', { body: { pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, weeklyTheme: weeklyTheme || '', dayTitle: strategy.title, day: strategy.day, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' } });
-      if (error) throw error;
+      if (error) {
+        const msg = (error as { message?: string }).message || '';
+        const status = (error as { context?: { status?: number } }).context?.status;
+        if (status === 504 || /timeout|abort/i.test(msg)) {
+          toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
+        } else if (status === 429) {
+          toast.error('Muitas requisições ou limite atingido. Aguarde um momento.');
+        } else {
+          toast.error('Erro ao gerar sugestões. Tente novamente.');
+        }
+        return;
+      }
       if (data?.error) { toast.error(data.error); return; }
       const content = data as AiGuideContent;
       setAiContentLocal(content); onAiContent?.(content); setAiGenerated(true);
       toast.success('Sugestões personalizadas geradas com IA! ✨');
-    } catch { toast.error('Erro ao gerar sugestões.'); } finally { setLoading(false); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      if (/timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
+      else toast.error('Erro ao gerar sugestões.');
+    } finally { setLoading(false); }
   };
 
   return (
