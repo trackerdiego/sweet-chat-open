@@ -1,69 +1,142 @@
 
 
-# Deploy completo — agora é validar no app
+# 502/504 ainda acontecendo — duas camadas além do Kong
 
-## O que esses logs provam
+## Análise dos novos logs
 
-Tudo aplicado com sucesso na VPS:
+Os logs mostram um padrão revelador:
+- Várias chamadas **504 Gateway Timeout** (timeout puro)
+- Várias **502 Bad Gateway** (worker morreu / resposta vazia)
+- O 502 nunca tinha aparecido antes — só apareceu depois do patch do Kong
 
-| Etapa | Status |
-|---|---|
-| `kong.yml` patch (timeouts 300s nas rotas `functions-v1`) | ✅ aplicado |
-| `docker compose restart kong` | ✅ |
-| `git pull` trouxe os 5 arquivos novos (ai-chat, 3 IAs, tailwind) | ✅ |
-| `rsync` SEM `--delete` (preservou `main/` e `hello/`) | ✅ |
-| `docker compose restart functions` | ✅ |
-| `main function started` único, sem `boot error` | ✅ runtime saudável |
+**O 502 prova que o problema NÃO é mais o Kong.** Se fosse Kong cortando, seria sempre 504. O 502 vem do **edge-runtime devolvendo resposta vazia** — ou seja, o worker está morrendo no meio da request, antes de devolver qualquer coisa.
 
-**Backend está 100% deployado com as correções:** Kong agora aguarda até 5 min, e as functions têm `max_tokens` controlado + retry mais curto.
+## Causa raiz: 3 camadas de timeout, todas mal configuradas
 
-## O que falta — validar no app (sem mudar nada)
+| Camada | Timeout atual | Problema |
+|---|---|---|
+| Kong (gateway) | 300s ✅ | resolvido |
+| **edge-runtime worker** | **default ~150s, mas no self-hosted geralmente 60s** | ⚠️ provável culpado dos 502 |
+| Função interna (Gemini fetch) | 60s + retry = até 120s | OK |
+| Lovable Cloud client (`functions.invoke`) | timeout próprio | OK |
 
-### Teste 1 — `/script` (era o pior caso de 504)
-- Logado, abrir `/script`
-- Gerar script **2x seguidas** (a 2ª era a que estourava antes)
-- Esperado: ambas retornam em 30–90s, sem 504
+O **edge-runtime** tem variáveis `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS` e `EDGE_RUNTIME_WORKER_TIMEOUT_MS` que, no Supabase self-hosted default, ficam em **60s**. Quando o Gemini demora 70s+ (acontece com prompts grandes + visceral profile), o worker é morto pelo runtime ANTES do Kong, e o Kong devolve 502 pra você.
 
-### Teste 2 — `/tasks`
-- Abrir `/tasks`, esperar guia diário carregar
-- Se for o primeiro acesso do dia, vai chamar `generate-daily-guide`
-- Esperado: carrega sem 504
+Além disso, há um problema de **arquitetura**: as 3 IAs fazem várias coisas em sequência ANTES da chamada Gemini:
+1. `auth.getUser()` → vai no auth (~200ms)
+2. Buscar `user_usage` (~150ms)
+3. Buscar `audience_profiles` (~150ms)
+4. Construir prompt (~10ms)
+5. Chamar Gemini (~30-90s)
 
-### Teste 3 — `/tools`
-- Rodar uma ferramenta de IA (ex: gerador de hooks)
-- Esperado: responde sem 504
+Quando Gemini sozinho dá 70s, o total fica 71s e estoura o worker timeout default de 60s.
 
-### Teste 4 — AI Chat (era o problema da formatação)
-- Abrir o chat, clicar na sugestão "Me dê 5 ideias de Reels para essa semana"
-- Esperado:
-  - Resposta mais rápida (`max_tokens: 1500` + system prompt pedindo concisão)
-  - Formatada com **negrito**, listas numeradas, parágrafos curtos (graças ao `@tailwindcss/typography` + `ReactMarkdown`)
-  - Máximo ~400 palavras, não mais bloco gigante
+## Plano de correção em 2 frentes
 
-## ⚠️ IMPORTANTE — frontend Vercel
+### Frente A — VPS: aumentar deadline do edge-runtime worker (resolve 502)
 
-O frontend (Vercel) também precisa estar com o build novo pra o AI Chat formatado funcionar — porque a mudança do `tailwind.config.ts` (typography plugin) é **frontend**, não backend.
+Adicionar 2 env vars no service `functions` do `docker-compose.yml`:
+```
+EDGE_RUNTIME_WORKER_TIMEOUT_MS: 300000
+EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS: 300000
+```
 
-Verificar:
-- Vercel já fez auto-deploy do commit `227f7df`?
-- Se sim, hard-refresh no navegador (Ctrl+Shift+R) pra pegar o CSS novo
-- Se não, esperar o deploy do Vercel completar antes de testar o chat
+E no `.env`:
+```
+EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000
+EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000
+```
 
-## O que vou fazer (modo default)
+Depois `docker compose up -d --force-recreate functions`.
 
-Nada de código. Só esperar seu retorno. Se algum teste falhar:
-- Coletar logs específicos via `supabase--edge_function_logs` da function que falhou
-- Patch cirúrgico naquele arquivo
-- Novo deploy
+### Frente B — Código: paralelizar buscas antes do Gemini (ganha 300-500ms)
 
-Se tudo funcionar:
-- Atualizar `mem://infra/deploy-workflow.md` com a nova regra "Kong precisa de timeout 300s nas rotas `functions-v1` em qualquer setup self-hosted novo"
-- Fechar o ciclo
+Nas 3 functions (`generate-script`, `generate-daily-guide`, `generate-tools-content`), trocar:
+```ts
+const { data: usageData } = await adminClient.from("user_usage")...
+const { data: audienceData } = await supabaseAuth.from("audience_profiles")...
+```
+
+Por:
+```ts
+const [usageRes, audienceRes] = await Promise.all([
+  adminClient.from("user_usage").select(...).eq(...).maybeSingle(),
+  supabaseAuth.from("audience_profiles").select(...).eq(...).maybeSingle(),
+]);
+```
+
+Não é muito, mas todo segundo conta perto do limite.
+
+### Frente C — Reduzir tamanho do prompt do `generate-daily-guide` (mais lento dos 3)
+
+O `generate-daily-guide` pede **7 categorias com 5 itens cada + objeto `taskExamples` com 7 chaves de 5 itens** = ~70 strings na resposta. Isso é o que mais demora.
+
+Proposta: separar `taskExamples` em chamada **opcional/lazy** ou reduzir pra 3 itens por categoria. Como mexer nessa estrutura pode quebrar o frontend, vou só **logar o tempo gasto** primeiro pra confirmar o gargalo, sem mudar o schema agora.
+
+### Frente D — Validação real (com JWT)
+
+Depois do deploy, vou usar `supabase--curl_edge_functions` (que pega seu JWT do preview) pra chamar `generate-script` direto e ver se retorna 200 ou continua 502/504, com a latência exata.
+
+## Arquivos que vou tocar
+
+| Arquivo | Mudança | Risco |
+|---|---|---|
+| `supabase/functions/generate-script/index.ts` | `Promise.all` nas 2 queries | baixo |
+| `supabase/functions/generate-daily-guide/index.ts` | `Promise.all` + log de latência por etapa | baixo |
+| `supabase/functions/generate-tools-content/index.ts` | `Promise.all` + log de latência por etapa | baixo |
+
+## O que VOCÊ vai precisar rodar na VPS (bloco copia-e-cola)
+
+```bash
+cd ~/supabase/docker
+
+# 1. Adiciona os 2 timeouts no .env (se já existirem, atualiza)
+grep -q "EDGE_RUNTIME_WORKER_TIMEOUT_MS" .env || echo "EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000" >> .env
+grep -q "EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS" .env || echo "EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000" >> .env
+
+# 2. Adiciona as 2 vars no environment do service functions
+python3 <<'PY'
+import re
+p = "docker-compose.yml"
+s = open(p).read()
+# acha o bloco do service "functions" e injeta as env vars no environment:
+def patch(m):
+    block = m.group(0)
+    if "EDGE_RUNTIME_WORKER_TIMEOUT_MS" in block:
+        return block
+    return block.replace(
+        "environment:",
+        "environment:\n      EDGE_RUNTIME_WORKER_TIMEOUT_MS: ${EDGE_RUNTIME_WORKER_TIMEOUT_MS}\n      EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS: ${EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS}",
+        1
+    )
+s = re.sub(r"  functions:\n[\s\S]*?(?=\n  [a-z]+:\n|\Z)", patch, s)
+open(p, "w").write(s)
+print("docker-compose.yml patched")
+PY
+
+# 3. Pull do código novo + sync (SEM --delete!) + recreate
+cd /root/app && git pull origin main
+rsync -av /root/app/supabase/functions/ ~/supabase/docker/volumes/functions/
+cd ~/supabase/docker && docker compose up -d --force-recreate functions
+
+sleep 6
+docker compose logs functions --since 30s 2>&1 | grep -iE "main function started|boot error" | tail -5
+```
+
+## O que NÃO vou fazer
+
+- Não vou implementar fila assíncrona / polling — ainda dá pra resolver com timeout
+- Não vou trocar Gemini 2.5-flash
+- Não vou tocar em `main/`, `hello/`, Kong (já patchado)
+- Não vou mudar o schema do `daily-guide` agora — primeiro mede, depois decide
 
 ## Próximo passo
 
-Quando aprovar este plano, eu volto em modo default só pra confirmar a memória. Mas **antes disso, por favor**:
-1. Confirme que o Vercel já buildou o commit `227f7df`
-2. Faça os 4 testes acima
-3. Me diga: tudo ok, ou cole o erro específico de qualquer teste que falhar
+Quando aprovar:
+1. Aplico `Promise.all` nas 3 functions
+2. Te entrego o bloco da VPS acima
+3. Você roda e me confirma `main function started` sem boot error
+4. Eu testo `generate-script` via `supabase--curl_edge_functions` com seu JWT
+5. Se der 200 → fechamos e atualizo memória com as 2 env vars críticas
+6. Se ainda der 502/504 → eu vejo a latência exata no log e ataco o passo seguinte
 
