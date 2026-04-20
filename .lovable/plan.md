@@ -1,142 +1,55 @@
 
 
-# 502/504 ainda acontecendo — duas camadas além do Kong
+# VPS atualizada — falta validar e ler os logs corretamente
 
-## Análise dos novos logs
+## O que aconteceu
 
-Os logs mostram um padrão revelador:
-- Várias chamadas **504 Gateway Timeout** (timeout puro)
-- Várias **502 Bad Gateway** (worker morreu / resposta vazia)
-- O 502 nunca tinha aparecido antes — só apareceu depois do patch do Kong
+Tudo aplicou com sucesso:
+- ✅ `.env` recebeu as 2 vars
+- ✅ `docker-compose.yml` patchado (grep confirmou as 2 linhas no bloco `functions`)
+- ✅ Código sincronizado (rsync sem `--delete`)
+- ✅ Container recriado (`Started`, não `Restarted` — confirma que pegou env nova)
 
-**O 502 prova que o problema NÃO é mais o Kong.** Se fosse Kong cortando, seria sempre 504. O 502 vem do **edge-runtime devolvendo resposta vazia** — ou seja, o worker está morrendo no meio da request, antes de devolver qualquer coisa.
+**O grep do passo 5 voltou vazio** porque o `--since 30s` foi muito apertado: o container subiu em 3.5s, depois você esperou 6s, mas o `main function started` é logado **só na primeira request** (lazy boot do edge-runtime). Sem nenhuma chamada nesse intervalo, não tem o que aparecer no log.
 
-## Causa raiz: 3 camadas de timeout, todas mal configuradas
+Isso é **esperado**, não é erro.
 
-| Camada | Timeout atual | Problema |
-|---|---|---|
-| Kong (gateway) | 300s ✅ | resolvido |
-| **edge-runtime worker** | **default ~150s, mas no self-hosted geralmente 60s** | ⚠️ provável culpado dos 502 |
-| Função interna (Gemini fetch) | 60s + retry = até 120s | OK |
-| Lovable Cloud client (`functions.invoke`) | timeout próprio | OK |
+## Próximo passo: validar de verdade
 
-O **edge-runtime** tem variáveis `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS` e `EDGE_RUNTIME_WORKER_TIMEOUT_MS` que, no Supabase self-hosted default, ficam em **60s**. Quando o Gemini demora 70s+ (acontece com prompts grandes + visceral profile), o worker é morto pelo runtime ANTES do Kong, e o Kong devolve 502 pra você.
+Em modo default, vou:
 
-Além disso, há um problema de **arquitetura**: as 3 IAs fazem várias coisas em sequência ANTES da chamada Gemini:
-1. `auth.getUser()` → vai no auth (~200ms)
-2. Buscar `user_usage` (~150ms)
-3. Buscar `audience_profiles` (~150ms)
-4. Construir prompt (~10ms)
-5. Chamar Gemini (~30-90s)
+### 1. Disparar 1 request real pra `hello` (acorda o pool)
+Usando `supabase--curl_edge_functions` → confirma que `main function started` aparece sem `boot error`.
 
-Quando Gemini sozinho dá 70s, o total fica 71s e estoura o worker timeout default de 60s.
+### 2. Disparar `generate-script` com seu JWT (você está logado no preview)
+Esse é **o teste que importa**. Com:
+- Kong a 300s ✅
+- Edge-runtime worker a 300s ✅ (acabou de subir)
+- `Promise.all` nas queries ✅
+- `max_tokens` controlado ✅
 
-## Plano de correção em 2 frentes
+Esperado: **HTTP 200** com o script JSON, latência logada (deve ficar entre 20-90s).
 
-### Frente A — VPS: aumentar deadline do edge-runtime worker (resolve 502)
+Se vier 200 → resolvido, atualizo memória.
+Se vier 502/504 → puxo `supabase--edge_function_logs generate-script` e vejo a latência exata por etapa (`db parallel fetch`, `gemini responded`) pra saber qual camada ainda está estourando.
 
-Adicionar 2 env vars no service `functions` do `docker-compose.yml`:
-```
-EDGE_RUNTIME_WORKER_TIMEOUT_MS: 300000
-EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS: 300000
-```
+### 3. Repetir pra `generate-daily-guide` e `generate-tools-content`
+Mesma lógica.
 
-E no `.env`:
-```
-EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000
-EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000
-```
+## O que você NÃO precisa fazer agora
+- Nada na VPS. Já está tudo no lugar.
+- Só me confirme que está logado no preview (https://id-preview--ce48c5ee-b61d-4ce0-a218-eb4fa03033e7.lovable.app) com um usuário real, pra eu poder usar o JWT no curl.
 
-Depois `docker compose up -d --force-recreate functions`.
-
-### Frente B — Código: paralelizar buscas antes do Gemini (ganha 300-500ms)
-
-Nas 3 functions (`generate-script`, `generate-daily-guide`, `generate-tools-content`), trocar:
-```ts
-const { data: usageData } = await adminClient.from("user_usage")...
-const { data: audienceData } = await supabaseAuth.from("audience_profiles")...
-```
-
-Por:
-```ts
-const [usageRes, audienceRes] = await Promise.all([
-  adminClient.from("user_usage").select(...).eq(...).maybeSingle(),
-  supabaseAuth.from("audience_profiles").select(...).eq(...).maybeSingle(),
-]);
-```
-
-Não é muito, mas todo segundo conta perto do limite.
-
-### Frente C — Reduzir tamanho do prompt do `generate-daily-guide` (mais lento dos 3)
-
-O `generate-daily-guide` pede **7 categorias com 5 itens cada + objeto `taskExamples` com 7 chaves de 5 itens** = ~70 strings na resposta. Isso é o que mais demora.
-
-Proposta: separar `taskExamples` em chamada **opcional/lazy** ou reduzir pra 3 itens por categoria. Como mexer nessa estrutura pode quebrar o frontend, vou só **logar o tempo gasto** primeiro pra confirmar o gargalo, sem mudar o schema agora.
-
-### Frente D — Validação real (com JWT)
-
-Depois do deploy, vou usar `supabase--curl_edge_functions` (que pega seu JWT do preview) pra chamar `generate-script` direto e ver se retorna 200 ou continua 502/504, com a latência exata.
+## Se algum teste falhar
+Plano de contingência (não vou aplicar agora — só se precisar):
+- **Se 502 voltar**: olhar log do edge-runtime pra ver se é OOM (memória) — aí precisa de `mem_limit` no compose
+- **Se 504 voltar mesmo com Kong 300s**: provavelmente é o **Nginx/Cloudflare na frente do api.influlab.pro** — precisa subir `proxy_read_timeout` lá também
+- **Se Gemini der >120s consistente**: aí sim partimos pra fila assíncrona com polling
 
 ## Arquivos que vou tocar
+Nenhum. Só ferramentas de teste/log.
 
-| Arquivo | Mudança | Risco |
-|---|---|---|
-| `supabase/functions/generate-script/index.ts` | `Promise.all` nas 2 queries | baixo |
-| `supabase/functions/generate-daily-guide/index.ts` | `Promise.all` + log de latência por etapa | baixo |
-| `supabase/functions/generate-tools-content/index.ts` | `Promise.all` + log de latência por etapa | baixo |
-
-## O que VOCÊ vai precisar rodar na VPS (bloco copia-e-cola)
-
-```bash
-cd ~/supabase/docker
-
-# 1. Adiciona os 2 timeouts no .env (se já existirem, atualiza)
-grep -q "EDGE_RUNTIME_WORKER_TIMEOUT_MS" .env || echo "EDGE_RUNTIME_WORKER_TIMEOUT_MS=300000" >> .env
-grep -q "EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS" .env || echo "EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS=300000" >> .env
-
-# 2. Adiciona as 2 vars no environment do service functions
-python3 <<'PY'
-import re
-p = "docker-compose.yml"
-s = open(p).read()
-# acha o bloco do service "functions" e injeta as env vars no environment:
-def patch(m):
-    block = m.group(0)
-    if "EDGE_RUNTIME_WORKER_TIMEOUT_MS" in block:
-        return block
-    return block.replace(
-        "environment:",
-        "environment:\n      EDGE_RUNTIME_WORKER_TIMEOUT_MS: ${EDGE_RUNTIME_WORKER_TIMEOUT_MS}\n      EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS: ${EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS}",
-        1
-    )
-s = re.sub(r"  functions:\n[\s\S]*?(?=\n  [a-z]+:\n|\Z)", patch, s)
-open(p, "w").write(s)
-print("docker-compose.yml patched")
-PY
-
-# 3. Pull do código novo + sync (SEM --delete!) + recreate
-cd /root/app && git pull origin main
-rsync -av /root/app/supabase/functions/ ~/supabase/docker/volumes/functions/
-cd ~/supabase/docker && docker compose up -d --force-recreate functions
-
-sleep 6
-docker compose logs functions --since 30s 2>&1 | grep -iE "main function started|boot error" | tail -5
-```
-
-## O que NÃO vou fazer
-
-- Não vou implementar fila assíncrona / polling — ainda dá pra resolver com timeout
-- Não vou trocar Gemini 2.5-flash
-- Não vou tocar em `main/`, `hello/`, Kong (já patchado)
-- Não vou mudar o schema do `daily-guide` agora — primeiro mede, depois decide
-
-## Próximo passo
-
-Quando aprovar:
-1. Aplico `Promise.all` nas 3 functions
-2. Te entrego o bloco da VPS acima
-3. Você roda e me confirma `main function started` sem boot error
-4. Eu testo `generate-script` via `supabase--curl_edge_functions` com seu JWT
-5. Se der 200 → fechamos e atualizo memória com as 2 env vars críticas
-6. Se ainda der 502/504 → eu vejo a latência exata no log e ataco o passo seguinte
+## Memória a atualizar (se passar)
+`mem://infra/deploy-workflow.md` — adicionar:
+> Self-hosted exige **3 timeouts de 300s alinhados**: Kong (`kong.yml` rotas `functions-v1`), edge-runtime (`EDGE_RUNTIME_WORKER_TIMEOUT_MS` + `EDGE_RUNTIME_PER_REQUEST_DEADLINE_MS` no compose), e Nginx upstream se houver. Faltar qualquer um = 502/504 em IAs longas.
 
