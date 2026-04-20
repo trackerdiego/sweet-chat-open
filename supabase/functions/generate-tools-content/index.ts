@@ -25,36 +25,57 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
-async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 60000): Promise<Response> {
-  const attempt = async (): Promise<Response> => {
+const PRIMARY_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash";
+const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callGeminiResilient(
+  body: Record<string, unknown>,
+  apiKey: string,
+  tag: string,
+  timeoutMs = 60000,
+): Promise<Response> {
+  const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, model }),
         signal: controller.signal,
       });
     } finally {
       clearTimeout(timer);
     }
   };
-  try {
-    const r = await attempt();
-    if (r.status >= 500) {
-      console.warn("[tools-content] Gemini 5xx, retrying once:", r.status);
-      try { await r.text(); } catch { /* ignore */ }
-      return await attempt();
+
+  const delays = [1000, 3000, 7000];
+  const tryModel = async (model: string): Promise<Response | null> => {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await attempt(model);
+        if (!RETRIABLE_STATUSES.has(r.status)) return r;
+        console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
+        try { await r.text(); } catch { /* ignore */ }
+      } catch (e) {
+        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+        console.warn(`[${tag}] Gemini ${isAbort ? "timeout" : "network error"} on ${model} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
+        if (i === 2 && !isAbort) throw e;
+      }
+      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
     }
-    return r;
-  } catch (e) {
-    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
-      console.warn("[tools-content] Gemini timeout, retrying once");
-      return await attempt();
-    }
-    throw e;
-  }
+    return null;
+  };
+
+  const primary = await tryModel(PRIMARY_MODEL);
+  if (primary) return primary;
+  console.warn(`[${tag}] Primary model ${PRIMARY_MODEL} exhausted, falling back to ${FALLBACK_MODEL}`);
+  const fallback = await tryModel(FALLBACK_MODEL);
+  if (fallback) return fallback;
+  return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
 }
 
 const TOOL_PROMPTS: Record<string, { system: (ap: Record<string, unknown>, niche: string, style: string) => string; user: (input: string, niche: string) => string }> = {
