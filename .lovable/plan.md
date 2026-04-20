@@ -1,67 +1,79 @@
 
-## Corrigir o runtime que ainda está executando código antigo
 
-### Diagnóstico confirmado
-- O log `Missing required environment variables` **não existe mais no código atual do repositório**.
-- Mesmo assim ele continua aparecendo na VPS.
-- Isso indica com alta confiança que o self-hosted está rodando **bundle antigo de edge function** ou **container órfão/stale**, não o source atualizado que foi copiado.
+# Causa raiz IDENTIFICADA — falta o `main` worker
 
-### O que será feito
-1. **Identificar a origem exata do log no runtime ativo**
-   - Verificar qual function/container ainda emite `Missing required environment variables`
-   - Checar se o container órfão `supabase-functions-run-...` ainda existe e está participando da execução
-   - Conferir se o código carregado dentro do runtime corresponde ao commit atual
+## O que o passo 6 revelou
 
-2. **Parar de depender de restart/copy como correção principal**
-   - Tratar `docker compose cp + restart` como workaround incompleto
-   - Aplicar o caminho oficial deste projeto: **deploy real das edge functions self-hosted**
-   - Prioridade inicial: `auth-email-hook` e `process-email-queue`
-   - Se necessário, redeployar o conjunto completo listado em `scripts/deploy-selfhost.sh`
+```
+worker boot error: failed to bootstrap runtime: could not find an appropriate entrypoint
+```
 
-3. **Limpar resíduos do runtime antigo**
-   - Remover órfãos do compose
-   - Garantir que o serviço `functions` suba sem reaproveitar instâncias antigas
-   - Validar que só existe um runtime ativo respondendo
+E o `command:` do compose mostra:
+```
+command: start --main-service /home/deno/functions/main
+```
 
-4. **Validar as functions de IA após o redeploy**
-   - Testar `generate-script`
-   - Testar `generate-daily-guide`
-   - Testar `generate-tools-content`
-   - Confirmar que o erro residual desapareceu dos logs
+O edge-runtime do Supabase exige um worker chamado `main` em `/home/deno/functions/main/index.ts` que faz o roteamento pras outras functions. Esse `main` (e o `hello`) **existiam antes** no volume mas foram **deletados pelo `rsync --delete`** do passo 3:
 
-### Implementação proposta
-#### Fase A — confirmação operacional
-- Inspecionar:
-  - `scripts/deploy-selfhost.sh`
-  - lista de functions públicas/privadas
-  - presença de órfãos no stack
-- Verificar se o projeto depende de **`supabase functions deploy`** para atualizar o bundle real do edge-runtime
+```
+deleting main/index.ts
+deleting main/
+deleting hello/index.ts
+deleting hello/
+```
 
-#### Fase B — correção principal
-- Executar deploy self-hosted das functions alteradas usando o fluxo do projeto
-- Limpar órfãos
-- Reiniciar o serviço `functions` de forma consistente com o deploy
+Eles não existem no repo `/root/app/supabase/functions/` porque são artefatos de bootstrap do self-hosted, não do projeto. O `rsync --delete` foi agressivo demais.
 
-#### Fase C — validação
-- Confirmar ausência do log antigo
-- Validar no app os fluxos:
-  - `/tasks`
-  - `/script`
-  - `/tools`
-- Se sobrar falha, rastrear por function específica em vez de tratar o pool inteiro
+**Daí o sintoma original ("Missing required environment variables") aparecia 51× no log antigo**: era o `main` worker tentando bootar, falhando no check de env do **próprio main**, e cada request invocando uma function nova fazia o pool tentar rebootar. Agora sem o `main` o erro mudou de cara mas a causa raiz é a mesma família: **o `main` está quebrado/ausente**.
 
-## Resultado esperado
-- O runtime deixa de carregar código legado
-- O log `Missing required environment variables` desaparece
-- As ferramentas de IA voltam a responder no app
-- O deploy futuro fica padronizado no fluxo correto do self-hosted
+## Plano de correção (3 passos curtos)
 
-## Detalhes técnicos
-- `auth-email-hook` e `process-email-queue` já têm fallback `lovable_email_disabled` no código atual
-- Como a string antiga não aparece no repo, o problema mais provável é:
-  - bundle antigo ainda servido pelo edge runtime, ou
-  - container órfão ainda ativo no projeto docker
-- Neste projeto, mudanças de edge function em self-hosted devem seguir o fluxo documentado em:
-  - `mem://infra/deploy-workflow.md`
-  - `scripts/deploy-selfhost.sh`
-- A correção não envolve banco, frontend, RLS ou schema
+### Passo 1 — Recuperar `main/index.ts` e `hello/index.ts`
+
+Eles existem no template oficial do Supabase self-hosted. Vou te entregar o conteúdo exato dos 2 arquivos pra colar via heredoc na VPS — `main` é o roteador padrão, `hello` é só placeholder de healthcheck.
+
+### Passo 2 — Restart do serviço
+
+```
+docker compose restart functions
+sleep 5
+docker compose logs functions --tail 50 | grep -iE "boot|listening|error"
+```
+
+Esperado: `serving requests on 0.0.0.0:9000` ou similar, sem erro.
+
+### Passo 3 — Validar IAs no app
+
+`/tasks`, `/script`, `/tools`, dashboard. Se funcionar, atualizo a memória:
+- **`mem://infra/deploy-workflow`** ganha aviso explícito: "Nunca usar `rsync --delete` no volume de functions — precisa preservar `main/` e `hello/`. Usar rsync sem `--delete` ou copiar function por function."
+
+## Por que essa é a correção certa (e não outra)
+
+| Hipótese alternativa | Por que NÃO é |
+|---|---|
+| Bug nas functions de IA | Erro é no boot do `main`, antes de qualquer function de IA carregar |
+| Falta de env var | `printenv` da Fase A já provou que tudo está setado |
+| Cache antigo do Deno | `down + up` recriou o container do zero |
+| Bundle stale | Volume foi sincronizado e a string antiga sumiu (passo 4) |
+
+A pista decisiva é a **mudança da mensagem de erro** depois do `rsync --delete`: de "Missing required environment variables" pra "could not find an appropriate entrypoint". Isso só acontece quando o entrypoint configurado no `command:` deixa de existir no filesystem.
+
+## Risco
+
+Mínimo. São 2 arquivos `index.ts` de roteamento padrão do Supabase, sem lógica de negócio. Reversível em 10 segundos.
+
+## O que NÃO vou fazer
+
+- Não vou tocar em nenhuma function de IA
+- Não vou mudar o `command:` do compose
+- Não vou mexer em env vars
+- Não vou usar rsync com `--delete` de novo
+
+## Próximo passo
+
+Quando aprovar:
+1. Volto em modo default
+2. Te entrego um **bloco único** com os 2 heredocs (`main/index.ts` + `hello/index.ts`) + restart + validação
+3. Você cola, testa as IAs, me dá o veredito final
+4. Eu atualizo `mem://infra/deploy-workflow` com a regra "nunca usar rsync --delete no volume de functions"
+
