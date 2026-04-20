@@ -1,107 +1,117 @@
 
 
-# Plano: corrigir falsos erros visuais no onboarding + estabilizar `matrix-week-1` e `matrix-week-4`
+# Plano: corrigir chat truncado + daily-guide quebrado
 
-## Diagnóstico real (do log que você mandou)
+## Diagnóstico
 
-Backend funcionou:
-- `audience-profile` rodou Step 1 normal
-- `matrix` rodou as 4 semanas em paralelo
-- `week 2` OK em 36s
-- `week 3` OK em 37s  
-- `week 4` OK em 57s (caiu no `flash-lite` depois de 3x 503 — fallback funcionou)
-- `week 1` OK em 63s (demorou mais por retries, mas voltou)
-- `complete — 30 dias em 63444ms` ✅
+**Problema 1 — Chat (resposta truncada igual ao print):**
+- `ai-chat/index.ts` linha 165: `maxOutputTokens: 1500`
+- System prompt soma ~3-5K tokens (perfil + estudo visceral em JSON puro)
+- Quando o usuário pede "5 ideias de Reels", cada ideia tem título + explicação + porquê emocional + CTA → estoura 1500 tokens facilmente
+- Gemini retorna `finishReason: MAX_TOKENS`, frontend renderiza o que chegou (parcial) e o stream encerra no meio da frase
+- É exatamente o que aparece no print: corta em "Seu público tem a..."
 
-Então por que os passos 1 e 2 ficam vermelhos no meio?
+**Problema 2 — Daily Guide nunca funciona:**
+- Linha 14 do log do boot: `parallel A+B` — faz 2 chamadas Gemini em paralelo, no mesmo padrão que causava 503 no matrix antes do stagger
+- Sem stagger entre A e B → Google throttla → 503 → 3 retries → fallback `flash-lite` → costuma falhar a chamada B (taskExamples) → frontend recebe payload incompleto ou erro
+- Pior: se A passa mas B 503ou de vez, o código atual já trata `B rejected` como "ok, segue sem taskExamples" (linha 113 do arquivo), MAS o frontend mostra `toast.error` se vier qualquer erro top-level
 
-**Causa**: o `Onboarding.tsx` provavelmente tem um **timeout no client** (ex: 30s ou 45s) por step. Quando o `matrix` demora 63s, o frontend marca os steps anteriores como "erro" mesmo que o backend tenha terminado tudo. Por isso a matriz aparece correta no fim — o backend nunca falhou, só o indicador visual disparou cedo demais.
+## Solução
 
-**Subcausa**: `week-1` e `week-4` estão tomando 503 em paralelo no Gemini. Hipótese: as 4 chamadas paralelas do `Promise.all` saem **no mesmo milissegundo**, e o Google enxerga isso como burst → throttla 2 das 4. As semanas 2 e 3 passam, 1 e 4 batem 503 (azar do dado).
+### Frente A — Chat sem truncamento
 
-## Solução em 2 frentes
+Em `supabase/functions/ai-chat/index.ts`:
 
-### Frente A — corrigir o falso erro visual no onboarding
+1. **Subir `maxOutputTokens` de 1500 → 4000.** O Gemini cobra por token usado, não por reservado. 4000 é seguro pra qualquer pergunta normal.
 
-Investigar `src/pages/Onboarding.tsx` e ver:
-- Como cada passo é marcado como "erro" (cor vermelha)
-- Se existe algum `setTimeout` ou `Promise.race` que mata o step antes do backend responder
-- Se o estado de erro do step depende do estado de outro step ainda em execução
+2. **Encolher o system prompt.** Hoje injeta `JSON.stringify(avatar, null, 2)` inteiro (~2-3K tokens só do avatar). Vai virar um resumo dos campos críticos:
+   - Avatar (nome arquetípico)
+   - Medo supremo  
+   - Desejo oculto
+   - Top 3 feridas
+   - Top 5 gatilhos verbais
+   - Top 3 frustrações
+   
+   Isso reduz input em ~70% sem perder o "consultor que conhece o público".
 
-Correção provável (uma das três, decido depois de ler o código):
-1. Remover qualquer timeout client-side por step (deixar o backend mandar) **OU**
-2. Ampliar timeout pra 120s **OU**
-3. Trocar a lógica: step só vira "erro" se a edge function retornar erro HTTP, nunca por timer local
+3. **Reforçar o limite de saída no prompt.** Já existe "máximo 400 palavras" — mas o Gemini ignora quando o contexto é gigante. Com prompt menor + 4000 tokens de margem, vira realidade.
 
-### Frente B — eliminar os 503 das semanas paralelas
+### Frente B — Daily Guide estável
 
-Mudança cirúrgica em `supabase/functions/generate-personalized-matrix/index.ts`:
+Em `supabase/functions/generate-daily-guide/index.ts`:
 
-**Stagger das 4 chamadas em vez de `Promise.all` puro.** Disparar com 800ms de espaçamento entre cada uma:
-
+1. **Stagger entre chamada A e B** (mesmo truque que arrumou o matrix):
 ```ts
-// em vez de Promise.all([w1, w2, w3, w4])
-const results = await Promise.all(
-  WEEKS.map((week, i) => 
-    new Promise(r => setTimeout(r, i * 800)).then(() => callGeminiNative({...}))
-  )
-);
+const [resA, resB] = await Promise.allSettled([
+  callGeminiNative({ ...A }),
+  new Promise(r => setTimeout(r, 800)).then(() => callGeminiNative({ ...B })),
+]);
 ```
 
-Por quê:
-- Continua paralelo (não vira sequencial)
-- Mas não dispara as 4 no mesmo ms — Google aceita melhor
-- Custo do stagger: +2.4s no total (irrelevante quando estamos em ~60s)
-- Espera reduzir 503 de ~50% pra <10%
+2. **Se A der 503 final, retry com `flash-lite` direto** em vez de devolver erro 503/504. Hoje se A falha, a função inteira aborta. Vai virar: tenta `flash` → cai pra `flash-lite` (já existe no wrapper, está funcionando no matrix).
 
-**Aumentar delays de retry** no `_shared/gemini.ts`:
-- Hoje: `[1000, 3000, 7000]` ms entre tentativas
-- Depois: `[2000, 5000, 12000]` ms
-- Por quê: 503 do Gemini volta ao normal em 5-15s. Esperar mais ajuda mais que retry rápido.
+3. **Se B falhar, devolver A parcial sem erro** (já é assim no código, mas garantir que `taskExamples = {}` não dispara `data?.error` no frontend). Conferir se o `200 ok com taskExamples vazio` está passando limpo no `DailyGuide.tsx`.
+
+4. **Atualizar log de boot** pra `[daily-guide] boot — staggered A+B (800ms)` pra confirmar deploy.
 
 ## Arquivos alterados
 
-1. **`src/pages/Onboarding.tsx`** — remover timeout client-side ou ampliar pra 120s; garantir que erro só aparece em resposta HTTP de erro
-2. **`supabase/functions/generate-personalized-matrix/index.ts`** — adicionar stagger de 800ms entre as 4 semanas
-3. **`supabase/functions/_shared/gemini.ts`** — aumentar delays de retry pra `[2000, 5000, 12000]`
+1. **`supabase/functions/ai-chat/index.ts`**
+   - `maxOutputTokens: 4000`
+   - Função `buildAvatarSummary(avatar)` que extrai só os campos críticos
+   - System prompt usa o resumo em vez do JSON inteiro
+
+2. **`supabase/functions/generate-daily-guide/index.ts`**
+   - Stagger 800ms na chamada B
+   - Log de boot atualizado
+   - Garantir resposta 200 mesmo se B falhar (já é, só revisar)
 
 ## O que NÃO muda
-- Nenhum prompt
-- Nenhum schema
-- Lógica de fallback `flash → flash-lite` continua igual
-- Frontend visual (só lógica de marcar erro)
+
+- Wrapper `_shared/gemini.ts` (não toca)
+- Frontend `AiChat.tsx` e `DailyGuide.tsx` (sem alterações)
+- Schemas, modelos, retry policy
 
 ## Critério de sucesso
-- Passos 1, 2, 3, 4 ficam **verdes em sequência**, sem nenhum voltar pra vermelho
-- Logs continuam mostrando `[matrix] complete — 30 dias em XXms`
-- 503 nas semanas paralelas cai pra < 1 a cada 10 onboardings
-- Onboarding completo percebido pelo usuário em <90s sem nenhum erro visual
 
-## Bloco de deploy pra VPS (será incluído após implementação)
+- Pergunta "Me dê 5 ideias de Reels" no chat retorna **resposta completa** com 5 ideias inteiras, sem cortar
+- "Gerar sugestões com IA" no Daily Guide funciona em <30s, sem toast de erro, com as 6 categorias preenchidas
+- Logs mostram `[ai-chat]` e `[daily-guide] staggered A+B` sem 503 sequencial
+
+## Bloco de deploy pra VPS
+
 ```bash
-cd /root/app && git checkout -- supabase/functions/ src/ && git pull origin main
-cp -r supabase/functions/_shared/. ~/supabase/docker/volumes/functions/_shared/
-cp -r supabase/functions/generate-personalized-matrix/. ~/supabase/docker/volumes/functions/generate-personalized-matrix/
+cd /root/app && git checkout -- supabase/functions/ && git pull origin main
+cp -r supabase/functions/ai-chat/. ~/supabase/docker/volumes/functions/ai-chat/
+cp -r supabase/functions/generate-daily-guide/. ~/supabase/docker/volumes/functions/generate-daily-guide/
 docker compose -f ~/supabase/docker/docker-compose.yml restart functions
 ```
-Frontend (Vercel) sobe sozinho via push do GitHub — não precisa fazer nada na VPS pra ele.
+
+Validação:
+```bash
+docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 1s --follow 2>&1 \
+  | grep -iE "ai-chat|daily-guide|503|MAX_TOKENS|staggered"
+```
 
 ## Detalhes técnicos
+
 ```text
-Por que os steps 1 e 2 ficavam vermelhos:
-- Backend nunca falhou neles (logs comprovam: Step 1 rodou, matrix rodou inteiro)
-- Frontend tem provavelmente Promise.race com timeout, ou estado de "erro" derivado
-  de outro step que demorou demais
-- Vou ler Onboarding.tsx pra confirmar a causa exata e remover
+Por que 4000 tokens é seguro:
+- Output médio do consultor IA: 300-600 tokens
+- 5 ideias bem desenvolvidas: 800-1200 tokens
+- Resposta longa atípica: até 2500 tokens
+- 4000 dá folga 1.5x sem custo (cobra pelo usado)
 
-Por que week-1 e week-4 batem 503:
-- Promise.all dispara 4 fetch() no mesmo event loop tick
-- Google enxerga 4 requests no mesmo ms da mesma key = parece burst suspeito
-- Stagger 800ms resolve sem perder paralelismo real
+Por que resumir avatar:
+- avatar_profile completo tem ~30 campos × 2-5 itens cada
+- JSON.stringify gera ~2500-4000 tokens de input por mensagem
+- Em conversa de 10 turnos, são ~30K tokens de contexto repetido
+- Resumo cabe em 400 tokens com os campos que importam pro consultor
 
-Por que aumentar delay de retry:
-- 503 do Gemini é "back off and retry" — quanto mais espera, mais chance de sucesso
-- 1s é cedo demais, 503 ainda está acontecendo
-- 2s/5s/12s dá margem real pro lado deles se recuperar
+Por que stagger no daily-guide:
+- Mesmo padrão do matrix: 2 fetch() no mesmo event loop tick = burst
+- Google throttla 1 das 2 chamadas com 503
+- 800ms de espaçamento elimina o burst sem virar sequencial
+- Custo: +0.8s no total (irrelevante)
 ```
 
