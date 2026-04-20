@@ -26,15 +26,26 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
-async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 60000): Promise<Response> {
-  const attempt = async (): Promise<Response> => {
+const PRIMARY_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash";
+const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callGeminiResilient(
+  body: Record<string, unknown>,
+  apiKey: string,
+  tag: string,
+  timeoutMs = 60000,
+): Promise<Response> {
+  const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, model }),
         signal: controller.signal,
       });
     } finally {
@@ -42,21 +53,30 @@ async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string
     }
   };
 
-  try {
-    const r = await attempt();
-    if (r.status >= 500) {
-      console.warn("[daily-guide] Gemini 5xx, retrying once:", r.status);
-      try { await r.text(); } catch { /* ignore */ }
-      return await attempt();
+  const delays = [1000, 3000, 7000];
+  const tryModel = async (model: string): Promise<Response | null> => {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await attempt(model);
+        if (!RETRIABLE_STATUSES.has(r.status)) return r;
+        console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
+        try { await r.text(); } catch { /* ignore */ }
+      } catch (e) {
+        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+        console.warn(`[${tag}] Gemini ${isAbort ? "timeout" : "network error"} on ${model} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
+        if (i === 2 && !isAbort) throw e;
+      }
+      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
     }
-    return r;
-  } catch (e) {
-    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
-      console.warn("[daily-guide] Gemini timeout, retrying once");
-      return await attempt();
-    }
-    throw e;
-  }
+    return null;
+  };
+
+  const primary = await tryModel(PRIMARY_MODEL);
+  if (primary) return primary;
+  console.warn(`[${tag}] Primary model ${PRIMARY_MODEL} exhausted, falling back to ${FALLBACK_MODEL}`);
+  const fallback = await tryModel(FALLBACK_MODEL);
+  if (fallback) return fallback;
+  return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
 }
 
 serve(async (req) => {
@@ -127,13 +147,12 @@ serve(async (req) => {
     const userPrompt = `Gere conteúdo para o dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo do dia: ${dayTitle}\nNicho: ${primaryNiche || 'lifestyle'}\n\nGere as 7 categorias:\n1. contentTypes: 5 tipos\n2. hooks: 5 hooks virais\n3. videoFormats: 5 formatos\n4. storytelling: 5 ideias\n5. ctas: 5 CTAs\n6. cliffhangers: 5 cliffhangers\n7. taskExamples: objeto com 7 chaves (morningInsight, morningPoll, reel, reelEngagement, valueStories, lifestyleStory, feedPost), cada uma com array de EXATAMENTE 5 exemplos PRÁTICOS, prontos para uso, no nicho "${primaryNiche || 'lifestyle'}".\n\nRetorne EXATAMENTE no formato da function tool.`;
 
     const startedAt = Date.now();
-    const response = await callGeminiWithRetry({
-      model: "gemini-2.5-flash",
+    const response = await callGeminiResilient({
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
       tools: [{ type: "function", function: { name: "generate_daily_content", description: "Generate personalized daily content", parameters: { type: "object", properties: { contentTypes: { type: "array", items: { type: "string" } }, hooks: { type: "array", items: { type: "string" } }, videoFormats: { type: "array", items: { type: "string" } }, storytelling: { type: "array", items: { type: "string" } }, ctas: { type: "array", items: { type: "string" } }, cliffhangers: { type: "array", items: { type: "string" } }, taskExamples: { type: "object", properties: { morningInsight: { type: "array", items: { type: "string" } }, morningPoll: { type: "array", items: { type: "string" } }, reel: { type: "array", items: { type: "string" } }, reelEngagement: { type: "array", items: { type: "string" } }, valueStories: { type: "array", items: { type: "string" } }, lifestyleStory: { type: "array", items: { type: "string" } }, feedPost: { type: "array", items: { type: "string" } } }, required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"] } }, required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers", "taskExamples"], additionalProperties: false } } }],
       tool_choice: { type: "function", function: { name: "generate_daily_content" } },
       max_tokens: 2500,
-    }, GOOGLE_GEMINI_API_KEY);
+    }, GOOGLE_GEMINI_API_KEY, "daily-guide");
     const latencyMs = Date.now() - startedAt;
     console.log("[daily-guide] gemini responded", { userId, status: response.status, latencyMs });
 
@@ -142,6 +161,7 @@ serve(async (req) => {
       console.error("[daily-guide] gemini error", { status: response.status, body: text.slice(0, 500) });
       if (response.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
       if (response.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+      if (response.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora (Gemini 503). Aguarde 1-2 minutos e tente novamente." }, 503);
       return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
     }
 
