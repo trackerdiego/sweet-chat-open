@@ -6,6 +6,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 90000): Promise<Response> {
+  const attempt = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const r = await attempt();
+    if (r.status >= 500) {
+      console.warn("Gemini 5xx, retrying once:", r.status);
+      try { await r.text(); } catch { /* ignore */ }
+      return await attempt();
+    }
+    return r;
+  } catch (e) {
+    if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+      console.warn("Gemini timeout, retrying once");
+      return await attempt();
+    }
+    throw e;
+  }
+}
+
 const TOOL_PROMPTS: Record<string, { system: (ap: Record<string, unknown>, niche: string, style: string) => string; user: (input: string, niche: string) => string }> = {
   dissonance: {
     system: (ap, niche, style) => `Você é especialista em copywriting de dissonância cognitiva para o nicho "${niche}". Use linguagem neutra de gênero.\nEstilo: ${style}.\n\nPERFIL DO PÚBLICO:\nAvatar: ${ap.avatar || ''}\nMedo supremo: ${ap.ultimateFear || ''}\nDesejo oculto: ${ap.deepOccultDesire || ''}\nFeridas: ${JSON.stringify(ap.coreWounds || [])}\nGatilhos de vergonha: ${JSON.stringify(ap.shameTriggers || [])}\nObjeções: ${JSON.stringify(ap.objections || [])}\nCrenças equivocadas: ${JSON.stringify(ap.mistakenBeliefs || [])}\nGatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}\nFrustrações: ${JSON.stringify(ap.frustrations || [])}\n\nCrie ganchos que unem conceitos contraditórios usando as feridas e desejos do público.`,
@@ -70,21 +102,17 @@ serve(async (req) => {
       viral: { type: "object", properties: { structureAnalysis: { type: "string" }, adaptedScript: { type: "object", properties: { hook: { type: "string" }, body: { type: "string" }, cta: { type: "string" } }, required: ["hook", "body", "cta"] }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "adaptedScript", "filmingInstructions", "whyItWillWork"], additionalProperties: false },
     };
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
-        tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
-        tool_choice: { type: "function", function: { name: "generate_result" } },
-      }),
-    });
+    const response = await callGeminiWithRetry({
+      model: "gemini-2.5-flash",
+      messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
+      tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
+      tool_choice: { type: "function", function: { name: "generate_result" } },
+    }, GOOGLE_GEMINI_API_KEY);
 
     if (!response.ok) {
       if (response.status === 429) return new Response(JSON.stringify({ error: "Muitas requisições. Aguarde." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const text = await response.text(); console.error("AI error:", response.status, text);
-      return new Response(JSON.stringify({ error: "Erro ao gerar conteúdo" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }), { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const data = await response.json();
@@ -94,6 +122,10 @@ serve(async (req) => {
     return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("generate-tools-content error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+    return new Response(
+      JSON.stringify({ error: isAbort ? "A IA está demorando mais que o normal. Tente novamente em alguns segundos." : (e instanceof Error ? e.message : "Erro desconhecido") }),
+      { status: isAbort ? 504 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
