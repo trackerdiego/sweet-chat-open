@@ -121,16 +121,11 @@ serve(async (req) => {
 
     const userPrompt = `Gere a matriz completa de 30 dias para um(a) criador(a) de conteúdo do nicho "${primaryNiche}". Retorne usando a function tool.`;
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        tools: [{ type: "function", function: { name: "generate_matrix", description: "Retorna a matriz de 30 dias", parameters: { type: "object", properties: { strategies: { type: "array", items: { type: "object", properties: { day: { type: "number" }, title: { type: "string" }, pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] }, pillarLabel: { type: "string" }, viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" }, visualInstructions: { type: "string" }, taskType: { type: "string", enum: ["connection", "value"] }, visceralElement: { type: "string" } }, required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"] } } }, required: ["strategies"], additionalProperties: false } } }],
-        tool_choice: { type: "function", function: { name: "generate_matrix" } },
-      }),
-    });
+    const response = await callGeminiResilient({
+      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+      tools: [{ type: "function", function: { name: "generate_matrix", description: "Retorna a matriz de 30 dias", parameters: { type: "object", properties: { strategies: { type: "array", items: { type: "object", properties: { day: { type: "number" }, title: { type: "string" }, pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] }, pillarLabel: { type: "string" }, viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" }, visualInstructions: { type: "string" }, taskType: { type: "string", enum: ["connection", "value"] }, visceralElement: { type: "string" } }, required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"] } } }, required: ["strategies"], additionalProperties: false } } }],
+      tool_choice: { type: "function", function: { name: "generate_matrix" } },
+    }, GOOGLE_GEMINI_API_KEY, "matrix");
 
     if (!response.ok) {
       if (response.status === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
