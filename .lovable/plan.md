@@ -1,80 +1,86 @@
 
 
-# Git pull bloqueado — VPS tem edits locais nas mesmas 3 functions
+# Onboarding falhou após "Regenerar Matriz" — diagnóstico antes de qualquer fix
 
-## O que aconteceu
+## O que você relatou
 
-O `git pull` abortou:
-```
-error: Your local changes to the following files would be overwritten by merge:
-        supabase/functions/generate-daily-guide/index.ts
-        supabase/functions/generate-script/index.ts
-        supabase/functions/generate-tools-content/index.ts
-```
+Clicou em "Regenerar Matriz" → voltou pro onboarding → **passo 1 deu verde**, **todos os outros ficaram vermelhos**.
 
-Tradução: alguém (provavelmente a outra IA com `sed`) editou esses 3 arquivos **direto na VPS**, sem commitar. Agora o Git se recusa a sobrescrever pra não perder essas mudanças locais.
+Isso bate com o problema do Gemini 503 que estamos perseguindo: o onboarding chama 3 edge functions de IA em sequência (`generate-audience-profile`, `generate-personalized-matrix`, `generate-daily-guide`). Se o Gemini está caindo, os passos 2-4 quebram em cadeia.
 
-Também notei: você exportou `SUPABASE_ACCESS_TOKEN="seu-token"` literalmente — isso é o placeholder do meu exemplo, não o token real. Precisa do token verdadeiro.
+**Mas antes de afirmar isso, preciso confirmar 2 coisas que ainda não sei:**
 
-## Solução: descartar edits locais da VPS
+1. O deploy na VPS efetivamente rodou? (você travou no `git pull` da última vez por causa de edits locais + token placeholder)
+2. Qual é o erro EXATO que apareceu nos passos vermelhos? (mensagem da UI ou logs)
 
-A versão do GitHub (vinda do Lovable) é a **fonte da verdade**. Os edits locais da VPS são exatamente as mesmas mudanças que já fiz aqui (fallback `gemini-1.5-flash`) — então descartar não perde nada.
+## Plano de ação (ordem importa)
 
-### Bloco copia-e-cola pra VPS
+### Passo 1 — Resolver o deploy travado na VPS (bloco copia-e-cola)
+
+Esse é o bloco que você pediu ("qual bloco?"). Roda na VPS:
 
 ```bash
 cd /root/app
 
-# 1. Descarta edits locais nas 3 functions (volta ao estado do último commit)
+# Descarta edits locais que a outra IA fez via sed
 git checkout -- supabase/functions/generate-daily-guide/index.ts \
                 supabase/functions/generate-script/index.ts \
                 supabase/functions/generate-tools-content/index.ts
 
-# 2. Confirma que worktree está limpo
+# Confirma worktree limpo
 git status
 
-# 3. Pull do GitHub (agora vai passar)
+# Pull do GitHub (agora passa)
 git pull origin main
 
-# 4. Exporta as variáveis com valores REAIS
-export SUPABASE_ACCESS_TOKEN="cole-aqui-o-token-de-verdade"
+# Exporta variáveis com valores REAIS (não copie literal "seu-token")
+export SUPABASE_ACCESS_TOKEN="<TOKEN_REAL_DO_STUDIO>"
 export PROJECT_REF="default"
 
-# 5. Deploy
+# Deploy
 ./scripts/deploy-selfhost.sh
 ```
 
-### Onde achar o `SUPABASE_ACCESS_TOKEN` real
+Onde achar o token real: Studio em `https://api.influlab.pro` → ícone de perfil → Account → Access Tokens.
 
-No Studio self-hosted: `https://api.influlab.pro` → ícone do perfil (canto superior direito) → **Account** → **Access Tokens** → gerar novo (ou reusar antigo se anotou).
+### Passo 2 — Capturar logs das 3 functions do onboarding
 
-Se você não consegue gerar pelo Studio (alguns self-hosted desabilitam essa rota), posso te orientar a configurar o CLI com auth direto via env var alternativa — me avisa.
-
-### Validação após deploy
+Logo após o deploy, na VPS:
 
 ```bash
-docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 3m 2>&1 | grep -iE "gemini-1.5-flash|fallback|attempt|Primary model" | tail -20
+docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 10m 2>&1 \
+  | grep -iE "generate-audience-profile|generate-personalized-matrix|generate-daily-guide|gemini|fallback|attempt|status: 5|status: 4" \
+  | tail -60
 ```
 
-E testa no app:
-1. `/tasks` → gerar guia diário
-2. `/script` → gerar script
+Cola o output aqui. Isso me diz exatamente em qual passo quebra e por quê.
 
-## Se quiser ver o que a outra IA mudou antes de descartar (opcional)
+### Passo 3 — Sob suspeita: `generate-personalized-matrix` e `generate-audience-profile` NÃO têm o escudo
 
-```bash
-cd /root/app && git diff supabase/functions/generate-script/index.ts
-```
+As 3 functions que blindei (`generate-script`, `generate-daily-guide`, `generate-tools-content`) ganharam retry 3x + fallback `gemini-1.5-flash`. Mas o onboarding também usa:
 
-Provavelmente vai mostrar exatamente `gemini-2.0-flash` → `gemini-1.5-flash` — o mesmo que minhas mudanças. Se for isso, descarta sem medo.
+- `generate-audience-profile` — sem escudo
+- `generate-personalized-matrix` — sem escudo
 
-## Por que não dar `git stash` em vez de `checkout --`
+Se o Gemini está com 503 intermitente, essas 2 também quebram. **Provavelmente é aqui que os passos vermelhos morreram.**
 
-Stash guarda os edits pra usar depois. Mas como minhas mudanças no GitHub **são as mesmas** (fallback pro 1.5-flash), guardar não tem propósito. `checkout --` é mais limpo.
+### Passo 4 — Ação após confirmar (próximo plano)
 
-## Próximos passos
+Dependendo dos logs do Passo 2, vou:
 
-1. Roda o bloco acima (com token real)
-2. Cola o output completo aqui
-3. Testa no app e me diz se daily-guide / script funcionam consistentemente
+- **Se confirmar 503 nas 2 functions sem escudo**: aplicar o mesmo padrão `callGeminiResilient` (retry 3x + fallback) em `generate-audience-profile` e `generate-personalized-matrix`. 2 arquivos, mesma estrutura do que já fiz.
+- **Se for outro erro** (auth, schema, payload): patch específico baseado na mensagem real.
+- **Se for cota Google esgotada**: aí é billing no Google AI Studio, não dá pra resolver no código.
+
+## O que NÃO vou fazer agora
+
+- Aplicar o escudo nas 2 functions sem ver os logs primeiro (pode ser outro problema; não quero gastar deploy à toa)
+- Mexer no fluxo de retry do frontend do onboarding (provavelmente o backend é o culpado)
+- Tocar em DB / RLS / migrations
+
+## Resumo do que preciso de você
+
+1. Roda o bloco do Passo 1 na VPS (com token real)
+2. Roda o comando de logs do Passo 2 e cola o output
+3. Eu volto com o patch (provavelmente blindar as 2 functions do onboarding)
 
