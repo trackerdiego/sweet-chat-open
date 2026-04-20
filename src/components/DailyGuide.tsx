@@ -30,25 +30,35 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
     try {
       const { data, error } = await supabase.functions.invoke('generate-daily-guide', { body: { pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, weeklyTheme: weeklyTheme || '', dayTitle: strategy.title, day: strategy.day, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' } });
       if (error) {
-        const msg = (error as { message?: string }).message || '';
-        const status = (error as { context?: { status?: number } }).context?.status;
-        if (status === 504 || /timeout|abort/i.test(msg)) {
-          toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
-        } else if (status === 429) {
-          toast.error('Muitas requisições ou limite atingido. Aguarde um momento.');
-        } else {
-          toast.error('Erro ao gerar sugestões. Tente novamente.');
-        }
+        console.error('[DailyGuide] invoke error', error);
+        const ctx = (error as { context?: { status?: number; body?: unknown } }).context;
+        const status = ctx?.status;
+        let backendMsg = '';
+        try {
+          const body = ctx?.body;
+          if (typeof body === 'string') backendMsg = (JSON.parse(body) as { error?: string })?.error || '';
+          else if (body && typeof body === 'object') backendMsg = (body as { error?: string }).error || '';
+        } catch { /* ignore */ }
+        const msg = backendMsg || (error as { message?: string }).message || '';
+
+        if (status === 401) toast.error('Sessão expirada. Faça login novamente.');
+        else if (status === 402) toast.error(backendMsg || 'Créditos da IA esgotados. Avise o administrador.');
+        else if (status === 429) toast.error(backendMsg || 'Muitas requisições ou limite atingido. Aguarde um momento.');
+        else if (status === 504 || /timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
+        else if (status === 502) toast.error(backendMsg || 'A IA retornou resposta inválida. Tente novamente.');
+        else if (status === 500) toast.error(backendMsg || 'Erro interno na IA. Tente novamente.');
+        else toast.error(backendMsg || 'Erro ao gerar sugestões. Tente novamente.');
         return;
       }
-      if (data?.error) { toast.error(data.error); return; }
+      if (data?.error) { console.error('[DailyGuide] data error', data); toast.error(data.error); return; }
       const content = data as AiGuideContent;
       setAiContentLocal(content); onAiContent?.(content); setAiGenerated(true);
       toast.success('Sugestões personalizadas geradas com IA! ✨');
     } catch (e) {
+      console.error('[DailyGuide] catch', e);
       const msg = e instanceof Error ? e.message : '';
       if (/timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
-      else toast.error('Erro ao gerar sugestões.');
+      else toast.error(msg || 'Erro ao gerar sugestões.');
     } finally { setLoading(false); }
   };
 
