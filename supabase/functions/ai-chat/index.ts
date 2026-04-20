@@ -1,11 +1,57 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiStream } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+console.log("[ai-chat] boot — using native streaming endpoint");
+
+// Converte stream nativo Gemini SSE → OpenAI-compatible SSE (frontend já parseia esse formato)
+function geminiToOpenAiStream(geminiBody: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = geminiBody.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf("\n")) !== -1) {
+          let line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+          try {
+            const parsed = JSON.parse(payload);
+            const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (typeof text === "string" && text.length > 0) {
+              const openAiChunk = { choices: [{ delta: { content: text } }] };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAiChunk)}\n\n`));
+            }
+          } catch {
+            // ignore malformed line
+          }
+        }
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+  });
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -111,18 +157,13 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
       adminClient.from("usage_logs").insert({ user_id: userId, feature: "chat" }),
     ]);
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-        stream: true,
-        max_tokens: 1500,
-      }),
+    const response = await callGeminiStream({
+      apiKey: GOOGLE_GEMINI_API_KEY,
+      systemInstruction: systemPrompt,
+      messages: messages as { role: "user" | "assistant"; content: string }[],
+      model: "gemini-2.5-flash",
+      maxOutputTokens: 1500,
+      tag: "ai-chat",
     });
 
     if (!response.ok) {
@@ -143,7 +184,13 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
       });
     }
 
-    return new Response(response.body, {
+    if (!response.body) {
+      return new Response(JSON.stringify({ error: "Sem corpo de resposta da IA" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(geminiToOpenAiStream(response.body), {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {
