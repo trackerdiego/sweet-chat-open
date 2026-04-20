@@ -11,7 +11,7 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
-console.log("[daily-guide] boot — using native endpoint, responseSchema, parallel A+B");
+console.log("[daily-guide] boot — staggered A+B (800ms), responseSchema");
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -93,7 +93,9 @@ serve(async (req) => {
     const startedAt = Date.now();
     const [resA, resB] = await Promise.allSettled([
       callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptA, schema: schemaA, tag: "daily-guide-A", maxOutputTokens: 1800, timeoutMs: 60000 }),
-      callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B", maxOutputTokens: 2200, timeoutMs: 60000 }),
+      new Promise((r) => setTimeout(r, 800)).then(() =>
+        callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B", maxOutputTokens: 2200, timeoutMs: 60000 })
+      ),
     ]);
 
     if (resA.status === "rejected") {

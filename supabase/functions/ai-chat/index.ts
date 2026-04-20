@@ -188,7 +188,7 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
       systemInstruction: systemPrompt,
       messages: messages as { role: "user" | "assistant"; content: string }[],
       model: "gemini-2.5-flash",
-      maxOutputTokens: 1500,
+      maxOutputTokens: 4000,
       tag: "ai-chat",
     });
 
