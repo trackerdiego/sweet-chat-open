@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // === Model config (locked) ===
 const PRIMARY_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-2.5-flash";
-const TIMEOUT_MS = 90000;
+const FALLBACK_MODEL = "gemini-2.5-pro";
+const TIMEOUT_MS = 120000;
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
 if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
