@@ -83,11 +83,14 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: usageData } = await adminClient
-      .from("user_usage")
-      .select("is_premium, tool_generations, last_tool_date")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const t0 = Date.now();
+    const [usageRes, audienceRes] = await Promise.all([
+      adminClient.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle(),
+      supabaseAuth.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
+    ]);
+    const usageData = usageRes.data;
+    const audienceData = audienceRes.data;
+    console.log("[daily-guide] db parallel fetch", { userId, ms: Date.now() - t0 });
 
     const isPremium = usageData?.is_premium ?? false;
     const today = new Date().toISOString().split("T")[0];
