@@ -1,126 +1,155 @@
 
-Corrigir a falha de geração com IA em Tarefas, onde `generate-daily-guide` está retornando `500` após ~21s, e deixar o fluxo robusto no backend self-hosted sem perder a regra do produto de manter 5 exemplos práticos por tarefa.
+Corrigir as falhas persistentes de IA em `generate-daily-guide` e `generate-script` com a abordagem mais conservadora possível, priorizando estabilidade do app e evitando mudanças amplas que possam degradar o que já funciona.
 
-## Diagnóstico provável
+## Leitura do problema
 
-Pelo código atual e pelos screenshots, o erro não parece ser:
-- autenticação (`401`)
-- limite gratuito (`429`)
-- timeout tratado (`504`)
+Hoje há dois sinais importantes:
 
-O `500` mais provável vem de uma exceção interna depois da resposta da IA, principalmente em um destes pontos:
-1. `tool_calls` não veio no formato esperado
-2. `toolCall.function.arguments` veio vazio/inválido
-3. `JSON.parse(...)` falhou
-4. a function consumiu quota antes de concluir e depois quebrou
-5. o front está escondendo o erro real com toast genérico
+1. `generate-daily-guide` e `generate-script` estão retornando `500`
+2. O backend real é **self-hosted** e, neste projeto, **restart de container não equivale a deploy de código**
 
-## O que será ajustado
+Pelo estado atual do código e da memória do projeto, a causa mais provável é uma combinação de:
+- código novo do Lovable **não aplicado de verdade** no self-hosted
+- `generate-script` ainda está no fluxo antigo e frágil
+- contagem de uso ainda está duplicada no frontend em algumas telas
+- tratamento de erro inconsistente entre funções
 
-### 1. Endurecer o parser da resposta da IA em `generate-daily-guide`
-Arquivo: `supabase/functions/generate-daily-guide/index.ts`
+## Estratégia segura
 
-- Adicionar logs estruturados antes e depois da chamada à IA:
-  - `userId`
-  - `day`
-  - `pillar`
+Vou seguir um plano em duas fases, com foco em risco baixo.
+
+### Fase 1 — Estabilizar sem refatoração grande
+
+#### 1. Confirmar e alinhar o método correto de deploy self-hosted
+O projeto documenta que o deploy real das edge functions é manual via `scripts/deploy-selfhost.sh`, não apenas `docker compose restart functions`.
+
+Vou preparar a correção considerando este fluxo:
+- aplicar mudanças só nas functions afetadas
+- orientar deploy real das functions privadas
+- só depois validar no app
+
+Objetivo: evitar “achar que subiu” quando na prática o servidor continua rodando código antigo.
+
+#### 2. Endurecer `generate-script` no mesmo padrão de robustez do `generate-daily-guide`
+Arquivo:
+- `supabase/functions/generate-script/index.ts`
+
+Mudanças:
+- adicionar helper de timeout + retry com `AbortController`
+- só contabilizar uso **após sucesso real**
+- tratar melhor respostas 429, 402, 5xx e timeout
+- adicionar logs estruturados:
+  - início da execução
+  - status da resposta do modelo
   - latência
-  - status HTTP da Gemini
-- Logar o shape da resposta quando `tool_calls` não vier.
-- Envolver o parse em tratamento explícito:
-  - se não vier `tool_calls`, registrar payload resumido e retornar erro claro
-  - se `JSON.parse` falhar, retornar erro claro
-- Manter timeout/retry já existente, mas separar melhor:
-  - erro de gateway/timeout
-  - erro de formato da resposta
-  - erro interno da function
+  - shape da resposta quando `tool_calls` vier vazio
+- padronizar retorno JSON com mensagens claras
 
-### 2. Não cobrar tentativa que falhou
+Isso elimina a diferença atual entre Daily Guide e Script e reduz o risco de 500 genérico.
+
+#### 3. Tornar o parse das respostas de IA mais resiliente
 Arquivos:
 - `supabase/functions/generate-daily-guide/index.ts`
+- `supabase/functions/generate-script/index.ts`
 - `supabase/functions/generate-tools-content/index.ts`
 
-Hoje a contagem de uso é incrementada antes do sucesso real. Vou mover o update de `user_usage` e o insert em `usage_logs` para depois do parse válido da resposta da IA.
+Mudanças:
+- manter tool calling
+- além do parse normal de `tool_calls`, adicionar fallback defensivo para:
+  - argumentos vindos como string inválida
+  - resposta com markdown/code fence
+  - caracteres de controle
+  - JSON com vírgulas sobrando
+- se a resposta vier truncada ou sem estrutura, retornar `502` com mensagem clara, nunca `500` genérico
 
-Isso evita:
-- gastar quota quando a IA falha
-- mascarar diagnósticos
-- gerar frustração no usuário
+Objetivo: se o modelo falhar na formatação, o app continua previsível e o erro fica diagnosticável.
 
-### 3. Preservar a regra de negócio dos 5 exemplos por tarefa
-Memória do projeto exige exatamente 5 exemplos práticos por tarefa personalizados por IA.
+#### 4. Corrigir cobrança/consumo duplicado no frontend
+Arquivos:
+- `src/components/ScriptGenerator.tsx`
+- `src/pages/Tools.tsx`
 
-Então não vou consolidar a redução para 3 exemplos. Em vez disso, a correção seguirá este caminho:
-- manter 5 exemplos
-- otimizar prompt e validação
-- tornar `taskExamples` resiliente sem quebrar o restante da resposta
-- se necessário, aceitar fallback parcial: categorias principais aparecem mesmo se algum bloco opcional falhar, sem derrubar a geração inteira
+Hoje o backend já contabiliza uso, mas o frontend ainda chama `incrementUsage(...)` em sucesso.
+Vou remover essa duplicidade nas rotas onde a edge function já faz a contagem.
 
-### 4. Melhorar o contrato de erro da edge function
-Arquivo: `supabase/functions/generate-daily-guide/index.ts`
+Impacto:
+- evita desencontro entre UI e backend
+- reduz risco de parecer que “gastou uso sem funcionar”
+- preserva a regra de negócio existente
 
-Padronizar respostas JSON com mensagens específicas, por exemplo:
-- `Não autorizado`
-- `Limite gratuito atingido`
-- `Rate limit exceeded`
-- `A IA retornou resposta sem dados estruturados`
-- `A IA retornou JSON inválido`
-- `A IA está demorando mais que o normal`
+#### 5. Melhorar feedback no frontend do Script
+Arquivo:
+- `src/components/ScriptGenerator.tsx`
 
-Isso facilita o front interpretar corretamente.
+Mudanças:
+- espelhar o tratamento de erro já usado em `DailyGuide`
+- ler `error.context.status` e `error.context.body`
+- mapear mensagens específicas para:
+  - 401
+  - 402
+  - 429
+  - 502
+  - 504
+  - 500
+- registrar `console.error` com o objeto completo
 
-### 5. Melhorar feedback no frontend
-Arquivo: `src/components/DailyGuide.tsx`
+Objetivo: parar de mostrar “Tente novamente” para erros diferentes.
 
-- Fazer `console.error` completo do objeto retornado por `supabase.functions.invoke(...)`
-- Diferenciar toasts por status:
-  - `401` sessão expirada
-  - `402` créditos esgotados
-  - `429` limite/requisições
-  - `504` timeout
-  - `500` mostrar mensagem retornada pelo backend quando existir
-- Evitar toast genérico quando o backend já explicou o problema
+## O que NÃO vou mexer agora
 
-### 6. Aplicar a mesma correção estrutural em `generate-tools-content`
-Arquivo: `supabase/functions/generate-tools-content/index.ts`
+Para manter o app estável, não vou:
+- trocar o provedor de IA
+- refatorar o fluxo para jobs assíncronos
+- mexer em `ai-chat`, `generate-personalized-matrix` ou onboarding
+- alterar schema do banco
+- mudar a lógica principal das páginas
 
-Mesmo problema potencial existe lá:
-- parse rígido de `tool_calls`
-- consumo de quota antes do sucesso
-- pouca observabilidade
-
-Vou alinhar o comportamento com `generate-daily-guide` para não repetir o bug em Ferramentas.
-
-## Resultado esperado
-
-Após a implementação:
-- Tarefas deixa de falhar silenciosamente com `500` genérico
-- falhas passam a indicar causa real
-- tentativas com erro não consomem uso diário
-- o backend self-hosted fica mais fácil de diagnosticar
-- a regra de 5 exemplos por tarefa continua preservada
+A ideia é corrigir o mínimo necessário, no menor raio de impacto possível.
 
 ## Arquivos afetados
 
+- `supabase/functions/generate-script/index.ts`
 - `supabase/functions/generate-daily-guide/index.ts`
 - `supabase/functions/generate-tools-content/index.ts`
-- `src/components/DailyGuide.tsx`
+- `src/components/ScriptGenerator.tsx`
+- `src/pages/Tools.tsx`
 
-## Validação
+## Validação após implementação
 
-1. Fazer login com usuário de teste
-2. Ir em `Tarefas` e clicar em “Gerar sugestões com IA”
-3. Confirmar:
-   - sucesso com conteúdo renderizado
-   - ou erro específico, não genérico
-4. Confirmar que falha não incrementa `tool_generations`
-5. Em caso de nova falha, usar os logs estruturados do container para identificar o ponto exato
+### Backend
+Validar que:
+- `generate-script` responde com sucesso ou erro explícito, sem `500` genérico
+- `generate-daily-guide` retorna `502/504/429/402` quando aplicável
+- uso só é contabilizado após sucesso
 
-## Deploy no self-hosted
+### Frontend
+Validar que:
+- tela Tarefas mostra erro específico
+- tela Script mostra erro específico
+- Ferramentas continuam funcionando sem regressão
+- botão volta ao estado normal após falha
+- UI não quebra nem entra em loading infinito
 
-Como o backend real é `api.influlab.pro`, depois da implementação será necessário reiniciar as functions no servidor:
+## Deploy real no self-hosted
+
+Depois da implementação, o deploy precisa seguir o fluxo real do projeto, não só restart:
 
 ```bash
-cd ~/supabase/docker
-docker compose restart functions
+export SUPABASE_ACCESS_TOKEN=<token>
+export PROJECT_REF=<ref-do-self-hosted>
+./scripts/deploy-selfhost.sh
 ```
+
+Se você preferir deploy seletivo, o foco é:
+- `generate-script`
+- `generate-daily-guide`
+- `generate-tools-content`
+
+## Resultado esperado
+
+Depois desse hotfix conservador:
+- o app volta a ficar previsível
+- Daily Guide e Script deixam de falhar silenciosamente
+- erros passam a ser claros e rastreáveis
+- consumo diário não fica inconsistente
+- a correção fica limitada às áreas quebradas, sem arriscar o restante do produto
