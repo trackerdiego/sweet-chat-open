@@ -49,12 +49,23 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
     if (!canUseScript) { toast({ title: 'Limite atingido', description: 'Assine para continuar.', variant: 'destructive' }); setCheckoutOpen(true); return; }
     setIsGeneratingAI(true);
     try {
-      let data: ScriptContent;
-      try { data = await invokeGenerate(); } catch { await new Promise(r => setTimeout(r, 2000)); data = await invokeGenerate(); }
+      const data = await invokeGenerate();
       setAiScript(data); setShowingAI(true);
-      await incrementUsage('script_generations');
+      // Backend já contabiliza uso após sucesso. Não chamar incrementUsage aqui pra evitar dupla contagem.
     } catch (e: any) {
-      toast({ title: 'Erro ao gerar com IA', description: 'Tente novamente.', variant: 'destructive' });
+      console.error('[ScriptGenerator] generate error:', e, e?.context);
+      const status = e?.context?.status as number | undefined;
+      let body: any = null;
+      try { body = e?.context?.body ? JSON.parse(e.context.body) : null; } catch { /* ignore */ }
+      const backendMsg = body?.error;
+      let title = 'Erro ao gerar com IA';
+      let description = backendMsg || 'Tente novamente em alguns segundos.';
+      if (status === 401) { title = 'Sessão expirada'; description = 'Faça login novamente.'; }
+      else if (status === 402) { title = 'Créditos da IA esgotados'; description = backendMsg || 'Avise o administrador.'; }
+      else if (status === 429) { title = 'Limite atingido'; description = backendMsg || 'Aguarde alguns segundos e tente de novo.'; if (!isPremium) setCheckoutOpen(true); }
+      else if (status === 502) { title = 'Resposta da IA inválida'; description = backendMsg || 'A IA respondeu fora do formato. Tente novamente.'; }
+      else if (status === 504) { title = 'IA demorou demais'; description = backendMsg || 'Tente novamente em alguns segundos.'; }
+      toast({ title, description, variant: 'destructive' });
     } finally { setIsGeneratingAI(false); }
   };
 

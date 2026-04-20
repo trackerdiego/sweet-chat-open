@@ -266,10 +266,19 @@ const Tools = () => {
       if (error) throw error;
       setResult(data);
       toast.success('Conteúdo gerado! ✨');
-      await incrementUsage('tool_generations');
-    } catch (err) {
-      console.error('Tool generation error:', err);
-      toast.error('Erro ao gerar.');
+      // Backend já contabiliza uso após sucesso. Não chamar incrementUsage aqui pra evitar dupla contagem.
+    } catch (err: any) {
+      console.error('Tool generation error:', err, err?.context);
+      const status = err?.context?.status as number | undefined;
+      let body: any = null;
+      try { body = err?.context?.body ? JSON.parse(err.context.body) : null; } catch { /* ignore */ }
+      const backendMsg = body?.error;
+      if (status === 401) toast.error('Sessão expirada. Faça login novamente.');
+      else if (status === 402) toast.error(backendMsg || 'Créditos da IA esgotados.');
+      else if (status === 429) { toast.error(backendMsg || 'Limite atingido.'); if (!isPremium) setCheckoutOpen(true); }
+      else if (status === 502) toast.error(backendMsg || 'A IA respondeu fora do formato. Tente novamente.');
+      else if (status === 504) toast.error(backendMsg || 'A IA demorou demais. Tente novamente.');
+      else toast.error(backendMsg || 'Erro ao gerar.');
     } finally {
       setLoading(false);
     }
