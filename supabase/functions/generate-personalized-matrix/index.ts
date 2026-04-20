@@ -6,6 +6,56 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const PRIMARY_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-1.5-flash";
+const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callGeminiResilient(
+  body: Record<string, unknown>,
+  apiKey: string,
+  tag: string,
+  timeoutMs = 60000,
+): Promise<Response> {
+  const attempt = async (model: string): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, model }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const delays = [1000, 3000, 7000];
+  const tryModel = async (model: string): Promise<Response | null> => {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await attempt(model);
+        if (!RETRIABLE_STATUSES.has(r.status)) return r;
+        console.warn(`[${tag}] Gemini ${r.status} on ${model} attempt ${i + 1}/3`);
+        try { await r.text(); } catch { /* ignore */ }
+      } catch (e) {
+        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+        console.warn(`[${tag}] Gemini ${isAbort ? "timeout" : "network error"} on ${model} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
+        if (i === 2 && !isAbort) throw e;
+      }
+      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
+    }
+    return null;
+  };
+  const primary = await tryModel(PRIMARY_MODEL);
+  if (primary) return primary;
+  console.warn(`[${tag}] Primary model ${PRIMARY_MODEL} exhausted, falling back to ${FALLBACK_MODEL}`);
+  const fallback = await tryModel(FALLBACK_MODEL);
+  if (fallback) return fallback;
+  return new Response(JSON.stringify({ error: { message: "All Gemini attempts failed (primary + fallback)" } }), { status: 503 });
+}
+
 function distributeVisceralElements(ap: Record<string, unknown>): Record<number, string> {
   const pool: { category: string; item: string }[] = [];
   const addArray = (category: string, key: string) => { const arr = ap[key]; if (Array.isArray(arr)) arr.forEach((item: string) => pool.push({ category, item: String(item) })); };
@@ -71,16 +121,11 @@ serve(async (req) => {
 
     const userPrompt = `Gere a matriz completa de 30 dias para um(a) criador(a) de conteúdo do nicho "${primaryNiche}". Retorne usando a function tool.`;
 
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${GOOGLE_GEMINI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        tools: [{ type: "function", function: { name: "generate_matrix", description: "Retorna a matriz de 30 dias", parameters: { type: "object", properties: { strategies: { type: "array", items: { type: "object", properties: { day: { type: "number" }, title: { type: "string" }, pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] }, pillarLabel: { type: "string" }, viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" }, visualInstructions: { type: "string" }, taskType: { type: "string", enum: ["connection", "value"] }, visceralElement: { type: "string" } }, required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"] } } }, required: ["strategies"], additionalProperties: false } } }],
-        tool_choice: { type: "function", function: { name: "generate_matrix" } },
-      }),
-    });
+    const response = await callGeminiResilient({
+      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+      tools: [{ type: "function", function: { name: "generate_matrix", description: "Retorna a matriz de 30 dias", parameters: { type: "object", properties: { strategies: { type: "array", items: { type: "object", properties: { day: { type: "number" }, title: { type: "string" }, pillar: { type: "string", enum: ["principal", "vida-real", "negocios", "lifestyle"] }, pillarLabel: { type: "string" }, viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" }, visualInstructions: { type: "string" }, taskType: { type: "string", enum: ["connection", "value"] }, visceralElement: { type: "string" } }, required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"] } } }, required: ["strategies"], additionalProperties: false } } }],
+      tool_choice: { type: "function", function: { name: "generate_matrix" } },
+    }, GOOGLE_GEMINI_API_KEY, "matrix");
 
     if (!response.ok) {
       if (response.status === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
