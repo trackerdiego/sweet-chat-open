@@ -141,7 +141,10 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
     }
 
     if (avatar && typeof avatar === "object") {
-      systemPrompt += `\n\n## Estudo Visceral do Avatar (Perfil Psicológico do Público)\n${JSON.stringify(avatar, null, 2)}`;
+      const summary = buildAvatarSummary(avatar as Record<string, unknown>);
+      if (summary) {
+        systemPrompt += `\n\n## Estudo Visceral do Avatar (Resumo)\n${summary}`;
+      }
     }
 
     systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.
