@@ -92,15 +92,12 @@ serve(async (req) => {
     userId = user.id;
 
     adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: usageData } = await adminClient.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle();
-    const isPremium = usageData?.is_premium ?? false;
-    const today = new Date().toISOString().split("T")[0];
-    const isNewDay = usageData?.last_tool_date !== today;
-    const currentToolCount = isNewDay ? 0 : (usageData?.tool_generations ?? 0);
-    if (!isPremium && currentToolCount >= 2) return jsonResponse({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }, 429);
 
     const { toolType, userInput, primaryNiche, contentStyle } = await req.json();
-    console.log("[tools-content] start", { userId, toolType, isPremium, currentToolCount });
+    console.log("[tools-content] start", { userId, toolType });
+
+    const toolConfig = TOOL_PROMPTS[toolType];
+    if (!toolConfig) return jsonResponse({ error: "Tipo de ferramenta inválido" }, 400);
 
     const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
     if (!GOOGLE_GEMINI_API_KEY) {
@@ -108,10 +105,21 @@ serve(async (req) => {
       return jsonResponse({ error: "Configuração do servidor incompleta (chave da IA ausente)." }, 500);
     }
 
-    const toolConfig = TOOL_PROMPTS[toolType];
-    if (!toolConfig) return jsonResponse({ error: "Tipo de ferramenta inválido" }, 400);
+    const t0 = Date.now();
+    const [usageRes, audienceRes] = await Promise.all([
+      adminClient.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle(),
+      supabase.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
+    ]);
+    const usageData = usageRes.data;
+    const audienceData = audienceRes.data;
+    console.log("[tools-content] db parallel fetch", { userId, ms: Date.now() - t0 });
 
-    const { data: audienceData } = await supabase.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle();
+    const isPremium = usageData?.is_premium ?? false;
+    const today = new Date().toISOString().split("T")[0];
+    const isNewDay = usageData?.last_tool_date !== today;
+    const currentToolCount = isNewDay ? 0 : (usageData?.tool_generations ?? 0);
+    if (!isPremium && currentToolCount >= 2) return jsonResponse({ error: "Você atingiu o limite de 2 gerações gratuitas de ferramentas IA. Assine o plano premium para uso ilimitado." }, 429);
+
     const ap = (audienceData?.avatar_profile as Record<string, unknown>) || {};
     const niche = primaryNiche || "lifestyle";
     const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
