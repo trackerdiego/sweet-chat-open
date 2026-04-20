@@ -98,7 +98,13 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
       systemPrompt += `\n\n## Estudo Visceral do Avatar (Perfil Psicológico do Público)\n${JSON.stringify(avatar, null, 2)}`;
     }
 
-    systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.`;
+    systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.
+
+## Formato da resposta (OBRIGATÓRIO)
+- Seja CONCISO: máximo 400 palavras por resposta.
+- Use markdown SEMPRE: **negrito** para destaques, listas com \`-\` ou números, \`##\` para seções quando houver mais de um tema.
+- Quebre em parágrafos curtos (2-3 linhas cada). NUNCA entregue um bloco gigante de texto.
+- Quando der ideias/sugestões, use lista numerada com 1 linha de título em **negrito** + 1 linha de explicação curta.`;
 
     await Promise.all([
       adminClient.from("user_usage").update({ chat_messages: chatCount + 1, last_chat_date: today }).eq("user_id", userId),
@@ -115,6 +121,7 @@ Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emo
         model: "gemini-2.5-flash",
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         stream: true,
+        max_tokens: 1500,
       }),
     });
 

@@ -26,7 +26,7 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
-async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 90000): Promise<Response> {
+async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 60000): Promise<Response> {
   const attempt = async (): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -134,6 +134,7 @@ serve(async (req) => {
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
       tools: [{ type: "function", function: { name: "generate_daily_content", description: "Generate personalized daily content", parameters: { type: "object", properties: { contentTypes: { type: "array", items: { type: "string" } }, hooks: { type: "array", items: { type: "string" } }, videoFormats: { type: "array", items: { type: "string" } }, storytelling: { type: "array", items: { type: "string" } }, ctas: { type: "array", items: { type: "string" } }, cliffhangers: { type: "array", items: { type: "string" } }, taskExamples: { type: "object", properties: { morningInsight: { type: "array", items: { type: "string" } }, morningPoll: { type: "array", items: { type: "string" } }, reel: { type: "array", items: { type: "string" } }, reelEngagement: { type: "array", items: { type: "string" } }, valueStories: { type: "array", items: { type: "string" } }, lifestyleStory: { type: "array", items: { type: "string" } }, feedPost: { type: "array", items: { type: "string" } } }, required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"] } }, required: ["contentTypes", "hooks", "videoFormats", "storytelling", "ctas", "cliffhangers", "taskExamples"], additionalProperties: false } } }],
       tool_choice: { type: "function", function: { name: "generate_daily_content" } },
+      max_tokens: 2500,
     }, GOOGLE_GEMINI_API_KEY);
     const latencyMs = Date.now() - startedAt;
     console.log("[daily-guide] gemini responded", { userId, status: response.status, latencyMs });

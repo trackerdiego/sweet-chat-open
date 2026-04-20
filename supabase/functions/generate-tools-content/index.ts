@@ -25,7 +25,7 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
-async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 90000): Promise<Response> {
+async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 60000): Promise<Response> {
   const attempt = async (): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -130,6 +130,7 @@ serve(async (req) => {
       messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
       tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
       tool_choice: { type: "function", function: { name: "generate_result" } },
+      max_tokens: 2500,
     }, GOOGLE_GEMINI_API_KEY);
     const latencyMs = Date.now() - startedAt;
     console.log("[tools-content] gemini responded", { userId, toolType, status: response.status, latencyMs });
