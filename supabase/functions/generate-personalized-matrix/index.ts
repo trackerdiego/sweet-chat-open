@@ -6,16 +6,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// === Model config (locked) ===
 const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.5-flash";
+const TIMEOUT_MS = 90000;
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
+if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
+  console.error("[matrix] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
+}
+console.log("[matrix] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 60000,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();

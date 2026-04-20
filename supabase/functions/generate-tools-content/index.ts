@@ -25,9 +25,16 @@ function parseLooseJson(raw: unknown): Record<string, unknown> {
   return JSON.parse(cleaned);
 }
 
+// === Model config (locked) ===
 const PRIMARY_MODEL = "gemini-2.5-pro";
 const FALLBACK_MODEL = "gemini-2.5-pro";
+const TIMEOUT_MS = 120000;
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const ALLOWED_MODELS = new Set(["gemini-2.5-pro", "gemini-2.5-flash"]);
+if (!ALLOWED_MODELS.has(PRIMARY_MODEL) || !ALLOWED_MODELS.has(FALLBACK_MODEL)) {
+  console.error("[tools-content] BOOT GUARD FAILED — modelo deprecated configurado", { PRIMARY_MODEL, FALLBACK_MODEL });
+}
+console.log("[tools-content] boot", { PRIMARY_MODEL, FALLBACK_MODEL, TIMEOUT_MS });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,7 +42,7 @@ async function callGeminiResilient(
   body: Record<string, unknown>,
   apiKey: string,
   tag: string,
-  timeoutMs = 120000,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Response> {
   const attempt = async (model: string): Promise<Response> => {
     const controller = new AbortController();
@@ -158,11 +165,12 @@ serve(async (req) => {
     const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
     const style = styleMap[contentStyle] || styleMap.casual;
 
+    // Schemas simplificados: sem additionalProperties:false; viral achatado (remontamos depois).
     const toolSchemas: Record<string, object> = {
-      dissonance: { type: "object", properties: { hooks: { type: "array", items: { type: "object", properties: { hook: { type: "string" }, whyItWorks: { type: "string" }, emotionalTrigger: { type: "string" } }, required: ["hook", "whyItWorks", "emotionalTrigger"] } } }, required: ["hooks"], additionalProperties: false },
-      patterns: { type: "object", properties: { patterns: { type: "array", items: { type: "object", properties: { framework: { type: "string" }, emotionalTriggers: { type: "string" }, adaptation: { type: "string" }, example: { type: "string" } }, required: ["framework", "emotionalTriggers", "adaptation", "example"] } } }, required: ["patterns"], additionalProperties: false },
-      hooks: { type: "object", properties: { analyses: { type: "array", items: { type: "object", properties: { originalHook: { type: "string" }, emotionalTrigger: { type: "string" }, technique: { type: "string" }, variations: { type: "array", items: { type: "string" } } }, required: ["originalHook", "emotionalTrigger", "technique", "variations"] } } }, required: ["analyses"], additionalProperties: false },
-      viral: { type: "object", properties: { structureAnalysis: { type: "string" }, adaptedScript: { type: "object", properties: { hook: { type: "string" }, body: { type: "string" }, cta: { type: "string" } }, required: ["hook", "body", "cta"] }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "adaptedScript", "filmingInstructions", "whyItWillWork"], additionalProperties: false },
+      dissonance: { type: "object", properties: { hooks: { type: "array", items: { type: "object", properties: { hook: { type: "string" }, whyItWorks: { type: "string" }, emotionalTrigger: { type: "string" } }, required: ["hook", "whyItWorks", "emotionalTrigger"] } } }, required: ["hooks"] },
+      patterns: { type: "object", properties: { patterns: { type: "array", items: { type: "object", properties: { framework: { type: "string" }, emotionalTriggers: { type: "string" }, adaptation: { type: "string" }, example: { type: "string" } }, required: ["framework", "emotionalTriggers", "adaptation", "example"] } } }, required: ["patterns"] },
+      hooks: { type: "object", properties: { analyses: { type: "array", items: { type: "object", properties: { originalHook: { type: "string" }, emotionalTrigger: { type: "string" }, technique: { type: "string" }, variations: { type: "array", items: { type: "string" } } }, required: ["originalHook", "emotionalTrigger", "technique", "variations"] } } }, required: ["analyses"] },
+      viral: { type: "object", properties: { structureAnalysis: { type: "string" }, scriptHook: { type: "string" }, scriptBody: { type: "string" }, scriptCta: { type: "string" }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "scriptHook", "scriptBody", "scriptCta", "filmingInstructions", "whyItWillWork"] },
     };
 
     const startedAt = Date.now();
@@ -207,6 +215,16 @@ serve(async (req) => {
     } catch (e) {
       console.error("[tools-content] failed to parse tool arguments JSON", { sample: String(args).slice(0, 500), err: String(e) });
       return jsonResponse({ error: "A IA retornou JSON inválido. Tente novamente." }, 502);
+    }
+
+    // Compatibilidade com frontend: viral espera adaptedScript aninhado.
+    if (toolType === "viral" && (result.scriptHook || result.scriptBody || result.scriptCta)) {
+      result.adaptedScript = {
+        hook: result.scriptHook ?? "",
+        body: result.scriptBody ?? "",
+        cta: result.scriptCta ?? "",
+      };
+      delete result.scriptHook; delete result.scriptBody; delete result.scriptCta;
     }
 
     // Sucesso: agora sim contabiliza uso

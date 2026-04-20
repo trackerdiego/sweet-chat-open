@@ -182,35 +182,45 @@ const Onboarding = () => {
     setShowPipeline(true);
     setPipelineProgress(3);
 
-    // --- Step 1 & 2: Audience profile ---
+    // --- Step 1 & 2: Audience profile (sem timer artificial) ---
+    // A function faz step1 (audience description) + step2 (avatar) internamente.
+    // Mostramos "audience" ativo até a metade do tempo, depois trocamos para "visceral".
     updateStepStatus('audience', 'active');
-    startProgressTick(25); // tick up to 25% while waiting
+    startProgressTick(45);
 
-    // Simulate step 1 completing after ~12s (audience description is faster)
-    const step1Timer = setTimeout(() => {
-      updateStepStatus('audience', 'done');
-      setPipelineProgress(prev => Math.max(prev, 25));
-      updateStepStatus('visceral', 'active');
-      // Now tick up to 50%
-      startProgressTick(50);
-    }, 12000);
+    // Heurística honesta: depois de ~25s, se ainda não terminou, marca audience como done
+    // e ativa visceral (passamos pra etapa 2 internamente do backend).
+    const visceralSwitchTimer = setTimeout(() => {
+      setPipelineSteps(prev => prev.map(s => {
+        if (s.id === 'audience' && s.status === 'active') return { ...s, status: 'done' };
+        if (s.id === 'visceral' && s.status === 'pending') return { ...s, status: 'active' };
+        return s;
+      }));
+    }, 25000);
 
     const { error: audienceError } = await supabase.functions.invoke('generate-audience-profile', {
       body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
     });
 
-    clearTimeout(step1Timer);
+    clearTimeout(visceralSwitchTimer);
     stopProgressTick();
 
     if (audienceError) {
-      updateStepStatus('audience', 'error');
-      updateStepStatus('visceral', 'error');
-      setPipelineProgress(50);
-    } else {
-      updateStepStatus('audience', 'done');
-      updateStepStatus('visceral', 'done');
-      setPipelineProgress(52);
+      // Marca como erro APENAS as etapas ainda não concluídas — sem cascata visual enganosa.
+      setPipelineSteps(prev => prev.map(s => {
+        if ((s.id === 'audience' || s.id === 'visceral') && s.status !== 'done') {
+          return { ...s, status: 'error' };
+        }
+        return s;
+      }));
+      setPipelineProgress(45);
+      toast.error('Erro na análise de público / estudo visceral. Tente novamente.');
+      return;
     }
+
+    updateStepStatus('audience', 'done');
+    updateStepStatus('visceral', 'done');
+    setPipelineProgress(52);
 
     // --- Step 3: Matrix ---
     updateStepStatus('matrix', 'active');
