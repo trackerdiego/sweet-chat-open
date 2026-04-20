@@ -1,133 +1,89 @@
 
-## Solução concreta
 
-O problema deixou de ser “descobrir o que está acontecendo”. A base já é suficiente para fechar isso com uma correção objetiva em 4 frentes:
+# Plano: tirar o `matrix` do `2.5-flash` (que está dando 503 contínuo)
 
-1. parar definitivamente qualquer fallback inválido/deploy ambíguo
-2. reduzir a chance de `MALFORMED_FUNCTION_CALL` nas functions com schema pesado
-3. dar mais tolerância a timeout/503 onde o modelo está respondendo, mas lento
-4. impedir que o onboarding “minta” o progresso e pareça quebrado em cascata
+## Diagnóstico confirmado pelos logs
 
-## O que será implementado
+```
+[matrix] boot { PRIMARY_MODEL: "gemini-2.5-flash", FALLBACK_MODEL: "gemini-2.5-flash", TIMEOUT_MS: 90000 }
+[matrix] Gemini 503 on gemini-2.5-flash attempt 1/3
+[matrix] Gemini 503 on gemini-2.5-flash attempt 2/3
+[matrix] Gemini 503 on gemini-2.5-flash attempt 3/3
+[matrix] Primary model gemini-2.5-flash exhausted, falling back to gemini-2.5-flash
+[matrix] Gemini 503 on gemini-2.5-flash attempt 1/3
+[matrix] Gemini timeout on gemini-2.5-flash attempt 2/3
+```
 
-### 1) Congelar a configuração real dos modelos nas 5 edge functions
-Arquivos:
-- `supabase/functions/generate-audience-profile/index.ts`
-- `supabase/functions/generate-daily-guide/index.ts`
-- `supabase/functions/generate-tools-content/index.ts`
-- `supabase/functions/generate-personalized-matrix/index.ts`
-- `supabase/functions/generate-script/index.ts`
+O que isso significa:
+- ✅ Boot config correta (`gemini-2.5-flash`, sem fallback inválido)
+- ✅ Zero `404` de modelo deprecado
+- ❌ O `gemini-2.5-flash` no endpoint OpenAI-compat do Google (`/v1beta/openai/...`) está **indisponível ou throttled** pra esse tamanho de prompt (matriz de 30 dias é grande)
+- ❌ Cair no fallback do mesmo modelo é inútil — só perde tempo
 
-Mudanças:
-- manter só modelos `gemini-2.5-*`
-- remover qualquer possibilidade de fallback para `gemini-1.5-flash` ou `gemini-2.0-flash`
-- adicionar um log curto e explícito no início de cada request com:
-  - function
-  - `PRIMARY_MODEL`
-  - `FALLBACK_MODEL`
-  - timeout ativo
+`tools-content`, `daily-guide` e `audience-profile` (que rodam no `2.5-pro`) **não aparecem mais nos logs com erro** — então estão funcionando.
 
-Resultado:
-- os próximos logs deixam de ser ambíguos
-- fica impossível continuar “caindo” em modelo deprecated sem perceber imediatamente
+## Solução
 
-### 2) Corrigir de verdade o `daily-guide`, que hoje é o ponto mais frágil
-Arquivo:
-- `supabase/functions/generate-daily-guide/index.ts`
+Trocar `matrix` pra `gemini-2.5-pro` como **fallback** (mantendo `2.5-flash` como primário pra continuar barato/rápido quando o Google não estiver dando 503). Assim:
 
-Mudança principal:
-- dividir a geração em 2 chamadas menores, em vez de 1 tool call grande:
-  - chamada A: `contentTypes`, `hooks`, `videoFormats`, `storytelling`, `ctas`, `cliffhangers`
-  - chamada B: `taskExamples`
+1. Tenta `2.5-flash` 3x (rápido e barato)
+2. Se der 503/timeout, **cai pro `2.5-pro`** (mais robusto, mais caro, mas não 503)
+3. `2.5-pro` 3x
+4. Só falha se ambos morrerem
 
-A resposta final continua igual para o frontend, mas o backend monta o objeto final unindo as duas partes.
+## O que será alterado
 
-Ajustes adicionais:
-- simplificar o schema de `taskExamples`
-- remover rigidez desnecessária (`additionalProperties: false`) onde ela só aumenta rejeição do Gemini
-- manter `PRIMARY_MODEL = "gemini-2.5-pro"` e `FALLBACK_MODEL = "gemini-2.5-pro"`
-- preservar timeout maior
+### `supabase/functions/generate-personalized-matrix/index.ts`
 
-Resultado:
-- reduz drasticamente a chance de `function_call_filter: MALFORMED_FUNCTION_CALL`
-- o Daily Guide deixa de depender de uma única resposta enorme e mais frágil
+```diff
+- const PRIMARY_MODEL = "gemini-2.5-flash";
+- const FALLBACK_MODEL = "gemini-2.5-flash";
+- const TIMEOUT_MS = 90000;
++ const PRIMARY_MODEL = "gemini-2.5-flash";
++ const FALLBACK_MODEL = "gemini-2.5-pro";  // pro como rede de segurança
++ const TIMEOUT_MS = 120000;                // pro precisa de mais tempo
+```
 
-### 3) Endurecer `audience-profile` e `tools-content` sem reescrever tudo
-Arquivos:
-- `supabase/functions/generate-audience-profile/index.ts`
-- `supabase/functions/generate-tools-content/index.ts`
+E nada mais. Schema, prompt, lógica — tudo permanece.
 
-#### `generate-audience-profile`
-Mudanças:
-- manter `2.5-pro`
-- aliviar o schema do step 2:
-  - remover `additionalProperties: false`
-  - reduzir o conjunto de campos obrigatórios ao essencial
-  - manter compatibilidade com o que o app já lê
+### `supabase/functions/generate-script/index.ts`
+Mesma mudança preventiva (também usa `2.5-flash`):
+```diff
+- const FALLBACK_MODEL = "gemini-2.5-flash";
+- const TIMEOUT_MS = 60000;
++ const FALLBACK_MODEL = "gemini-2.5-pro";
++ const TIMEOUT_MS = 90000;
+```
 
-Objetivo:
-- diminuir timeout/rejeição na etapa visceral sem quebrar o formato salvo em `audience_profiles`
+## Bloco de deploy pra VPS
 
-#### `generate-tools-content`
-Mudanças:
-- simplificar schemas por tool type
-- achatar estruturas aninhadas onde possível
-- no tipo `viral`, trocar `adaptedScript` aninhado por campos rasos (`scriptHook`, `scriptBody`, `scriptCta`) e remontar no backend se necessário para manter compatibilidade
+```bash
+cd /root/app
+git checkout -- supabase/functions/
+git pull origin main
+cp -r supabase/functions/generate-personalized-matrix \
+      supabase/functions/generate-script \
+      ~/supabase/docker/volumes/functions/
+docker compose -f ~/supabase/docker/docker-compose.yml restart functions
+```
 
-Objetivo:
-- sair do estado “às vezes funciona, às vezes MALFORMED”
+## Validação
 
-### 4) Ajustar o onboarding para refletir o estado real
-Arquivo:
-- `src/pages/Onboarding.tsx`
+```bash
+docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 10s --follow 2>&1 \
+  | grep -iE "boot|matrix|503|fallback|gemini-2.5"
+```
 
-Mudanças:
-- remover o timer artificial que hoje marca “audience” como concluído antes da resposta real
-- não pintar `audience` e `visceral` de erro simultaneamente por antecipação
-- só avançar status quando a function realmente responder
-- manter retry apenas onde faz sentido
-- mensagens mais honestas:
-  - erro na análise de público/estudo visceral
-  - erro na matriz
-  - finalização concluída
-
-Resultado:
-- o usuário deixa de ver uma sequência “vermelha” enganosa
-- o problema passa a parecer exatamente do tamanho que ele tem
-
-## Ordem de execução
-1. corrigir `generate-daily-guide`
-2. aliviar `generate-audience-profile` e `generate-tools-content`
-3. reforçar logs/configuração nas 5 functions
-4. corrigir `Onboarding.tsx`
-
-## Arquivos que serão alterados
-- `supabase/functions/generate-daily-guide/index.ts`
-- `supabase/functions/generate-audience-profile/index.ts`
-- `supabase/functions/generate-tools-content/index.ts`
-- `supabase/functions/generate-personalized-matrix/index.ts`
-- `supabase/functions/generate-script/index.ts`
-- `src/pages/Onboarding.tsx`
+Esperado:
+- `[matrix] boot { PRIMARY_MODEL: "gemini-2.5-flash", FALLBACK_MODEL: "gemini-2.5-pro", TIMEOUT_MS: 120000 }`
+- Se der 503 no flash: `falling back to gemini-2.5-pro` → e completar com sucesso
 
 ## Critério de sucesso
-- nenhum log novo com `gemini-1.5-flash` ou `gemini-2.0-flash`
-- `daily-guide` sem `no tool_calls in response`
-- `tools-content` estável, sem falha intermitente
-- `audience-profile` com menos timeout na etapa 2
-- onboarding concluindo sem efeito cascata enganoso
+- Onboarding termina os 4 passos verdes
+- Matriz é gravada em `user_strategies`
 
-## Detalhes técnicos
-```text
-Causa raiz prática:
-1. logs antigos + runtime confuso fizeram a investigação parecer circular
-2. o maior bug atual não é mais “modelo deprecated”; é schema pesado demais para tool calling
-3. o onboarding hoje amplifica a sensação de falha porque simula progresso antes da resposta real
-```
+## O que NÃO vou fazer
+- Não vou implementar fila/worker assíncrono (overengineering pra esse caso — `2.5-pro` resolve)
+- Não vou mexer em `audience-profile`, `daily-guide`, `tools-content` (estão OK pelos logs)
+- Não vou mudar prompt nem schema do matrix
 
-```text
-Estratégia adotada:
-- não depender de “mais um retry”
-- reduzir complexidade das respostas estruturadas
-- manter compatibilidade com o frontend
-- tornar os logs autoexplicativos
-```
