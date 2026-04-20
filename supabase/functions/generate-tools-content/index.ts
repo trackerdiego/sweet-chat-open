@@ -13,6 +13,18 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+// Resilient JSON parse: handles markdown fences, control chars, trailing commas.
+function parseLooseJson(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object") return raw as Record<string, unknown>;
+  let s = String(raw ?? "").trim();
+  s = s.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  try { return JSON.parse(s); } catch { /* fall through */ }
+  const cleaned = s
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/,\s*([}\]])/g, "$1");
+  return JSON.parse(cleaned);
+}
+
 async function callGeminiWithRetry(body: Record<string, unknown>, apiKey: string, timeoutMs = 90000): Promise<Response> {
   const attempt = async (): Promise<Response> => {
     const controller = new AbortController();
@@ -149,7 +161,7 @@ serve(async (req) => {
 
     let result: Record<string, unknown>;
     try {
-      result = typeof args === "string" ? JSON.parse(args) : args;
+      result = parseLooseJson(args);
     } catch (e) {
       console.error("[tools-content] failed to parse tool arguments JSON", { sample: String(args).slice(0, 500), err: String(e) });
       return jsonResponse({ error: "A IA retornou JSON inválido. Tente novamente." }, 502);
