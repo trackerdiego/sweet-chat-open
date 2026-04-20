@@ -134,10 +134,10 @@ async function handleWebhook(req: Request): Promise<Response> {
   const apiKey = Deno.env.get('LOVABLE_API_KEY')
 
   if (!apiKey) {
-    console.error('LOVABLE_API_KEY not configured')
+    // Self-hosted: GoTrue envia auth emails diretamente; webhook desativado.
     return new Response(
-      JSON.stringify({ error: 'Server configuration error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ skipped: true, reason: 'lovable_email_disabled' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
 

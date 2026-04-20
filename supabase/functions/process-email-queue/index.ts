@@ -42,7 +42,10 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('LOVABLE_API_KEY')
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!apiKey || !supabaseUrl || !supabaseServiceKey) { console.error('Missing required environment variables'); return new Response(JSON.stringify({ error: 'Server configuration error' }), { status: 500, headers: { 'Content-Type': 'application/json' } }) }
+  // Self-hosted no-op: sem LOVABLE_API_KEY este projeto não usa Lovable Email.
+  // Retorna 200 silencioso pra não poluir logs nem desestabilizar o pool de edge-runtime.
+  if (!apiKey) { return new Response(JSON.stringify({ skipped: true, reason: 'lovable_email_disabled' }), { headers: { 'Content-Type': 'application/json' } }) }
+  if (!supabaseUrl || !supabaseServiceKey) { console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'); return new Response(JSON.stringify({ error: 'Server configuration error' }), { status: 500, headers: { 'Content-Type': 'application/json' } }) }
 
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
