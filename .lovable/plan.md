@@ -1,49 +1,66 @@
 
-Trocar o modelo da edge function `generate-audience-profile` de `gemini-2.5-flash` para `gemini-2.5-pro` para aumentar a profundidade e qualidade da análise visceral (perfil psicológico de 30+ campos).
 
-## Mudança
+## Problema
 
-**Arquivo:** `supabase/functions/generate-audience-profile/index.ts`
+Geração com IA na tela **Tarefas** (`generate-daily-guide`) demora muito e falha. Causa raiz: schema de tool calling grande (7 categorias + 7 sub-arrays = ~50 strings) + Gemini 2.5 Flash + sem timeout/retry no fetch + sem feedback de progresso.
 
-Duas chamadas Gemini na função, ambas trocam de modelo:
+## Plano de correção
 
-1. **Step 1** (geração da descrição do público): `gemini-2.5-flash` → `gemini-2.5-pro`
-2. **Step 2** (perfil visceral via tool calling): `gemini-2.5-flash` → `gemini-2.5-pro`
+### 1. Adicionar timeout explícito + retry em `generate-daily-guide`
 
-Nenhuma outra mudança de código — endpoint, autenticação, schema da tool e prompts permanecem iguais. O Pro entende o mesmo formato OpenAI-compatible.
+Envolver o `fetch` da Gemini em `AbortController` com timeout de 90s. Se der timeout ou 5xx, retry uma vez automaticamente. Hoje fica pendurado até morrer sem aviso.
+
+### 2. Reduzir tamanho do payload de saída
+
+O schema pede **50 strings** numa só chamada. Vou cortar para o essencial sem perder UX:
+- Manter as 6 categorias principais (5 itens cada = 30 strings)
+- `taskExamples`: reduzir de 5 para 3 exemplos por tarefa (7 × 3 = 21 strings em vez de 35)
+
+Isso corta ~30% do tempo de geração e do risco de truncamento.
+
+### 3. Trocar modelo desta function pra `gemini-2.5-flash-lite` OU manter `flash` com prompt enxuto
+
+Recomendo manter `gemini-2.5-flash` mas enxugar o `visceralContext` (hoje despeja 15+ campos do avatar — é overkill pra gerar exemplos de tarefa). Reduzir pra 6 campos chave (avatar, ultimateFear, deepOccultDesire, coreWounds, verbalTriggers, frustrations).
+
+### 4. Mensagens de erro mais claras no front
+
+No `DailyGuide.tsx` (e onde chama a function): se `AbortError` ou erro 504/500, mostrar toast "A IA está demorando mais que o normal. Tente novamente em alguns segundos." em vez de erro genérico.
+
+### 5. Aplicar mesmo padrão (timeout + retry) em `generate-tools-content`
+
+Mesma vulnerabilidade. Mesmo fix.
 
 ## O que NÃO muda
 
-- Outras 14 edge functions continuam em `gemini-2.5-flash` (chat, matriz, script, daily-guide, tools-content, etc.)
+- `generate-audience-profile` permanece em `gemini-2.5-pro` (decisão anterior, não é o problema atual)
+- `ai-chat`, `generate-script`, `generate-personalized-matrix` — não tocaremos agora
 - Schema do banco
-- Frontend / UX do onboarding
-- Secrets (mesma `GOOGLE_GEMINI_API_KEY`)
+- Frontend de Tarefas/Tools (só ajuste de toast)
 
-## Trade-offs esperados
+## Arquivos afetados
 
-| Aspecto | Antes (Flash) | Depois (Pro) |
-|---|---|---|
-| Qualidade do perfil | Boa | Mais profundo, específico, visceral |
-| Latência da etapa visceral | ~8-15s | ~20-40s |
-| Custo por geração | ~$0.001 | ~$0.01 (~10x) |
-| Estabilidade | GA | GA |
+- `supabase/functions/generate-daily-guide/index.ts` — timeout+retry, prompt enxuto, schema reduzido
+- `supabase/functions/generate-tools-content/index.ts` — timeout+retry
+- `src/components/DailyGuide.tsx` — toast de erro melhor (a confirmar arquivo após investigar)
 
-O onboarding já tem loading state e fallback de erro (`mem://ux/onboarding-flow`), então a latência maior não quebra UX.
+## Deploy no self-hosted ⚠️
 
-## Deploy no self-hosted
-
-⚠️ Importante: como o backend é self-hosted (`api.influlab.pro`), Lovable atualiza o código da function aqui mas o **deploy real** precisa acontecer no seu servidor. Após eu aplicar a mudança, você precisa:
+Lovable atualiza o código aqui, mas você precisa redeployar no `api.influlab.pro`:
 
 ```bash
-cd ~/supabase/docker
-docker compose restart functions
+cd ~/supabase/docker && docker compose restart functions
 ```
 
-Ou redeployar especificamente a `generate-audience-profile` se você usa deploy seletivo.
+## Validação
 
-## Validação pós-deploy
+1. Tela **Tarefas** → clica "gerar com IA" → deve responder em 15-30s consistentemente
+2. Se falhar, toast claro aparece e botão volta ao estado clicável
+3. Conferir logs:
+   ```bash
+   docker compose logs functions --tail 100 | grep -E "generate-daily-guide|generate-tools-content"
+   ```
 
-1. Cria conta de teste nova
-2. Roda onboarding completo
-3. Confere no Studio self-hosted: `select avatar_profile from audience_profiles where user_id = '<novo-user>';`
-4. Compara profundidade com perfis antigos gerados pelo Flash
+## Decisão alternativa (não recomendo agora)
+
+Migrar pra padrão **job assíncrono** (`EdgeRuntime.waitUntil` + tabela de fila + polling no front). Funciona mas é uma refatoração bem maior — só vale se mesmo após o fix acima a UX continuar ruim.
+
