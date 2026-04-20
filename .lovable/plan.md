@@ -1,83 +1,99 @@
 
-User reportou: recebeu push "você tem acesso a tudo" sendo usuário free com limites esgotados — mensagem conflita com a realidade. Quer revisar as mensagens.
+User pergunta se os pagamentos estão funcionais e quer simular uma chamada ao webhook Asaas.
 
-Já tenho o `scheduled-push/index.ts` em contexto. Vou mapear os problemas reais nas mensagens.
+Contexto importante: o backend tá no **self-hosted** (`api.influlab.pro`), não no Supabase Lovable Cloud (`gchncrlrmsyzumgmbplh.supabase.co`). O webhook Asaas em produção aponta pro self-hosted. A função `asaas-webhook` existe nos dois lugares (código é o mesmo), mas:
+- O Asaas real chama o self-hosted
+- Eu posso testar via `curl` o endpoint do self-hosted (público, `verify_jwt=false`)
+- Posso também testar a versão deployada no Lovable Cloud via `supabase--curl_edge_functions` pra validar a lógica do código
 
-## Diagnóstico das mensagens atuais
+O usuário quer saber se "está funcional". Pra responder bem, preciso:
+1. Validar que o endpoint responde (smoke test)
+2. Simular um evento `PAYMENT_CONFIRMED` com um `externalReference` real (user_id) e checar se o `is_premium` foi pra `true` em `user_usage`
+3. Reverter pra `false` depois (não quero promover ninguém de verdade)
 
-Analisei os 5 segmentos x 3 blocos = 90 mensagens. Encontrei **3 categorias de problema**:
+Mas tem uma trava: o webhook valida o header `asaas-access-token` contra `ASAAS_WEBHOOK_TOKEN`. Eu não tenho esse token (é secret). Sem ele, retorna 401.
 
-### 1. Mensagens enganosas no segmento errado (graves)
+Opções:
+- (a) Pedir ao user pra colar o `ASAAS_WEBHOOK_TOKEN` (ou um curl pronto pra ele rodar no terminal dele)
+- (b) Fazer só o smoke test sem auth (vai dar 401 — mas confirma que tá no ar e a validação tá funcionando)
+- (c) Eu monto o curl, ele roda
 
-No `FREE_EARLY` (usuário free dias 1-4 ainda com cota):
-- afternoon[2]: **"🏆 Você tem acesso total / Scripts, IA, transcrição — use tudo que é seu!"** → **MENTIRA**. Free não tem acesso total. Esse texto é cara de PREMIUM colado no segmento errado.
-- afternoon[4]: "⭐ Lembrete premium:" → mesma coisa, parece direcionado a premium.
+Acho mais limpo: smoke test sem auth (confirma 401 = validação OK) + entregar curl pronto pro user rodar com o token real, escolhendo um user_id de teste. Sem mexer em premium de ninguém de verdade.
 
-No `PREMIUM`:
-- afternoon[2]: "🏆 Você tem acesso total / use tudo que é seu!" → ok pra premium, mas é literalmente a MESMA string que tá no FREE_EARLY. Provavelmente foi o que o user recebeu.
+Plano enxuto:
 
-### 2. Classificação falha que joga free no balde errado
+## Plano
 
-A função `classifyUser` tem ordem problemática:
-```
-1. is_premium → PREMIUM
-2. streak===0 && day>1 → FREE_INACTIVE
-3. isExhausted → FREE_EXHAUSTED  ← exige TODOS os 3 limites zerados
-4. day 5-7 → FREE_TRIAL_END
-5. else → FREE_EARLY
-```
+### 1. Verificações automáticas (eu rodo)
 
-Problemas:
-- `isExhausted` só dispara se script + tools + transcrição **TODOS** zerados simultaneamente. Quem esgotou só scripts (caso comum) cai em `FREE_EARLY` e recebe "use tudo que é seu" — **exatamente o bug do user**.
-- `FREE_INACTIVE` (streak=0 && day>1) atropela quem tá no dia 2 sem ter completado o dia 1 ainda — pessoa novinha vira "sentimos sua falta".
-- Após dia 7 free vira `FREE_EARLY` de novo (não cai em nenhuma condição), recebendo "Dia 12 te espera!" — mas free nem tem acesso ao dia 12.
+a. **Smoke test no self-hosted sem token** → espero `401 Unauthorized` (confirma que o endpoint tá no ar e a validação anti-spoof funciona).
 
-### 3. Tom inconsistente
-
-Algumas free messages usam "premium", "elite", "acesso total" como adjetivos motivacionais — confunde com status real.
-
-## Correções propostas
-
-**A. Fix imediato da classificação (`classifyUser`)**
-
-```text
-1. is_premium → PREMIUM
-2. !is_premium && day > 7 → FREE_LOCKED (novo segmento — passou do trial)
-3. !is_premium && (script>=3 OR tools>=3 OR transcr>=1) → FREE_EXHAUSTED
-   (mudar AND→OR: esgotou QUALQUER limite vira exhausted)
-4. day 5-7 → FREE_TRIAL_END
-5. inatividade real (last_active > 3 dias) → FREE_INACTIVE
-   (precisa de um campo de last_seen — usar updated_at de user_progress)
-6. else → FREE_EARLY
+```bash
+curl -i -X POST https://api.influlab.pro/functions/v1/asaas-webhook \
+  -H "Content-Type: application/json" \
+  -d '{"event":"PAYMENT_CONFIRMED","payment":{"externalReference":"fake"}}'
 ```
 
-**B. Limpeza de copy nos pools**
+b. **Listar usuários free recentes** no banco do self-hosted via `supabase--read_query` — pegar um `user_id` candidato pra teste (idealmente o próprio user, pra ele ver mudar no app).
 
-- Remover de `FREE_EARLY`: as 2 frases "acesso total / use tudo que é seu" e "Lembrete premium" (substituir por copy honesto: "use suas 3 gerações de hoje", "guia gratuito do dia te espera").
-- Adicionar novo pool `FREE_LOCKED` (dia 8+ sem premium) com tom de "seu acesso terminou, desbloqueia pra continuar" — hoje essa galera tá recebendo `FREE_EARLY` falando de "Dia 12" como se ainda tivesse acesso.
-- Revisar `FREE_INACTIVE`: hoje é triggerado por streak=0 (qualquer pessoa que pulou um dia), não inatividade real. Suavizar tom ou trocar critério.
+⚠️ Nota: `supabase--read_query` aponta pro projeto Lovable (`gchncrlrmsyzumgmbplh`), não pro self-hosted. Como o app real roda contra self-hosted, essa query não reflete os dados de produção. Vou avisar e pedir ao user pra rodar a query no Studio dele se quiser ver dados reais.
 
-**C. Heurística mais segura na ausência de dados**
+### 2. Curl pronto pro user rodar (com token real)
 
-Hoje se `usage` ou `progress` vier null, cai em `FREE_EARLY` por default. Melhor: se não tem progress, mandar mensagem neutra (boas-vindas) em vez de "Dia 1 te espera" que pode estar errado.
+Vou entregar 2 cenários prontos:
 
-## Entregáveis
+**Cenário A — Confirmar pagamento (ativa premium)**
+```bash
+ASAAS_WEBHOOK_TOKEN="<cola-aqui>"
+USER_ID="<user_id-de-teste>"
 
-1. Reescrever `supabase/functions/scheduled-push/index.ts`:
-   - Atualizar `classifyUser` (lógica nova + buscar `updated_at` de user_progress pra detectar inatividade real)
-   - Adicionar pool `FREE_LOCKED` (3 blocos x 6 msgs)
-   - Limpar mensagens enganosas em `FREE_EARLY`
-   - Suavizar `FREE_INACTIVE` (só dispara se updated_at > 3 dias)
+curl -i -X POST https://api.influlab.pro/functions/v1/asaas-webhook \
+  -H "Content-Type: application/json" \
+  -H "asaas-access-token: $ASAAS_WEBHOOK_TOKEN" \
+  -d "{
+    \"event\": \"PAYMENT_CONFIRMED\",
+    \"payment\": {
+      \"id\": \"pay_test_$(date +%s)\",
+      \"externalReference\": \"$USER_ID\",
+      \"value\": 47,
+      \"status\": \"CONFIRMED\"
+    }
+  }"
+```
+Esperado: `200 {"received":true}` + `is_premium=true` em `user_usage`.
 
-2. Sem mudança no schema. Self-hosted: redeploy via `./scripts/deploy-selfhost.sh` depois.
+**Cenário B — Reverter (cancelar premium)**
+```bash
+curl -i -X POST https://api.influlab.pro/functions/v1/asaas-webhook \
+  -H "Content-Type: application/json" \
+  -H "asaas-access-token: $ASAAS_WEBHOOK_TOKEN" \
+  -d "{
+    \"event\": \"SUBSCRIPTION_DELETED\",
+    \"subscription\": { \"externalReference\": \"$USER_ID\" }
+  }"
+```
+Esperado: `200` + `is_premium=false`.
 
-3. Sem mudança no front.
+### 3. Validação no banco (user roda no Studio self-hosted)
 
-## Resumo do que muda
+```sql
+select user_id, is_premium, updated_at
+from public.user_usage
+where user_id = '<USER_ID>';
+```
 
-| Antes | Depois |
-|---|---|
-| Free com 3 scripts gastos → "use tudo que é seu" | → "Você usou seus 3 scripts de hoje. Premium libera ilimitado." |
-| Free dia 12 → "Dia 12 te espera, abre o app" | → "Seu acesso aos dias 8-30 está bloqueado. Desbloqueie." |
-| Free dia 2 sem completar dia 1 → "Sentimos sua falta" | → mensagem normal de FREE_EARLY |
-| isExhausted exige 3/3 limites zerados | qualquer 1 limite zerado já conta |
+### 4. Onde achar o token
+
+`ASAAS_WEBHOOK_TOKEN` foi gerado pelo `scripts/deploy-selfhost.sh --secrets` na primeira instalação. Se o user perdeu, dá pra rodar `supabase secrets list` no servidor self-hosted (mostra nomes, não valores) e regerar via `supabase secrets set ASAAS_WEBHOOK_TOKEN=$(openssl rand -hex 24)` — mas aí precisa atualizar no painel Asaas também.
+
+### 5. O que **não** vou fazer
+
+- Não vou ativar premium pra usuário real sem o user escolher o ID.
+- Não vou rodar `INSERT`/`UPDATE` no banco — só leitura + curl no endpoint que já valida token.
+- Não vou redeployar nada (a função `asaas-webhook` não mudou).
+
+### Resultado esperado
+
+- Se cenário A retornar 200 e o `is_premium` virar `true` → pagamentos 100% funcionais ponta-a-ponta.
+- Se retornar 401 com token correto → secret no servidor não bate com o do painel Asaas.
+- Se retornar 500 → bug no código, abro logs via `supabase--edge_function_logs` (mas isso só vê o Lovable Cloud, não o self-hosted; pro self-hosted o user precisa olhar `docker compose logs functions`).
