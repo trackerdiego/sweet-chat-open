@@ -186,10 +186,9 @@ serve(async (req) => {
               },
             },
           },
-        ],
-        tool_choice: { type: "function", function: { name: "save_avatar_profile" } },
-      }),
-    });
+      ],
+      tool_choice: { type: "function", function: { name: "save_avatar_profile" } },
+    }, GOOGLE_GEMINI_API_KEY, "audience-step2");
 
     if (!step2Response.ok) {
       if (step2Response.status === 429) {
