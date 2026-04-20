@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const PRIMARY_MODEL = "gemini-2.5-pro";
-const FALLBACK_MODEL = "gemini-1.5-flash";
+const FALLBACK_MODEL = "gemini-2.0-flash";
 const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
