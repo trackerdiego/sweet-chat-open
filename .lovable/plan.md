@@ -1,80 +1,80 @@
 
 
-# Atualizar modelos Gemini — fallback obsoleto + erro de formatação
+# Git pull bloqueado — VPS tem edits locais nas mesmas 3 functions
 
-## Diagnóstico da outra IA: parcialmente certa
+## O que aconteceu
 
-**Certo:**
-- O escudo (retry 3x + fallback) está funcionando — os logs anteriores comprovam.
-- `gemini-2.0-flash` como reserva pode estar instável/restrito em algumas contas.
-- `gemini-1.5-flash` é mais estável e tolerante.
-
-**Cuidado (não vou seguir cego):**
-- Os comandos `cp -r` + `docker compose up -d --force-recreate functions` que ela sugere **não são o seu fluxo**. Você usa `./scripts/deploy-selfhost.sh` (que roda `supabase functions deploy`). Misturar os dois métodos pode bagunçar o estado das functions.
-- Eu não vou rodar `sed` na sua VPS — vou alterar os arquivos aqui no Lovable (3 functions), commitar pro GitHub, e você roda o deploy script normal.
-
-## O que vou mudar (3 arquivos, 1 linha cada)
-
-Em `generate-script/index.ts`, `generate-daily-guide/index.ts`, `generate-tools-content/index.ts`:
-
-```ts
-const FALLBACK_MODEL = "gemini-2.0-flash";  // antes
-const FALLBACK_MODEL = "gemini-1.5-flash";  // depois
+O `git pull` abortou:
+```
+error: Your local changes to the following files would be overwritten by merge:
+        supabase/functions/generate-daily-guide/index.ts
+        supabase/functions/generate-script/index.ts
+        supabase/functions/generate-tools-content/index.ts
 ```
 
-Mantenho `gemini-2.5-flash` como primário (é mais novo e capaz). Só troco o fallback. Se depois o 2.5 continuar instável, fazemos uma 2ª rodada trocando o primário também — mas um passo por vez.
+Tradução: alguém (provavelmente a outra IA com `sed`) editou esses 3 arquivos **direto na VPS**, sem commitar. Agora o Git se recusa a sobrescrever pra não perder essas mudanças locais.
 
-## Sobre o erro "MALFORMED_FUNCTION_CALL" no script
+Também notei: você exportou `SUPABASE_ACCESS_TOKEN="seu-token"` literalmente — isso é o placeholder do meu exemplo, não o token real. Precisa do token verdadeiro.
 
-Isso aparece quando o Gemini retorna o tool call com JSON quebrado. Já temos `parseLooseJson` resiliente nas 3 functions, mas o `gemini-1.5-flash` **respeita melhor o schema do tool calling** que o 2.0 — então trocar o fallback também ajuda nesse erro indiretamente.
+## Solução: descartar edits locais da VPS
 
-Se o erro persistir mesmo após o deploy, próxima ação seria simplificar o schema da tool (reduzir `required` fields), mas só faço isso se confirmarmos pelos logs.
+A versão do GitHub (vinda do Lovable) é a **fonte da verdade**. Os edits locais da VPS são exatamente as mesmas mudanças que já fiz aqui (fallback `gemini-1.5-flash`) — então descartar não perde nada.
 
-## Arquivos tocados
-
-1. `supabase/functions/generate-script/index.ts` — linha 31 (`FALLBACK_MODEL`)
-2. `supabase/functions/generate-daily-guide/index.ts` — linha 31 (`FALLBACK_MODEL`)
-3. `supabase/functions/generate-tools-content/index.ts` — equivalente
-
-Nada mais muda. Sem mexer em prompts, retry, schema, DB, frontend.
-
-## Atualização de memória
-
-`mem://infra/deploy-workflow.md` — atualizar a nota:
-> Fallback de IA: `gemini-2.5-flash` → `gemini-1.5-flash` (não usar `2.0-flash`, restrito em algumas contas).
-
-## Deploy na VPS (bloco copia-e-cola)
-
-Você já tem as variáveis exportadas da última sessão? Se sim:
+### Bloco copia-e-cola pra VPS
 
 ```bash
-cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
-```
+cd /root/app
 
-Se não tem mais (sessão SSH nova), antes:
+# 1. Descarta edits locais nas 3 functions (volta ao estado do último commit)
+git checkout -- supabase/functions/generate-daily-guide/index.ts \
+                supabase/functions/generate-script/index.ts \
+                supabase/functions/generate-tools-content/index.ts
 
-```bash
-export SUPABASE_ACCESS_TOKEN="seu-token"
+# 2. Confirma que worktree está limpo
+git status
+
+# 3. Pull do GitHub (agora vai passar)
+git pull origin main
+
+# 4. Exporta as variáveis com valores REAIS
+export SUPABASE_ACCESS_TOKEN="cole-aqui-o-token-de-verdade"
 export PROJECT_REF="default"
-cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
+
+# 5. Deploy
+./scripts/deploy-selfhost.sh
 ```
 
-**Não rode os comandos `cp -r` + `force-recreate` que a outra IA sugeriu.** Seu fluxo oficial é o `deploy-selfhost.sh`.
+### Onde achar o `SUPABASE_ACCESS_TOKEN` real
 
-## Validação após deploy
+No Studio self-hosted: `https://api.influlab.pro` → ícone do perfil (canto superior direito) → **Account** → **Access Tokens** → gerar novo (ou reusar antigo se anotou).
+
+Se você não consegue gerar pelo Studio (alguns self-hosted desabilitam essa rota), posso te orientar a configurar o CLI com auth direto via env var alternativa — me avisa.
+
+### Validação após deploy
 
 ```bash
-docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 3m 2>&1 | grep -iE "gemini-1.5-flash|fallback|attempt" | tail -20
+docker compose -f ~/supabase/docker/docker-compose.yml logs functions --since 3m 2>&1 | grep -iE "gemini-1.5-flash|fallback|attempt|Primary model" | tail -20
 ```
 
-Esperado nos logs após teste:
-- Se 2.5 funcionar de primeira: log normal, sucesso direto.
-- Se 2.5 falhar: `Primary model gemini-2.5-flash exhausted, falling back to gemini-1.5-flash` → depois `gemini responded status: 200`.
+E testa no app:
+1. `/tasks` → gerar guia diário
+2. `/script` → gerar script
 
-## Resultado esperado
+## Se quiser ver o que a outra IA mudou antes de descartar (opcional)
 
-- Tools: continua estável.
-- Script: passa de "às vezes" pra "quase sempre" (fallback agora funciona de verdade).
-- Daily Guide: passa de "nunca" pra "quase sempre".
-- Erros restantes = problema upstream real do Google, com mensagem clara.
+```bash
+cd /root/app && git diff supabase/functions/generate-script/index.ts
+```
+
+Provavelmente vai mostrar exatamente `gemini-2.0-flash` → `gemini-1.5-flash` — o mesmo que minhas mudanças. Se for isso, descarta sem medo.
+
+## Por que não dar `git stash` em vez de `checkout --`
+
+Stash guarda os edits pra usar depois. Mas como minhas mudanças no GitHub **são as mesmas** (fallback pro 1.5-flash), guardar não tem propósito. `checkout --` é mais limpo.
+
+## Próximos passos
+
+1. Roda o bloco acima (com token real)
+2. Cola o output completo aqui
+3. Testa no app e me diz se daily-guide / script funcionam consistentemente
 
