@@ -122,6 +122,10 @@ serve(async (req) => {
     return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("generate-tools-content error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+    return new Response(
+      JSON.stringify({ error: isAbort ? "A IA está demorando mais que o normal. Tente novamente em alguns segundos." : (e instanceof Error ? e.message : "Erro desconhecido") }),
+      { status: isAbort ? 504 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
