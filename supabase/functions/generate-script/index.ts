@@ -150,13 +150,12 @@ serve(async (req) => {
     const userPrompt = `Crie uma versão NOVA e MELHORADA do script para o Dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo: ${title}\n${visceralElement ? `GATILHO VISCERAL: ${visceralElement}\n` : ""}Script de referência (NÃO copie):\n- Hook: ${viralHook}\n- Corpo: ${storytellingBody}\n- CTA: ${subtleConversion}\n\nGere script completamente novo. Adapte ao nicho "${primaryNiche || 'lifestyle'}".`;
 
     const startedAt = Date.now();
-    const response = await callGeminiWithRetry({
-      model: "gemini-2.5-flash",
+    const response = await callGeminiResilient({
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
       tools: [{ type: "function", function: { name: "generate_script", description: "Retorna script estruturado", parameters: { type: "object", properties: { viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" } }, required: ["viralHook", "storytellingBody", "subtleConversion"], additionalProperties: false } } }],
       tool_choice: { type: "function", function: { name: "generate_script" } },
       max_tokens: 2000,
-    }, GOOGLE_GEMINI_API_KEY);
+    }, GOOGLE_GEMINI_API_KEY, "generate-script");
     const latencyMs = Date.now() - startedAt;
     console.log("[generate-script] gemini responded", { userId, status: response.status, latencyMs });
 
@@ -165,6 +164,7 @@ serve(async (req) => {
       console.error("[generate-script] gemini error", { status: response.status, body: text.slice(0, 500) });
       if (response.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
       if (response.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+      if (response.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora (Gemini 503). Aguarde 1-2 minutos e tente novamente." }, 503);
       return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
     }
 
