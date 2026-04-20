@@ -120,7 +120,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
     body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
   }
 
-  const delays = [1000, 3000, 7000];
+  const delays = [2000, 5000, 12000];
   const tryModel = async (m: string): Promise<{ res: Response; text: string } | null> => {
     for (let i = 0; i < 3; i++) {
       const t0 = Date.now();

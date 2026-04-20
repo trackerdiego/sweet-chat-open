@@ -123,8 +123,11 @@ REGRAS:
       `Gere a estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) do nicho "${primaryNiche}". Retorne EXATAMENTE no formato JSON definido pelo schema, com o array "strategies" contendo um objeto por dia, na ordem.`;
 
     const t0 = Date.now();
+    // Stagger: dispara as 4 semanas com 800ms entre cada uma para evitar burst-throttling do Gemini.
+    // Continua paralelo (não vira sequencial), mas as requests não saem no mesmo ms.
     const weekResults = await Promise.all(
-      WEEKS.map(async (week) => {
+      WEEKS.map(async (week, i) => {
+        if (i > 0) await new Promise((r) => setTimeout(r, i * 800));
         try {
           const r = await callGeminiNative({
             apiKey: GOOGLE_GEMINI_API_KEY,
