@@ -154,13 +154,12 @@ serve(async (req) => {
     };
 
     const startedAt = Date.now();
-    const response = await callGeminiWithRetry({
-      model: "gemini-2.5-flash",
+    const response = await callGeminiResilient({
       messages: [{ role: "system", content: toolConfig.system(ap, niche, style) }, { role: "user", content: toolConfig.user(userInput || "", niche) }],
       tools: [{ type: "function", function: { name: "generate_result", description: "Retorna o resultado da ferramenta de IA", parameters: toolSchemas[toolType] } }],
       tool_choice: { type: "function", function: { name: "generate_result" } },
       max_tokens: 2500,
-    }, GOOGLE_GEMINI_API_KEY);
+    }, GOOGLE_GEMINI_API_KEY, "tools-content");
     const latencyMs = Date.now() - startedAt;
     console.log("[tools-content] gemini responded", { userId, toolType, status: response.status, latencyMs });
 
@@ -169,6 +168,7 @@ serve(async (req) => {
       console.error("[tools-content] gemini error", { status: response.status, body: text.slice(0, 500) });
       if (response.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
       if (response.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+      if (response.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora (Gemini 503). Aguarde 1-2 minutos e tente novamente." }, 503);
       return jsonResponse({ error: "A IA está demorando mais que o normal. Tente novamente em alguns segundos." }, 504);
     }
 
