@@ -158,10 +158,19 @@ const Onboarding = () => {
   const handleFinish = async () => {
     setSaving(true);
 
+    // 1. Re-check session BEFORE any write. The single-session polling could
+    // have invalidated the JWT while the user was filling the form.
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user?.id;
+    if (!sessionData.session || !userId) {
+      toast.error('Sua sessão expirou. Faça login novamente.');
+      setSaving(false);
+      setTimeout(() => navigate('/auth'), 800);
+      return;
+    }
+
     // IMPORTANT: do NOT mark onboarding_completed=true here. We only mark it
-    // after the 3-stage pipeline finishes successfully (or after the user
-    // consciously chooses "Continue anyway"). Otherwise a closed tab leaves
-    // the user stuck with flag=true but no personalized matrix.
+    // after the 3-stage pipeline finishes successfully.
     const payload = {
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
@@ -170,29 +179,24 @@ const Onboarding = () => {
       description_status: 'ok' as const,
     };
 
-    let result = await updateProfile(payload);
-    if (result?.error) {
-      await new Promise(r => setTimeout(r, 800));
-      result = await updateProfile(payload);
-    }
+    // 2. Single upsert (insert or update). Avoids the update→retry→upsert
+    // chain that masked the real error.
+    const { error: upsertError } = await (supabase.from as any)('user_profiles')
+      .upsert({ user_id: userId, ...payload }, { onConflict: 'user_id' });
 
-    if (result?.error) {
-      try {
-        const { error: directError } = await (supabase.from as any)('user_profiles')
-          .upsert({
-            user_id: (await supabase.auth.getUser()).data.user?.id,
-            ...payload,
-          }, { onConflict: 'user_id' });
-        if (directError) {
-          toast.error('Erro ao salvar perfil. Tente novamente.');
-          setSaving(false);
-          return;
-        }
-      } catch {
-        toast.error('Erro ao salvar perfil. Tente novamente.');
+    if (upsertError) {
+      const status = (upsertError as any)?.status ?? (upsertError as any)?.code;
+      const msg = String((upsertError as any)?.message ?? '').toLowerCase();
+      console.error('[onboarding] handleFinish upsert error:', upsertError);
+      if (status === 401 || msg.includes('jwt') || msg.includes('unauthorized')) {
+        toast.error('Sua sessão expirou. Faça login novamente.');
         setSaving(false);
+        setTimeout(() => navigate('/auth'), 800);
         return;
       }
+      toast.error(`Erro ao salvar perfil: ${(upsertError as any)?.message || 'tente novamente'}`);
+      setSaving(false);
+      return;
     }
 
     payloadRef.current = {
@@ -202,22 +206,19 @@ const Onboarding = () => {
     };
 
     // Detect already-completed stages (resume case)
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (userId) {
-      const [{ data: aud }, { data: strat }] = await Promise.all([
-        (supabase.from as any)('audience_profiles').select('audience_description, avatar_profile').eq('user_id', userId).maybeSingle(),
-        (supabase.from as any)('user_strategies').select('strategies').eq('user_id', userId).maybeSingle(),
-      ]);
-      const hasDescription = !!aud?.audience_description;
-      const hasAvatar = !!aud?.avatar_profile;
-      const hasMatrix = !!strat?.strategies;
+    const [{ data: aud }, { data: strat }] = await Promise.all([
+      (supabase.from as any)('audience_profiles').select('audience_description, avatar_profile').eq('user_id', userId).maybeSingle(),
+      (supabase.from as any)('user_strategies').select('strategies').eq('user_id', userId).maybeSingle(),
+    ]);
+    const hasDescription = !!aud?.audience_description;
+    const hasAvatar = !!aud?.avatar_profile;
+    const hasMatrix = !!strat?.strategies;
 
-      setStages({
-        audience: { status: hasDescription ? 'done' : 'pending', attempts: 0 },
-        visceral: { status: hasAvatar ? 'done' : 'pending', attempts: 0 },
-        matrix: { status: hasMatrix ? 'done' : 'pending', attempts: 0 },
-      });
-    }
+    setStages({
+      audience: { status: hasDescription ? 'done' : 'pending', attempts: 0 },
+      visceral: { status: hasAvatar ? 'done' : 'pending', attempts: 0 },
+      matrix: { status: hasMatrix ? 'done' : 'pending', attempts: 0 },
+    });
 
     setShowPipeline(true);
     setSaving(false);
