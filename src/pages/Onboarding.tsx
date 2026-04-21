@@ -80,8 +80,22 @@ const Onboarding = () => {
       }
       updateStage(stage, { status: 'done' });
       return true;
-    } catch (e) {
+    } catch (e: any) {
       console.error(`[onboarding] stage ${stage} failed`, e);
+      // Mensagem contextual baseada no tipo/código do erro
+      const status = e?.context?.status ?? e?.status;
+      const rawMsg = String(e?.message ?? e?.context?.statusText ?? '').toLowerCase();
+      let userMsg = 'Não conseguimos completar essa etapa. Tente novamente.';
+      if (status === 429 || rawMsg.includes('rate') || rawMsg.includes('429')) {
+        userMsg = 'Muitas requisições. Aguarde 1 minuto antes de tentar de novo.';
+      } else if (status === 402) {
+        userMsg = 'Créditos de IA esgotados. Avise o suporte.';
+      } else if (status === 503 || rawMsg.includes('unavailable') || rawMsg.includes('503')) {
+        userMsg = 'Serviço de IA instável agora. Aguarde 30s e tente novamente.';
+      } else if (rawMsg.includes('timeout') || rawMsg.includes('aborted') || rawMsg.includes('failed to fetch') || rawMsg.includes('network')) {
+        userMsg = 'A IA está sobrecarregada agora. Aguarde 30s e tente novamente.';
+      }
+      toast.error(userMsg);
       updateStage(stage, { status: 'error' });
       return false;
     }
