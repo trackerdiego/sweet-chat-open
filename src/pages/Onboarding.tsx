@@ -107,12 +107,15 @@ const Onboarding = () => {
   const handleFinish = async () => {
     setSaving(true);
 
+    // IMPORTANT: do NOT mark onboarding_completed=true here. We only mark it
+    // after the 3-stage pipeline finishes successfully (or after the user
+    // consciously chooses "Continue anyway"). Otherwise a closed tab leaves
+    // the user stuck with flag=true but no personalized matrix.
     const payload = {
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
       secondary_niches: [] as string[],
       content_style: contentStyle,
-      onboarding_completed: true,
       description_status: 'ok' as const,
     };
 
