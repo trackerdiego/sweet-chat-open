@@ -53,9 +53,12 @@ export type GeminiOptions = {
   schema?: object; // se presente, força JSON estruturado via responseSchema
   model?: string; // default gemini-2.5-flash
   fallbackModel?: string; // default gemini-2.5-flash-lite (NÃO pro)
-  timeoutMs?: number; // default 90000
+  timeoutMs?: number; // default 35000 (primary)
+  fallbackTimeoutMs?: number; // default 30000
   maxOutputTokens?: number; // default 8192
   temperature?: number;
+  primaryAttempts?: number; // default 1 — pro/flash são instáveis, não vale insistir
+  fallbackAttempts?: number; // default 2
   tag: string;
 };
 
@@ -97,7 +100,10 @@ async function callOnce(
 export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResult> {
   const model = opts.model ?? "gemini-2.5-flash";
   const fallback = opts.fallbackModel ?? "gemini-2.5-flash-lite";
-  const timeoutMs = opts.timeoutMs ?? 90000;
+  const primaryTimeoutMs = opts.timeoutMs ?? 35000;
+  const fallbackTimeoutMs = opts.fallbackTimeoutMs ?? 30000;
+  const primaryAttempts = Math.max(1, opts.primaryAttempts ?? 1);
+  const fallbackAttempts = Math.max(1, opts.fallbackAttempts ?? 2);
 
   if (!ALLOWED_MODELS.has(model) || !ALLOWED_MODELS.has(fallback)) {
     console.error(`[${opts.tag}] BOOT GUARD: modelo não permitido`, { model, fallback });
@@ -120,45 +126,53 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
     body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
   }
 
-  const delays = [2000, 5000, 12000];
-  const tryModel = async (m: string): Promise<{ res: Response; text: string } | null> => {
-    for (let i = 0; i < 3; i++) {
+  // Sleeps curtos: gateway externo corta em ~120s, não dá pra desperdiçar.
+  const delays = [1500, 3000, 4000];
+  // Sentinela pra abortar tudo em caso de timeout (pula direto pro fallback).
+  const tryModel = async (
+    m: string,
+    attempts: number,
+    timeoutMs: number,
+  ): Promise<{ res: Response; text: string } | "TIMEOUT" | null> => {
+    for (let i = 0; i < attempts; i++) {
       const t0 = Date.now();
       try {
         const res = await callOnce(m, body, opts.apiKey, timeoutMs);
         if (RETRIABLE_STATUSES.has(res.status)) {
-          console.warn(`[${opts.tag}] ${res.status} on ${m} attempt ${i + 1}/3 (${Date.now() - t0}ms)`);
+          console.warn(`[${opts.tag}] ${res.status} on ${m} attempt ${i + 1}/${attempts} (${Date.now() - t0}ms)`);
           try { await res.text(); } catch { /* ignore */ }
         } else {
           const text = await res.text();
-          // Detecta finish_reason ruim mesmo com 200 (raro no nativo, mas possível)
           try {
             const parsed = JSON.parse(text);
             const fr = parsed?.candidates?.[0]?.finishReason as string | undefined;
             if (fr && fr !== "STOP" && fr !== "MAX_TOKENS") {
-              console.warn(`[${opts.tag}] bad finishReason=${fr} on ${m} attempt ${i + 1}/3`);
-              if (i < 2) { await sleep(delays[i] + Math.floor(Math.random() * 400)); continue; }
+              console.warn(`[${opts.tag}] bad finishReason=${fr} on ${m} attempt ${i + 1}/${attempts}`);
+              if (i < attempts - 1) { await sleep(delays[i] ?? 2000); continue; }
             }
           } catch { /* not JSON envelope, deixa passar */ }
           return { res, text };
         }
       } catch (e) {
         const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-        console.warn(`[${opts.tag}] ${isAbort ? "timeout" : "network error"} on ${m} attempt ${i + 1}/3`, e instanceof Error ? e.message : e);
-        if (i === 2 && !isAbort) throw e;
+        console.warn(`[${opts.tag}] ${isAbort ? "timeout" : "network error"} on ${m} attempt ${i + 1}/${attempts}`, e instanceof Error ? e.message : e);
+        // Em timeout no primary, pula direto pro fallback — não vale gastar mais tempo.
+        if (isAbort) return "TIMEOUT";
+        if (i === attempts - 1) throw e;
       }
-      if (i < 2) await sleep(delays[i] + Math.floor(Math.random() * 400));
+      if (i < attempts - 1) await sleep(delays[i] ?? 2000);
     }
     return null;
   };
 
   const startedAt = Date.now();
   let used = model;
-  let result = await tryModel(model);
-  if (!result) {
-    console.warn(`[${opts.tag}] primary ${model} exhausted, falling back to ${fallback}`);
+  let result = await tryModel(model, primaryAttempts, primaryTimeoutMs);
+  if (!result || result === "TIMEOUT") {
+    console.warn(`[${opts.tag}] primary ${model} ${result === "TIMEOUT" ? "timed out" : "exhausted"}, falling back to ${fallback}`);
     used = fallback;
-    result = await tryModel(fallback);
+    const fb = await tryModel(fallback, fallbackAttempts, fallbackTimeoutMs);
+    result = fb && fb !== "TIMEOUT" ? fb : null;
   }
   const latencyMs = Date.now() - startedAt;
 

@@ -110,11 +110,14 @@ serve(async (req) => {
           apiKey: GOOGLE_GEMINI_API_KEY,
           systemInstruction: `Você é uma estrategista de público digital especialista em criadores(as) de conteúdo brasileiros(as). Crie uma descrição rica e detalhada do público-alvo ideal. Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a).`,
           prompt: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`,
-          model: "gemini-2.5-pro",
-          fallbackModel: "gemini-2.5-flash",
+          model: "gemini-2.5-flash",
+          fallbackModel: "gemini-2.5-flash-lite",
           tag: "audience-step1",
           maxOutputTokens: 4000,
-          timeoutMs: 55000,
+          timeoutMs: 35000,
+          fallbackTimeoutMs: 30000,
+          primaryAttempts: 1,
+          fallbackAttempts: 2,
         });
       } catch (e) {
         if (e instanceof GeminiError) return geminiErrorResponse(e);
@@ -170,11 +173,14 @@ serve(async (req) => {
         systemInstruction: avatarSystem,
         prompt: avatarPrompt,
         schema: AVATAR_SCHEMA,
-        model: "gemini-2.5-pro",
-        fallbackModel: "gemini-2.5-flash",
+        model: "gemini-2.5-flash",
+        fallbackModel: "gemini-2.5-flash-lite",
         tag: "audience-step2",
         maxOutputTokens: 8192,
-        timeoutMs: 55000,
+        timeoutMs: 35000,
+        fallbackTimeoutMs: 30000,
+        primaryAttempts: 1,
+        fallbackAttempts: 2,
       });
     } catch (e) {
       if (e instanceof GeminiError) return geminiErrorResponse(e);

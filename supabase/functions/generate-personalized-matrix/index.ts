@@ -134,11 +134,14 @@ REGRAS:
             systemInstruction: buildSystem(week),
             prompt: buildPrompt(week),
             schema: { type: "object", properties: { strategies: { type: "array", items: STRATEGY_ITEM_SCHEMA } }, required: ["strategies"] },
-            model: "gemini-2.5-pro",
-            fallbackModel: "gemini-2.5-flash",
+            model: "gemini-2.5-flash",
+            fallbackModel: "gemini-2.5-flash-lite",
             tag: `matrix-week-${week.num}`,
             maxOutputTokens: 8192,
-            timeoutMs: 55000,
+            timeoutMs: 35000,
+            fallbackTimeoutMs: 30000,
+            primaryAttempts: 1,
+            fallbackAttempts: 2,
           });
           const obj = r.json as { strategies?: unknown[] };
           if (!Array.isArray(obj?.strategies)) throw new Error(`Semana ${week.num}: resposta sem strategies`);
