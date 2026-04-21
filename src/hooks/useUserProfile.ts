@@ -109,7 +109,29 @@ export function useUserProfile() {
       }
 
       if (data) {
-        setProfile(data as UserProfile);
+        let profileData = data as UserProfile;
+
+        // Trava de integridade: se onboarding_completed=true mas não existe
+        // matriz personalizada válida (>= 28 itens), corrige o flag para false
+        // e força o usuário de volta ao onboarding. Evita estado inconsistente
+        // que prendia o usuário no dashboard sem dados personalizados.
+        if (profileData.onboarding_completed) {
+          const { data: strat } = await (supabase.from as any)('user_strategies')
+            .select('strategies')
+            .eq('user_id', userId)
+            .maybeSingle();
+          const arr = strat?.strategies;
+          const hasValidMatrix = Array.isArray(arr) && arr.length >= 28;
+          if (!hasValidMatrix) {
+            console.warn('[useUserProfile] onboarding_completed=true sem matriz válida — corrigindo para false');
+            await (supabase.from as any)('user_profiles')
+              .update({ onboarding_completed: false })
+              .eq('user_id', userId);
+            profileData = { ...profileData, onboarding_completed: false };
+          }
+        }
+
+        setProfile(profileData);
 
         // Skip session token in preview/iframe to avoid kicking real devices
         if (!isPreviewEnvironment()) {

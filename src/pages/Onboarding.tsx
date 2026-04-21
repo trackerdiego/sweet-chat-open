@@ -113,6 +113,21 @@ const Onboarding = () => {
     }
   };
 
+  const verifyMatrixSaved = async (): Promise<boolean> => {
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return false;
+      const { data } = await (supabase.from as any)('user_strategies')
+        .select('strategies')
+        .eq('user_id', userId)
+        .maybeSingle();
+      const arr = data?.strategies;
+      return Array.isArray(arr) && arr.length >= 28;
+    } catch {
+      return false;
+    }
+  };
+
   const runPipeline = async (startFrom: PipelineStage = 'audience') => {
     const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
     const startIdx = order.indexOf(startFrom);
@@ -125,7 +140,16 @@ const Onboarding = () => {
       if (!ok) return; // stop on error; user can retry
     }
 
-    // All done — only now mark onboarding as completed
+    // Validação final: a matriz REALMENTE existe no banco com >= 28 dias?
+    const matrixOk = await verifyMatrixSaved();
+    if (!matrixOk) {
+      console.error('[onboarding] pipeline concluído mas matriz não foi salva corretamente');
+      updateStage('matrix', { status: 'error' });
+      toast.error('A matriz não foi salva corretamente. Tente novamente.');
+      return;
+    }
+
+    // Só agora — com matriz validada — marca onboarding como completo.
     await markOnboardingCompleted();
     toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
     setTimeout(() => window.location.replace('/'), 1000);
@@ -208,8 +232,14 @@ const Onboarding = () => {
     if (next && stages[next].status === 'pending' && stages.audience.status !== 'running' && stages.visceral.status !== 'running' && stages.matrix.status !== 'running') {
       runPipeline(next);
     } else if (!next && order.every(s => stages[s].status === 'done')) {
-      // All done from resume — mark completed then redirect
+      // All done from resume — valida matriz no banco antes de marcar completo
       (async () => {
+        const matrixOk = await verifyMatrixSaved();
+        if (!matrixOk) {
+          updateStage('matrix', { status: 'error' });
+          toast.error('A matriz não foi encontrada. Tente novamente.');
+          return;
+        }
         await markOnboardingCompleted();
         toast.success('✨ Tudo pronto!');
         setTimeout(() => window.location.replace('/'), 800);
@@ -223,11 +253,9 @@ const Onboarding = () => {
     setTimeout(() => runPipeline(stage), 100);
   };
 
-  const skipPipeline = async () => {
-    await markOnboardingCompleted();
-    toast.message('Você poderá personalizar depois nas configurações.');
-    window.location.replace('/');
-  };
+  // "Continuar mesmo assim" foi REMOVIDO de propósito: marcar onboarding
+  // completo sem matriz válida é exatamente o que prendia usuários em estado
+  // inconsistente. O usuário só sai do onboarding com matriz gerada com sucesso.
 
   const stageMeta: Record<PipelineStage, { title: string; description: string; icon: typeof Users }> = {
     audience: {
@@ -324,13 +352,10 @@ const Onboarding = () => {
             </div>
 
             {stuckOnError && (
-              <div className="space-y-3">
-                <p className="text-xs text-center text-muted-foreground">
-                  Está difícil personalizar agora. Você pode entrar no app com a matriz base e tentar de novo depois.
+              <div className="space-y-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Está difícil personalizar agora. Aguarde alguns minutos e clique em "Tentar novamente" na etapa que falhou. Sua experiência só fica disponível depois que a matriz é gerada.
                 </p>
-                <Button onClick={skipPipeline} variant="outline" className="w-full">
-                  Continuar mesmo assim
-                </Button>
               </div>
             )}
           </div>
