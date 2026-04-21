@@ -1,122 +1,83 @@
 
 
-# Plano: voltar à UX de etapas avançando + tornar a geração confiável
+# Plano: corrigir estado inconsistente do usuário cakerollguide@gmail.com + prevenir reincidência
 
-## Diagnóstico do que está quebrado
+## Diagnóstico
 
-**1. A matriz não chega nem em 2 minutos** porque o `fireAndForgetPersonalization` faz 3 chamadas encadeadas no browser **depois** que o usuário já navegou para `/`. Quando isso acontece:
+O usuário ficou em estado inconsistente:
+- `onboarding_completed = true` no `user_profiles`
+- Mas `user_strategies` vazio (matriz nunca gerou)
+- E provavelmente `audience_profiles` incompleto também
 
-- O React desmonta `Onboarding` → a Promise `runChain()` continua viva no JS, mas...
-- `keepalive: true` no `fetch` tem **limite de 64KB de body** e só é confiável para uma única request curta no `unload` da página, não para uma cadeia de 3 requests longas
-- A primeira request (`description`) pode até chegar ao servidor, mas a `await` da segunda nunca executa porque o contexto da página foi descartado
-- Resultado: descrição às vezes salva, avatar quase nunca, matriz nunca
+Isso aconteceu porque uma versão anterior do `Onboarding.tsx` (a do "fire-and-forget") marcava `onboarding_completed = true` antes da geração terminar. Quando a geração falhava em background, o usuário ficava preso: o app não redireciona pra `/onboarding` (porque o flag está true) mas também não tem matriz personalizada.
 
-**2. A UX ficou pior** porque o usuário entra no app sem feedback claro de progresso, só vê um banner genérico "personalizando..." que nunca termina.
+## Correção em 2 partes
 
-## Solução: voltar ao fluxo de etapas, mas com cada etapa cabendo no timeout
+### Parte 1 — Resetar o estado do usuário específico
 
-### Arquitetura
+SQL para rodar no Studio self-hosted (`api.influlab.pro`), porque o backend é self-hosted e migrations Lovable não chegam lá:
 
-```text
-Onboarding (3 etapas de cadastro)
-        ↓
-"Começar Jornada" clicado
-        ↓
-Tela de progresso com 3 cards:
-   [✓] Analisando seu público          ← invoke description (~30-50s)
-   [✓] Estudo visceral profundo        ← invoke avatar (~30-50s)  
-   [✓] Montando matriz de 30 dias      ← invoke matrix (~40-90s)
-        ↓
-Cada card vira verde quando termina, vermelho se falhar (com retry só daquele)
-        ↓
-Quando os 3 terminam → redireciona pro app com tudo pronto
-        ↓
-Se usuário fechar a aba no meio → próximo login retoma de onde parou
+```sql
+-- Reset onboarding do usuário cakerollguide@gmail.com
+update public.user_profiles
+set 
+  onboarding_completed = false,
+  description_status = 'pending'
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
+
+-- Limpa estudo de público parcial (se houver)
+delete from public.audience_profiles
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
+
+-- Limpa qualquer matriz parcial (se houver)
+delete from public.user_strategies
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
 ```
 
-### Por que isso vai funcionar agora (sendo que não funcionava antes)
+Depois disso, no próximo login ele será redirecionado pra `/onboarding` automaticamente (a lógica de redirect já existe baseada em `onboarding_completed`).
 
-A versão anterior falhava porque:
-- `description` + `avatar` rodavam **na mesma request** → 60-180s → estouro de gateway
-- `matrix` fazia 4 chamadas `gemini-2.5-pro` em paralelo → estouro também
+### Parte 2 — Prevenir que isso aconteça de novo
 
-A versão nova funciona porque:
-- Cada `invoke` do client é **uma única chamada** que cabe em <60s (já está com `timeoutMs: 55000` + fallback rápido pro flash)
-- Se `pro` demorar, cai pro `flash` em ~55s e ainda devolve resposta válida
-- A matriz já tem stagger de 800ms entre semanas + fallback flash por semana
+A versão atual do `Onboarding.tsx` (após o último deploy) já faz isso parcialmente: ela só marca `onboarding_completed = true` no `handleFinish()`, **antes** de iniciar o pipeline visível de 3 etapas. Se o usuário fechar a aba durante o pipeline, ele já entra com flag true mas matriz incompleta — mesmo bug.
 
-### O que muda no código
+**Correção no fluxo:** mover o `onboarding_completed = true` para **depois** das 3 etapas terem sucesso. Especificamente:
 
-**1. `src/pages/Onboarding.tsx`** — substitui `fireAndForgetPersonalization` por um **pipeline visível** com 3 etapas:
+1. No `handleFinish()`: salva apenas `display_name`, `primary_niche`, `content_style`, `description_status`, **mas não** `onboarding_completed`
+2. No final de `runPipeline()`, quando todas as 3 etapas chegam em `done`: aí sim faz um update marcando `onboarding_completed = true`
+3. No fallback `skipPipeline()` (botão "Continuar mesmo assim" após 2 retries falharem): também marca `onboarding_completed = true` aí, porque é decisão consciente do usuário
 
-```text
-status: 'idle' | 'audience' | 'visceral' | 'matrix' | 'done' | 'error'
-errorStep: 'audience' | 'visceral' | 'matrix' | null
-```
+Resultado: se o usuário fechar a aba no meio, próximo login volta pro `/onboarding` e o resume detecta as etapas já feitas (audience/avatar/matrix) e pula direto pra que falta.
 
-Após salvar perfil, mostra tela de progresso (substitui os 3 steps de cadastro) com:
-- 3 cards verticais, cada um com ícone (loader/check/x) + título + descrição
-- Card ativo tem loader animado e gradiente sutil
-- Card concluído tem check verde
-- Card com erro tem botão "Tentar novamente" que re-dispara só aquela etapa
-- Quando os 3 terminam, redireciona em 1s com toast de sucesso
+### Arquivo tocado
 
-Se o usuário fechar a aba no meio:
-- Etapas já concluídas ficaram salvas no banco
-- Próximo login: `useUserProfile` detecta `onboarding_completed=false` → redireciona pra `/onboarding`
-- O onboarding detecta etapas já feitas (consulta `audience_profiles` e `user_strategies`) e **pula direto pra etapa que falta**
-
-**2. `src/hooks/useUserStrategies.ts`** — manter o polling como rede de segurança, mas reduzir intervalo pra 8s nos primeiros 30s (caso o usuário já esteja no dashboard quando a matriz finalizar por algum motivo).
-
-**3. `src/pages/Index.tsx`** — remover o banner "Personalizando sua matriz..." porque agora a personalização termina **antes** de chegar no dashboard. Manter apenas como fallback se o usuário pulou onboarding manualmente.
-
-**4. `supabase/functions/generate-audience-profile/index.ts`** — sem mudanças, já está correto (split em description/avatar com 55s timeout cada).
-
-**5. `supabase/functions/generate-personalized-matrix/index.ts`** — sem mudanças, já está com stagger e timeout corretos.
-
-### O que NÃO muda
-
-- Prompts refinados (master copywriter, schema visceral 30+ campos): **idênticos**
-- Modelo `gemini-2.5-pro` com fallback `flash`: **mantido**
-- Schema da matriz (4 semanas com gatilhos viscerais): **idêntico**
-- Banco: **nenhuma migration necessária**
-- Edge functions: **nenhum redeploy necessário**
-
-### UX final
-
-```text
-Etapa 1: Nome
-Etapa 2: Descrição (≥80 chars)  
-Etapa 3: Estilo
-        ↓ "Começar Jornada"
-Etapa 4: Pipeline visível
-   ⏳ Analisando seu público...      [30-50s]
-   ⏳ Construindo estudo visceral... [30-50s, inicia após 1 acabar]
-   ⏳ Montando sua matriz de 30 dias... [40-90s, inicia após 2]
-        ↓
-✨ Tudo pronto! → redireciona pra /
-```
-
-**Tempo total**: ~100-180s, mas com **feedback contínuo** — o usuário vê progresso a cada etapa terminada, não fica olhando pra um spinner genérico.
-
-### Tratamento de erros
-
-Se a etapa 1 falhar:
-- Card vermelho com mensagem amigável: *"Não conseguimos analisar agora. [Tentar novamente]"*
-- Botão refaz só a etapa 1
-- Após 2 retries falhando: mostra opção *"Continuar mesmo assim"* → marca onboarding completo, app abre com matriz base
-
-Se etapa 2 ou 3 falhar:
-- Mesmo padrão, retry só daquela etapa
-- Etapas anteriores não são refeitas (descrição já salva, avatar já salvo)
-
-### Arquivos tocados
-
-- `src/pages/Onboarding.tsx` — refatora `handleFinish` + adiciona tela de progresso
-- `src/hooks/useUserStrategies.ts` — ajuste menor no polling
-- `src/pages/Index.tsx` — remove banner de personalização (vira fallback condicional)
+- `src/pages/Onboarding.tsx` — mover o `onboarding_completed: true` do payload inicial pra um update separado ao final do pipeline + ao final do skip
 
 ### Deploy
 
-Como **só frontend muda**, basta o auto-deploy do Vercel rodar quando o Lovable sincronizar com o GitHub. **Nada precisa rodar na VPS**, nenhum SQL, nenhum redeploy de função.
+- **Frontend:** auto-deploy Vercel (sem ação manual)
+- **Backend:** rodar o SQL acima no Studio self-hosted (`https://studio.influlab.pro` ou interface equivalente). Sem `./scripts/deploy-selfhost.sh` necessário porque nenhuma edge function muda
+
+### Bloco copia-e-cola pra você executar
+
+**No Studio self-hosted, SQL Editor:**
+
+```sql
+update public.user_profiles
+set onboarding_completed = false, description_status = 'pending'
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+
+delete from public.audience_profiles
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+
+delete from public.user_strategies
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+```
+
+**Na VPS:** nada. Frontend Vercel cuida do resto.
 
