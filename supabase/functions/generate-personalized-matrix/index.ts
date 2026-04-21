@@ -134,9 +134,11 @@ REGRAS:
             systemInstruction: buildSystem(week),
             prompt: buildPrompt(week),
             schema: { type: "object", properties: { strategies: { type: "array", items: STRATEGY_ITEM_SCHEMA } }, required: ["strategies"] },
+            model: "gemini-2.5-pro",
+            fallbackModel: "gemini-2.5-flash",
             tag: `matrix-week-${week.num}`,
             maxOutputTokens: 8192,
-            timeoutMs: 90000,
+            timeoutMs: 55000,
           });
           const obj = r.json as { strategies?: unknown[] };
           if (!Array.isArray(obj?.strategies)) throw new Error(`Semana ${week.num}: resposta sem strategies`);
@@ -155,7 +157,7 @@ REGRAS:
 
     if (allStrategies.length < 28) {
       console.error(`[matrix] insufficient strategies generated: ${allStrategies.length}`);
-      return new Response(JSON.stringify({ error: "Matriz incompleta. Tente novamente." }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Matriz incompleta. Tente novamente.", retryable: true }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     console.log(`[matrix] complete — ${allStrategies.length} dias em ${Date.now() - t0}ms`);
@@ -169,8 +171,8 @@ REGRAS:
     if (e instanceof GeminiError) {
       const status = e.status === 429 ? 429 : e.status === 402 ? 402 : 503;
       const msg = e.status === 429 ? "Limite de requisições excedido." : e.status === 402 ? "Créditos de IA esgotados." : "Erro no serviço de IA. Tente novamente.";
-      return new Response(JSON.stringify({ error: msg }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: msg, retryable: e.status !== 402 }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido", retryable: true }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
