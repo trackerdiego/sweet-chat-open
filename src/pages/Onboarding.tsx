@@ -48,6 +48,8 @@ const Onboarding = () => {
   const [pipelineProgress, setPipelineProgress] = useState(0);
   const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>(INITIAL_STEPS);
   const [matrixRetryAvailable, setMatrixRetryAvailable] = useState(false);
+  const [audienceRetryAvailable, setAudienceRetryAvailable] = useState(false);
+  const [visceralRetryAvailable, setVisceralRetryAvailable] = useState(false);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopProgressTick = useCallback(() => {
@@ -57,7 +59,6 @@ const Onboarding = () => {
     }
   }, []);
 
-  // Smooth progress: increment +1% every 2s, capped at `max`
   const startProgressTick = useCallback((max: number) => {
     stopProgressTick();
     progressIntervalRef.current = setInterval(() => {
@@ -83,36 +84,25 @@ const Onboarding = () => {
     setPipelineSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
   };
 
+  const runAudienceDescription = async (): Promise<boolean> => {
+    const { error } = await supabase.functions.invoke('generate-audience-profile', {
+      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle, step: 'description' },
+    });
+    return !error;
+  };
+
+  const runVisceralAvatar = async (): Promise<boolean> => {
+    const { error } = await supabase.functions.invoke('generate-audience-profile', {
+      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle, step: 'avatar' },
+    });
+    return !error;
+  };
+
   const runMatrixGeneration = async (): Promise<boolean> => {
     const { error } = await supabase.functions.invoke('generate-personalized-matrix', {
       body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
     });
     return !error;
-  };
-
-  const handleRetryMatrix = async () => {
-    setMatrixRetryAvailable(false);
-    updateStepStatus('matrix', 'active');
-    startProgressTick(90);
-
-    const success = await runMatrixGeneration();
-    stopProgressTick();
-
-    if (success) {
-      updateStepStatus('matrix', 'done');
-      setPipelineProgress(92);
-      await finalizeOnboarding();
-    } else {
-      updateStepStatus('matrix', 'error');
-      setMatrixRetryAvailable(true);
-      toast.error('A matriz falhou novamente. Tente mais uma vez ou pule.');
-    }
-  };
-
-  const handleSkipMatrix = async () => {
-    setMatrixRetryAvailable(false);
-    toast.warning('A matriz será gerada em breve. Você já pode explorar o app!');
-    await finalizeOnboarding();
   };
 
   const finalizeOnboarding = async () => {
@@ -134,6 +124,83 @@ const Onboarding = () => {
     setPipelineProgress(100);
     await new Promise(r => setTimeout(r, 800));
     window.location.replace('/');
+  };
+
+  const continueFromMatrix = async () => {
+    updateStepStatus('matrix', 'active');
+    startProgressTick(85);
+    let matrixSuccess = await runMatrixGeneration();
+    if (!matrixSuccess) {
+      stopProgressTick();
+      await new Promise(r => setTimeout(r, 3000));
+      startProgressTick(90);
+      matrixSuccess = await runMatrixGeneration();
+    }
+    stopProgressTick();
+    if (matrixSuccess) {
+      updateStepStatus('matrix', 'done');
+      setPipelineProgress(92);
+      await finalizeOnboarding();
+    } else {
+      updateStepStatus('matrix', 'error');
+      setPipelineProgress(75);
+      setMatrixRetryAvailable(true);
+    }
+  };
+
+  const continueFromVisceral = async () => {
+    updateStepStatus('visceral', 'active');
+    startProgressTick(55);
+    let ok = await runVisceralAvatar();
+    if (!ok) {
+      stopProgressTick();
+      await new Promise(r => setTimeout(r, 2000));
+      startProgressTick(58);
+      ok = await runVisceralAvatar();
+    }
+    stopProgressTick();
+    if (ok) {
+      updateStepStatus('visceral', 'done');
+      setPipelineProgress(60);
+      await continueFromMatrix();
+    } else {
+      updateStepStatus('visceral', 'error');
+      setPipelineProgress(45);
+      setVisceralRetryAvailable(true);
+    }
+  };
+
+  const handleRetryAudience = async () => {
+    setAudienceRetryAvailable(false);
+    updateStepStatus('audience', 'active');
+    startProgressTick(25);
+    const ok = await runAudienceDescription();
+    stopProgressTick();
+    if (ok) {
+      updateStepStatus('audience', 'done');
+      setPipelineProgress(30);
+      await continueFromVisceral();
+    } else {
+      updateStepStatus('audience', 'error');
+      setAudienceRetryAvailable(true);
+      toast.error('Análise de nicho falhou novamente.');
+    }
+  };
+
+  const handleRetryVisceral = async () => {
+    setVisceralRetryAvailable(false);
+    await continueFromVisceral();
+  };
+
+  const handleRetryMatrix = async () => {
+    setMatrixRetryAvailable(false);
+    await continueFromMatrix();
+  };
+
+  const handleSkipMatrix = async () => {
+    setMatrixRetryAvailable(false);
+    toast.warning('A matriz será gerada em breve. Você já pode explorar o app!');
+    await finalizeOnboarding();
   };
 
   const handleFinish = async () => {
@@ -182,78 +249,32 @@ const Onboarding = () => {
     setShowPipeline(true);
     setPipelineProgress(3);
 
-    // --- Step 1 & 2: Audience profile (sem timer artificial) ---
-    // A function faz step1 (audience description) + step2 (avatar) internamente.
-    // Mostramos "audience" ativo até a metade do tempo, depois trocamos para "visceral".
+    // ─── Etapa 1: descrição do público (~30-50s, cabe no gateway de 60s) ───
     updateStepStatus('audience', 'active');
-    startProgressTick(45);
+    startProgressTick(25);
 
-    // Heurística honesta: depois de ~25s, se ainda não terminou, marca audience como done
-    // e ativa visceral (passamos pra etapa 2 internamente do backend).
-    const visceralSwitchTimer = setTimeout(() => {
-      setPipelineSteps(prev => prev.map(s => {
-        if (s.id === 'audience' && s.status === 'active') return { ...s, status: 'done' };
-        if (s.id === 'visceral' && s.status === 'pending') return { ...s, status: 'active' };
-        return s;
-      }));
-    }, 25000);
-
-    const { error: audienceError } = await supabase.functions.invoke('generate-audience-profile', {
-      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
-    });
-
-    clearTimeout(visceralSwitchTimer);
+    let audienceOk = await runAudienceDescription();
+    if (!audienceOk) {
+      stopProgressTick();
+      await new Promise(r => setTimeout(r, 2000));
+      startProgressTick(28);
+      audienceOk = await runAudienceDescription();
+    }
     stopProgressTick();
 
-    if (audienceError) {
-      // Marca como erro APENAS as etapas ainda não concluídas — sem cascata visual enganosa.
-      // CRÍTICO: nunca rebaixar um step já 'done' para 'error'.
-      setPipelineSteps(prev => prev.map(s => {
-        if ((s.id === 'audience' || s.id === 'visceral') && s.status !== 'done') {
-          return { ...s, status: 'error' };
-        }
-        return s;
-      }));
-      setPipelineProgress(45);
-      toast.error('Erro na análise de público / estudo visceral. Tente novamente.');
+    if (!audienceOk) {
+      updateStepStatus('audience', 'error');
+      setPipelineProgress(15);
+      setAudienceRetryAvailable(true);
+      toast.error('Erro ao analisar nicho. Tente novamente.');
       return;
     }
 
-    // Marca como done de forma idempotente — só promove, nunca rebaixa.
-    setPipelineSteps(prev => prev.map(s => {
-      if ((s.id === 'audience' || s.id === 'visceral') && s.status !== 'done') {
-        return { ...s, status: 'done' };
-      }
-      return s;
-    }));
-    setPipelineProgress(52);
+    updateStepStatus('audience', 'done');
+    setPipelineProgress(30);
 
-    // --- Step 3: Matrix (pode levar ~60-90s com 4 chamadas Gemini paralelas) ---
-    updateStepStatus('matrix', 'active');
-    startProgressTick(85);
-
-    let matrixSuccess = await runMatrixGeneration();
-
-    if (!matrixSuccess) {
-      // Retry once after 3s
-      stopProgressTick();
-      await new Promise(r => setTimeout(r, 3000));
-      startProgressTick(90);
-      matrixSuccess = await runMatrixGeneration();
-    }
-
-    stopProgressTick();
-
-    if (matrixSuccess) {
-      updateStepStatus('matrix', 'done');
-      setPipelineProgress(92);
-      await finalizeOnboarding();
-    } else {
-      // Erro APENAS no matrix — não tocar audience/visceral que já estão 'done'.
-      setPipelineSteps(prev => prev.map(s => s.id === 'matrix' ? { ...s, status: 'error' } : s));
-      setPipelineProgress(75);
-      setMatrixRetryAvailable(true);
-    }
+    // ─── Etapa 2: avatar visceral (~30-60s) → cascata pra matriz ───
+    await continueFromVisceral();
   };
 
   const steps = [
@@ -381,6 +402,22 @@ const Onboarding = () => {
                 );
               })}
             </div>
+
+            {audienceRetryAvailable && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Button onClick={handleRetryAudience} className="w-full gold-gradient text-primary-foreground">
+                  <RefreshCw size={16} /> Tentar análise de nicho novamente
+                </Button>
+              </motion.div>
+            )}
+
+            {visceralRetryAvailable && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Button onClick={handleRetryVisceral} className="w-full gold-gradient text-primary-foreground">
+                  <RefreshCw size={16} /> Tentar estudo visceral novamente
+                </Button>
+              </motion.div>
+            )}
 
             {matrixRetryAvailable && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
