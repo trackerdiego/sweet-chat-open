@@ -171,12 +171,14 @@ export function useUserProfile() {
   };
 
   const updateProfile = useCallback(async (updates: Partial<Omit<UserProfile, 'id' | 'user_id'>>) => {
-    if (!session?.user) return;
+    if (!session?.user) {
+      return { data: null, error: { code: 'NO_SESSION', message: 'Sessão não encontrada. Faça login novamente.' } };
+    }
     const { data, error } = await (supabase.from as any)('user_profiles')
       .update(updates)
       .eq('user_id', session.user.id)
       .select()
-      .single();
+      .maybeSingle();
     if (!error && data) {
       setProfile(data as UserProfile);
     }
