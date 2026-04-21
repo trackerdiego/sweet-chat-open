@@ -23,6 +23,7 @@ export function useUserStrategies() {
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
+      clearTimeout(pollingRef.current as unknown as ReturnType<typeof setTimeout>);
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
