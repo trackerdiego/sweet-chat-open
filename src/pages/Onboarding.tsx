@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ArrowRight, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, X, Users, Brain, LayoutGrid } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
 const contentStyles = [
@@ -17,73 +17,12 @@ const contentStyles = [
   { id: 'divertido', label: 'Divertido', description: 'Engraçado e irreverente, com memes e trends', emoji: '🎉' },
 ];
 
-/**
- * Dispara a personalização em background sem aguardar resposta.
- * O frontend não trava: o usuário entra no app imediatamente e a matriz
- * personalizada é trocada quando ficar pronta (ver useUserStrategies).
- *
- * Usa keepalive: true via fetch direto para garantir que a request não seja
- * cancelada quando a página navegar.
- */
-async function fireAndForgetPersonalization(payload: {
-  primaryNiche: string;
-  secondaryNiches: string[];
-  contentStyle: string;
-}) {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+type PipelineStage = 'audience' | 'visceral' | 'matrix';
+type StageStatus = 'pending' | 'running' | 'done' | 'error';
 
-    const SUPABASE_URL = "https://api.influlab.pro";
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-      'apikey': (supabase as any).supabaseKey || '',
-    };
-
-    // Step 1: descrição → quando terminar, dispara avatar → quando terminar, dispara matriz.
-    // Encadeamento feito do lado do cliente, mas SEM bloquear a UI: cada chamada é
-    // disparada com keepalive e o frontend não aguarda.
-    const runChain = async () => {
-      try {
-        // 1. descrição
-        const r1 = await fetch(`${SUPABASE_URL}/functions/v1/generate-audience-profile`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ ...payload, step: 'description' }),
-          keepalive: true,
-        });
-        if (!r1.ok) { console.warn('[bg] description failed', r1.status); return; }
-
-        // 2. avatar
-        const r2 = await fetch(`${SUPABASE_URL}/functions/v1/generate-audience-profile`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ ...payload, step: 'avatar' }),
-          keepalive: true,
-        });
-        if (!r2.ok) { console.warn('[bg] avatar failed', r2.status); return; }
-
-        // 3. matriz personalizada
-        const r3 = await fetch(`${SUPABASE_URL}/functions/v1/generate-personalized-matrix`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-          keepalive: true,
-        });
-        if (!r3.ok) { console.warn('[bg] matrix failed', r3.status); return; }
-
-        console.log('[bg] personalization chain complete');
-      } catch (e) {
-        console.warn('[bg] chain error', e);
-      }
-    };
-
-    // Não awaita: deixa rodar em background.
-    runChain();
-  } catch (e) {
-    console.warn('[bg] failed to start personalization', e);
-  }
+interface StageState {
+  status: StageStatus;
+  attempts: number;
 }
 
 const Onboarding = () => {
@@ -98,11 +37,71 @@ const Onboarding = () => {
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
   const [saving, setSaving] = useState(false);
 
+  // Pipeline state
+  const [showPipeline, setShowPipeline] = useState(false);
+  const [stages, setStages] = useState<Record<PipelineStage, StageState>>({
+    audience: { status: 'pending', attempts: 0 },
+    visceral: { status: 'pending', attempts: 0 },
+    matrix: { status: 'pending', attempts: 0 },
+  });
+  const payloadRef = useRef<{ primaryNiche: string; secondaryNiches: string[]; contentStyle: string } | null>(null);
+
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
     if (step === 1) return businessDescription.trim().length >= 80;
     if (step === 2) return !!contentStyle;
     return false;
+  };
+
+  const updateStage = (stage: PipelineStage, patch: Partial<StageState>) => {
+    setStages(prev => ({ ...prev, [stage]: { ...prev[stage], ...patch } }));
+  };
+
+  const runStage = async (stage: PipelineStage): Promise<boolean> => {
+    if (!payloadRef.current) return false;
+    updateStage(stage, { status: 'running', attempts: stages[stage].attempts + 1 });
+
+    try {
+      if (stage === 'audience') {
+        const { error } = await supabase.functions.invoke('generate-audience-profile', {
+          body: { ...payloadRef.current, step: 'description' },
+        });
+        if (error) throw error;
+      } else if (stage === 'visceral') {
+        const { error } = await supabase.functions.invoke('generate-audience-profile', {
+          body: { ...payloadRef.current, step: 'avatar' },
+        });
+        if (error) throw error;
+      } else if (stage === 'matrix') {
+        const { error } = await supabase.functions.invoke('generate-personalized-matrix', {
+          body: payloadRef.current,
+        });
+        if (error) throw error;
+      }
+      updateStage(stage, { status: 'done' });
+      return true;
+    } catch (e) {
+      console.error(`[onboarding] stage ${stage} failed`, e);
+      updateStage(stage, { status: 'error' });
+      return false;
+    }
+  };
+
+  const runPipeline = async (startFrom: PipelineStage = 'audience') => {
+    const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
+    const startIdx = order.indexOf(startFrom);
+
+    for (let i = startIdx; i < order.length; i++) {
+      const s = order[i];
+      // Skip if already done
+      if (stages[s].status === 'done') continue;
+      const ok = await runStage(s);
+      if (!ok) return; // stop on error; user can retry
+    }
+
+    // All done
+    toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
+    setTimeout(() => window.location.replace('/'), 1000);
   };
 
   const handleFinish = async () => {
@@ -117,17 +116,13 @@ const Onboarding = () => {
       description_status: 'ok' as const,
     };
 
-    // 1. Salva o perfil COMPLETO já marcando onboarding_completed=true.
-    // Sem espera por IA: o usuário não pode mais ficar travado em tela vermelha.
     let result = await updateProfile(payload);
-
     if (result?.error) {
       await new Promise(r => setTimeout(r, 800));
       result = await updateProfile(payload);
     }
 
     if (result?.error) {
-      // Fallback: upsert direto
       try {
         const { error: directError } = await (supabase.from as any)('user_profiles')
           .upsert({
@@ -146,20 +141,171 @@ const Onboarding = () => {
       }
     }
 
-    // 2. Dispara personalização em background (não aguarda).
-    fireAndForgetPersonalization({
+    payloadRef.current = {
       primaryNiche: businessDescription.trim(),
       secondaryNiches: [],
       contentStyle,
-    });
+    };
 
-    // 3. Redireciona imediatamente. O dashboard mostra a matriz base e troca
-    //    automaticamente quando a personalizada chegar (polling no useUserStrategies).
-    toast.success('Tudo pronto! Personalizando sua experiência em segundo plano...');
-    await new Promise(r => setTimeout(r, 400));
+    // Detect already-completed stages (resume case)
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (userId) {
+      const [{ data: aud }, { data: strat }] = await Promise.all([
+        (supabase.from as any)('audience_profiles').select('audience_description, avatar_profile').eq('user_id', userId).maybeSingle(),
+        (supabase.from as any)('user_strategies').select('strategies').eq('user_id', userId).maybeSingle(),
+      ]);
+      const hasDescription = !!aud?.audience_description;
+      const hasAvatar = !!aud?.avatar_profile;
+      const hasMatrix = !!strat?.strategies;
+
+      setStages({
+        audience: { status: hasDescription ? 'done' : 'pending', attempts: 0 },
+        visceral: { status: hasAvatar ? 'done' : 'pending', attempts: 0 },
+        matrix: { status: hasMatrix ? 'done' : 'pending', attempts: 0 },
+      });
+    }
+
+    setShowPipeline(true);
+    setSaving(false);
+  };
+
+  // Auto-run pipeline once shown
+  useEffect(() => {
+    if (!showPipeline) return;
+    // Find first non-done stage
+    const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
+    const next = order.find(s => stages[s].status === 'pending');
+    if (next && stages[next].status === 'pending' && stages.audience.status !== 'running' && stages.visceral.status !== 'running' && stages.matrix.status !== 'running') {
+      runPipeline(next);
+    } else if (!next && order.every(s => stages[s].status === 'done')) {
+      // All done from resume
+      toast.success('✨ Tudo pronto!');
+      setTimeout(() => window.location.replace('/'), 800);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPipeline]);
+
+  const retryStage = (stage: PipelineStage) => {
+    updateStage(stage, { status: 'pending' });
+    setTimeout(() => runPipeline(stage), 100);
+  };
+
+  const skipPipeline = () => {
+    toast.message('Você poderá personalizar depois nas configurações.');
     window.location.replace('/');
   };
 
+  const stageMeta: Record<PipelineStage, { title: string; description: string; icon: typeof Users }> = {
+    audience: {
+      title: 'Analisando seu público',
+      description: 'Mapeando perfil, dores e desejos da sua audiência',
+      icon: Users,
+    },
+    visceral: {
+      title: 'Construindo estudo visceral',
+      description: 'Decifrando gatilhos emocionais e linguagem profunda',
+      icon: Brain,
+    },
+    matrix: {
+      title: 'Montando sua matriz de 30 dias',
+      description: 'Criando estratégia diária personalizada com gatilhos virais',
+      icon: LayoutGrid,
+    },
+  };
+
+  // ===== Pipeline screen =====
+  if (showPipeline) {
+    const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
+    const allDone = order.every(s => stages[s].status === 'done');
+    const anyError = order.some(s => stages[s].status === 'error');
+    const erroredStage = order.find(s => stages[s].status === 'error');
+    const stuckOnError = anyError && erroredStage && stages[erroredStage].attempts >= 2;
+
+    return (
+      <div className="min-h-screen flex flex-col">
+        <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center">
+          <span className="font-serif text-xl font-bold text-primary">InfluLab</span>
+          <p className="text-white/60 text-sm mt-1">Personalizando sua experiência</p>
+        </div>
+        <div className="flex-1 flex flex-col items-center px-4 -mt-6 pb-10">
+          <div className="w-full max-w-sm space-y-6">
+            <div className="text-center space-y-2">
+              <span className="text-4xl">{allDone ? '✨' : '⏳'}</span>
+              <h2 className="font-serif text-2xl font-bold">
+                {allDone ? 'Tudo pronto!' : 'Quase lá, {displayName}'.replace('{displayName}', displayName.split(' ')[0])}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {allDone
+                  ? 'Redirecionando para o app…'
+                  : 'Cada etapa leva 30-90s. Não feche a aba.'}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {order.map((s, idx) => {
+                const meta = stageMeta[s];
+                const state = stages[s];
+                const Icon = meta.icon;
+                return (
+                  <motion.div
+                    key={s}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.08 }}
+                    className={`glass-card p-4 flex items-start gap-3 transition-all ${
+                      state.status === 'running' ? 'ring-2 ring-primary/50 bg-primary/5' :
+                      state.status === 'done' ? 'opacity-90' :
+                      state.status === 'error' ? 'ring-2 ring-destructive/50 bg-destructive/5' :
+                      'opacity-60'
+                    }`}
+                  >
+                    <div className={`shrink-0 size-10 rounded-xl flex items-center justify-center ${
+                      state.status === 'done' ? 'bg-emerald-500/15 text-emerald-500' :
+                      state.status === 'error' ? 'bg-destructive/15 text-destructive' :
+                      state.status === 'running' ? 'gold-gradient text-primary-foreground' :
+                      'bg-muted text-muted-foreground'
+                    }`}>
+                      {state.status === 'done' ? <Check size={20} /> :
+                       state.status === 'error' ? <X size={20} /> :
+                       state.status === 'running' ? <Loader2 size={20} className="animate-spin" /> :
+                       <Icon size={20} />}
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="font-medium text-sm">{meta.title}</p>
+                      <p className="text-xs text-muted-foreground">{meta.description}</p>
+                      {state.status === 'error' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => retryStage(s)}
+                          className="mt-2 h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                        >
+                          Tentar novamente
+                        </Button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {stuckOnError && (
+              <div className="space-y-3">
+                <p className="text-xs text-center text-muted-foreground">
+                  Está difícil personalizar agora. Você pode entrar no app com a matriz base e tentar de novo depois.
+                </p>
+                <Button onClick={skipPipeline} variant="outline" className="w-full">
+                  Continuar mesmo assim
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== Onboarding form steps =====
   const steps = [
     <motion.div key="name" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
       <div className="text-center space-y-2">
@@ -276,9 +422,6 @@ const Onboarding = () => {
               </Button>
             )}
           </div>
-          <p className="text-center text-xs text-muted-foreground px-4">
-            Sua matriz personalizada é gerada em segundo plano. Você já entra no app e ela aparece automaticamente quando estiver pronta (~2 min).
-          </p>
         </div>
       </div>
     </div>
