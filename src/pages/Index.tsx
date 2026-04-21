@@ -75,7 +75,7 @@ const Index = () => {
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
-        {isPersonalizing && !hasPersonalized && (
+        {!hasPersonalized && profile?.onboarding_completed && profile?.description_status === 'ok' && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -83,9 +83,9 @@ const Index = () => {
           >
             <Loader2 size={18} className="text-primary animate-spin shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Personalizando sua matriz de 30 dias…</p>
+              <p className="text-sm font-medium">Finalizando sua matriz personalizada…</p>
               <p className="text-xs text-muted-foreground">
-                Você já pode explorar o app. A matriz adaptada ao seu público aparece sozinha em ~2 min.
+                Aparece automaticamente em instantes. Você já pode explorar o app.
               </p>
             </div>
           </motion.div>
