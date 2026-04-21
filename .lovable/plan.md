@@ -1,186 +1,131 @@
 
 
-# Plano: remover de vez o “segundo plano” e destravar o cakerollguide@gmail.com
+# Diagnóstico: o "Erro ao salvar perfil" é o single-session-limit deslogando o próprio usuário
 
-## O problema exato
+## O que acontece (lendo o print de network)
 
-A tela do print vem de `src/pages/Index.tsx`:
-
-```text
-Finalizando sua matriz personalizada…
-Aparece automaticamente em instantes. Você já pode explorar o app.
-```
-
-Isso é justamente a abordagem de “segundo plano” que deveria ter sido removida. Pior: ela só faz polling esperando a matriz aparecer; ela **não dispara a geração**. Então se o usuário está com:
+A sequência das requisições no print é:
 
 ```text
-onboarding_completed = true
-sem user_strategies válido
+GET user_profiles?select=active_session_token  → 200  (polling de single-session)
+GET user_profiles?select=active_session_token  → 200  (polling de single-session)
+GET user_profiles?user_id=eq.353d1276-...      → 406  (← aqui já não tem sessão válida)
+GET user_profiles?user_id=eq.353d1276-...      → 406
+POST user_profiles?on_conflict=user_id          → 401  (← o upsert do handleFinish)
+GET user_profiles?select=active_session_token  → 200
+GET user_profiles?select=active_session_token  → 200
 ```
 
-ele fica preso no dashboard com matriz base e banner infinito.
+Tradução: enquanto o usuário estava no passo 3 do onboarding, **a sessão JWT dele caducou ou o `active_session_token` no banco passou a divergir do que ele tem em localStorage**. Quando ele clicou "Começar Jornada":
 
-Além disso, a proteção atual ainda está incompleta: o app decide se o usuário precisa de onboarding olhando só para `user_profiles.onboarding_completed`. Ele não valida se a matriz realmente existe.
+1. `updateProfile` chamou `.update().eq('user_id', userId).select().single()` — o servidor já não autenticava como o dono da row → PostgREST retorna **406** (RLS filtra a row, `.single()` não acha nada e responde Not Acceptable).
+2. O retry imediato deu mesma 406.
+3. O fallback `.upsert(...)` exige INSERT permission e o servidor responde **401** porque o JWT não é mais válido.
+4. Toast: "Erro ao salvar perfil. Tente novamente." → o usuário fica preso, porque qualquer clique a partir daí dispara o mesmo 401.
 
-## Correção principal
+A causa é o `useUserProfile.fetchProfile`: assim que o perfil é carregado, ele **sobrescreve o `active_session_token` com um novo UUID**. Se o usuário tem outra aba (ou abriu o link em duas janelas, ou entrou via banner do PWA + Safari), uma das duas sobrescreve a outra e a vítima começa a tomar 401 sem aviso visual — só descobre quando tenta salvar.
 
-### 1. Criar uma trava real de integridade no login/app
+Combinado com o erro 406 "happy path" do PostgREST, a UX vira: clica → erro genérico → tenta de novo → mesmo erro → desiste.
 
-Alterar `useUserProfile` para, ao carregar o perfil, validar:
+## Correção em 4 frentes
+
+### 1. Não invalidar a sessão durante o onboarding
+
+Em `useUserProfile.fetchProfile`, hoje:
 
 ```text
-Se onboarding_completed = true
-E não existe user_strategies.strategies com pelo menos 28 itens
-→ corrigir automaticamente onboarding_completed = false
-→ manter/voltar usuário para /onboarding
+- carrega profile
+- gera novo session_token e grava no banco
+- inicia polling a cada 30s — se token divergir, signOut imediato
 ```
 
-Assim, mesmo que qualquer versão antiga, bug, clique em “continuar”, ou estado parcial deixe o usuário como `true`, o app se autocorrige.
+Mudança: **não rotacionar o `active_session_token` enquanto o usuário ainda não completou o onboarding** (`profile.onboarding_completed === false`). O polling também não roda nesse caso. Isso elimina:
 
-Critério de matriz válida:
+- A janela em que duas abas se chutam mutuamente
+- O risco de cair na metade do pipeline e perder o progresso
+- A 401 silenciosa no `handleFinish`
+
+O lock de single-session passa a valer apenas para usuários já no app (após onboarding), que é o cenário de "compartilhamento de login" que motivou a feature.
+
+### 2. Tratar 401/406 em `updateProfile` e `handleFinish` com mensagem real
+
+Hoje `updateProfile` retorna `{ data, error }` mas `handleFinish` só checa `result?.error`. Quando a sessão cai e `updateProfile` retorna `undefined` (porque `if (!session?.user) return;`), `result?.error` é `undefined` → falsy → vai pro fallback `.upsert` que toma 401 → erro genérico.
+
+Mudanças:
+
+- `updateProfile` passa a detectar `error.code === 'PGRST116'` (single() sem row) e código 401, retornar erro estruturado
+- `handleFinish` passa a:
+  - Re-checar a sessão via `supabase.auth.getSession()` antes de qualquer write
+  - Se sessão inválida → `toast.error("Sua sessão expirou. Faça login novamente.")` + redirect para `/auth`
+  - Se 406 no update (perfil sumiu): tentar `upsert` direto com `user_id` do `getUser()`
+  - Se 401: redirect pro login, não ficar travado
+
+### 3. Remover o fallback que mascara o erro real
+
+A sequência atual `update → retry → upsert` esconde a causa. O fluxo passa a ser:
 
 ```text
-Array.isArray(strategies) && strategies.length >= 28
+1. getSession() — sessão válida?
+   não → redirect /auth
+2. upsert direto (insere se não existir, atualiza se existir) — uma só request
+3. se erro: mostra a mensagem específica do erro
 ```
 
-Uso `>= 28` porque a própria edge function hoje aceita mínimo de 28 antes de salvar, embora o ideal seja 30.
+Isso elimina o duplo round-trip e torna o erro diagnosticável.
 
-### 2. Remover o banner de “finalizando em segundo plano”
+### 4. Destravar o usuário no banco (manual no self-hosted)
 
-Em `src/pages/Index.tsx`, remover completamente o bloco:
-
-```text
-!hasPersonalized && profile?.onboarding_completed && profile?.description_status === 'ok'
-```
-
-Esse banner passa a mensagem errada e mascara o problema. Se não tem matriz personalizada válida, o usuário não deve ficar explorando o app esperando algo que não está sendo gerado; ele deve voltar para o onboarding.
-
-### 3. Remover polling de personalização em `useUserStrategies`
-
-Simplificar `src/hooks/useUserStrategies.ts`:
-
-- Carrega `user_strategies`
-- Se tiver matriz válida, usa personalizada
-- Se não tiver, usa fallback apenas como segurança visual
-- Não exibe estado de “personalizando”
-- Não fica 5 minutos fazendo polling esperando geração em background
-
-A geração passa a acontecer somente no pipeline visível do onboarding.
-
-### 4. Fortalecer o onboarding para nunca marcar completo sem matriz
-
-Em `src/pages/Onboarding.tsx`:
-
-- Manter `onboarding_completed = true` apenas depois do pipeline completo
-- Antes de marcar completo, consultar `user_strategies` e validar `strategies.length >= 28`
-- Se a matriz não existir ou for inválida, não marcar completo; deixar etapa `matrix` em erro com botão “Tentar novamente”
-- Remover ou alterar o botão “Continuar mesmo assim” para **não** marcar onboarding como completo sem matriz
-
-Fluxo final:
-
-```text
-Usuário termina formulário
-        ↓
-Pipeline visível:
-1. Análise do público
-2. Estudo visceral
-3. Matriz de 30 dias
-        ↓
-Só se user_strategies válido existir:
-onboarding_completed = true
-        ↓
-Vai para /
-```
-
-Se falhar:
-
-```text
-Fica no onboarding
-mostra etapa com erro
-botão "Tentar novamente"
-não entra no dashboard incompleto
-```
-
-### 5. Corrigir o usuário cakerollguide@gmail.com no banco
-
-Como o backend é Supabase self-hosted, isso precisa ser rodado manualmente no SQL Editor do self-hosted:
+Como o backend é Supabase self-hosted (`api.influlab.pro`) e o `supabase--read_query` aqui aponta pro Lovable Cloud, o reset precisa ser executado por você manualmente no SQL Editor do self-hosted:
 
 ```sql
 update public.user_profiles
 set onboarding_completed = false,
-    description_status = 'pending'
-where user_id = (
-  select id from auth.users where email = 'cakerollguide@gmail.com'
-);
+    description_status   = 'pending',
+    active_session_token = null
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
 
 delete from public.audience_profiles
-where user_id = (
-  select id from auth.users where email = 'cakerollguide@gmail.com'
-);
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
 
 delete from public.user_strategies
-where user_id = (
-  select id from auth.users where email = 'cakerollguide@gmail.com'
-);
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
 ```
 
-Depois disso, esse usuário volta obrigatoriamente para o onboarding e refaz o processo.
+O `active_session_token = null` é importante: sem isso, na próxima vez que ele logar, o polling detecta divergência e desloga de novo no meio do onboarding.
 
-## Arquivos que serão alterados
+## Arquivos alterados
 
 - `src/hooks/useUserProfile.ts`
-  - adiciona validação de integridade: `onboarding_completed=true` só vale se existir matriz válida
-
-- `src/pages/Index.tsx`
-  - remove o banner de “Finalizando sua matriz personalizada…”
-
-- `src/hooks/useUserStrategies.ts`
-  - remove polling/background personalization
-  - valida matriz por tamanho mínimo antes de considerar personalizada
+  - Não rotacionar `active_session_token` enquanto `onboarding_completed=false`
+  - Não iniciar polling enquanto `onboarding_completed=false`
+  - `updateProfile` retorna erro estruturado em vez de `undefined` quando sessão inválida
+  - Adiciona detecção de 401/PGRST116
 
 - `src/pages/Onboarding.tsx`
-  - impede marcar onboarding completo sem matriz válida
-  - remove caminho de “continuar mesmo assim” que prende usuário sem dados
-  - mantém retry visível da etapa que falhou
+  - `handleFinish`: re-checa sessão antes de salvar, usa upsert único, redireciona para `/auth` em 401, mostra mensagens específicas
 
-## O que não muda
+## O que NÃO muda
 
-- Prompts
-- Edge functions
-- Modelos Gemini
-- SQL de schema
-- RLS
-- Fluxo de pagamento
-- Painel admin
+- Edge functions (sem deploy de função)
+- Modelos Gemini, prompts, schemas
+- Lógica de pipeline (audience → visceral → matrix)
+- Trava de integridade no `useUserProfile` (matriz < 28 → onboarding=false)
+- Free tier, admin, Asaas
 
 ## Deploy
 
-Como a correção de código é frontend-only:
-
-```bash
-# VPS: nada para edge functions
-# Vercel: auto-deploy pelo GitHub
-```
-
-Mas, por regra do projeto, após o código sincronizar no GitHub, o bloco seguro para a VPS é:
+Frontend-only. Auto-deploy Vercel. Na VPS:
 
 ```bash
 cd /root/app && git pull origin main
 ```
 
-Não precisa rodar:
-
-```bash
-./scripts/deploy-selfhost.sh
-```
-
-porque nenhuma edge function será alterada.
+Sem `./scripts/deploy-selfhost.sh`. Mais o SQL acima rodado uma vez no Studio self-hosted pra destravar o `cakerollguide@gmail.com`.
 
 ## Resultado esperado
 
-- O app nunca mais deve mostrar “finalizando em segundo plano” como solução principal
-- Usuário sem matriz válida não entra no dashboard como se estivesse completo
-- `onboarding_completed=true` passa a significar: “perfil + matriz personalizada realmente prontos”
-- O cakerollguide@gmail.com volta para o onboarding após o SQL manual
-- Se a geração falhar, o usuário vê exatamente a etapa que falhou e tenta novamente ali
+- O usuário não é mais deslogado no meio do onboarding
+- O erro "Erro ao salvar perfil" deixa de ocorrer; se a sessão de fato expirar, ele é mandado para `/auth` com mensagem clara
+- O `cakerollguide@gmail.com` volta ao onboarding limpo após o SQL
+- O lock de single-session continua funcionando normalmente para usuários já no app
 
