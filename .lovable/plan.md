@@ -1,68 +1,122 @@
 
 
-# Resposta: sim, matriz mockada temporária durante a análise
+# Plano: voltar à UX de etapas avançando + tornar a geração confiável
 
-## Como vai funcionar
+## Diagnóstico do que está quebrado
+
+**1. A matriz não chega nem em 2 minutos** porque o `fireAndForgetPersonalization` faz 3 chamadas encadeadas no browser **depois** que o usuário já navegou para `/`. Quando isso acontece:
+
+- O React desmonta `Onboarding` → a Promise `runChain()` continua viva no JS, mas...
+- `keepalive: true` no `fetch` tem **limite de 64KB de body** e só é confiável para uma única request curta no `unload` da página, não para uma cadeia de 3 requests longas
+- A primeira request (`description`) pode até chegar ao servidor, mas a `await` da segunda nunca executa porque o contexto da página foi descartado
+- Resultado: descrição às vezes salva, avatar quase nunca, matriz nunca
+
+**2. A UX ficou pior** porque o usuário entra no app sem feedback claro de progresso, só vê um banner genérico "personalizando..." que nunca termina.
+
+## Solução: voltar ao fluxo de etapas, mas com cada etapa cabendo no timeout
+
+### Arquitetura
 
 ```text
-Usuário finaliza onboarding
+Onboarding (3 etapas de cadastro)
         ↓
-Entra direto no app (sem espera)
+"Começar Jornada" clicado
         ↓
-Dashboard mostra matriz PADRÃO (fallbackStrategies — já existe em src/data/strategies.ts)
+Tela de progresso com 3 cards:
+   [✓] Analisando seu público          ← invoke description (~30-50s)
+   [✓] Estudo visceral profundo        ← invoke avatar (~30-50s)  
+   [✓] Montando matriz de 30 dias      ← invoke matrix (~40-90s)
         ↓
-Em background: descrição → avatar → matriz personalizada
+Cada card vira verde quando termina, vermelho se falhar (com retry só daquele)
         ↓
-Quando matriz personalizada salva → app troca automaticamente
+Quando os 3 terminam → redireciona pro app com tudo pronto
+        ↓
+Se usuário fechar a aba no meio → próximo login retoma de onde parou
 ```
 
-## O que o usuário vê em cada momento
+### Por que isso vai funcionar agora (sendo que não funcionava antes)
 
-**Momento 1 — acabou de finalizar onboarding (0s):**
-- Entra no dashboard
-- Matriz dos 30 dias visível com conteúdo padrão (`fallbackStrategies`)
-- Banner discreto no topo: *"Personalizando sua matriz com base no seu público... isso leva ~2 minutos"*
-- Pode navegar, ler, marcar tarefas — tudo funciona
+A versão anterior falhava porque:
+- `description` + `avatar` rodavam **na mesma request** → 60-180s → estouro de gateway
+- `matrix` fazia 4 chamadas `gemini-2.5-pro` em paralelo → estouro também
 
-**Momento 2 — análise em andamento (30-90s):**
-- Mesma matriz padrão visível
-- Banner atualiza: *"Estudo do seu público pronto. Gerando matriz personalizada..."*
+A versão nova funciona porque:
+- Cada `invoke` do client é **uma única chamada** que cabe em <60s (já está com `timeoutMs: 55000` + fallback rápido pro flash)
+- Se `pro` demorar, cai pro `flash` em ~55s e ainda devolve resposta válida
+- A matriz já tem stagger de 800ms entre semanas + fallback flash por semana
 
-**Momento 3 — matriz personalizada pronta (~120s):**
-- Banner some
-- Toast: *"Sua matriz personalizada está pronta!"*
-- Conteúdo dos 30 dias atualiza automaticamente (hook `useUserStrategies` re-fetch)
-- Os dias que o usuário já viu/marcou continuam com progresso preservado (progresso é por número do dia, não por conteúdo)
+### O que muda no código
 
-## Por que isso funciona sem prejuízo
+**1. `src/pages/Onboarding.tsx`** — substitui `fireAndForgetPersonalization` por um **pipeline visível** com 3 etapas:
 
-1. **`fallbackStrategies` já existe e já é usado** — o hook `useUserStrategies` já cai nele quando `user_strategies` está vazio. Não vou criar mock novo, só vou tornar essa transição visível e intencional em vez de "acidente de loading".
+```text
+status: 'idle' | 'audience' | 'visceral' | 'matrix' | 'done' | 'error'
+errorStep: 'audience' | 'visceral' | 'matrix' | null
+```
 
-2. **Progresso é por dia (1-30), não por conteúdo** — quando a matriz personalizada chega, dia 1 continua sendo dia 1. Marcações, streak, pontos: tudo intacto.
+Após salvar perfil, mostra tela de progresso (substitui os 3 steps de cadastro) com:
+- 3 cards verticais, cada um com ícone (loader/check/x) + título + descrição
+- Card ativo tem loader animado e gradiente sutil
+- Card concluído tem check verde
+- Card com erro tem botão "Tentar novamente" que re-dispara só aquela etapa
+- Quando os 3 terminam, redireciona em 1s com toast de sucesso
 
-3. **Pillar/estrutura é igual** — fallback e personalizada seguem o mesmo schema (`DayStrategy[]` com pillar, title, hook, tarefas). A troca é transparente visualmente.
+Se o usuário fechar a aba no meio:
+- Etapas já concluídas ficaram salvas no banco
+- Próximo login: `useUserProfile` detecta `onboarding_completed=false` → redireciona pra `/onboarding`
+- O onboarding detecta etapas já feitas (consulta `audience_profiles` e `user_strategies`) e **pula direto pra etapa que falta**
 
-## Detalhe importante sobre "mockada"
+**2. `src/hooks/useUserStrategies.ts`** — manter o polling como rede de segurança, mas reduzir intervalo pra 8s nos primeiros 30s (caso o usuário já esteja no dashboard quando a matriz finalizar por algum motivo).
 
-Não é mock no sentido de "dados falsos só pra preencher". É a **matriz base de 30 dias** original do app — a mesma que rodou durante todo o desenvolvimento antes de existir personalização. Conteúdo de qualidade, só não adaptado ao nicho específico do usuário.
+**3. `src/pages/Index.tsx`** — remover o banner "Personalizando sua matriz..." porque agora a personalização termina **antes** de chegar no dashboard. Manter apenas como fallback se o usuário pulou onboarding manualmente.
 
-## Polling automático
+**4. `supabase/functions/generate-audience-profile/index.ts`** — sem mudanças, já está correto (split em description/avatar com 55s timeout cada).
 
-Adiciono polling leve no dashboard:
-- A cada 15s, verifica se `user_strategies` foi populado
-- Quando aparece → atualiza estado → mostra toast
-- Para de pollar após sucesso ou após 5 minutos (timeout)
+**5. `supabase/functions/generate-personalized-matrix/index.ts`** — sem mudanças, já está com stagger e timeout corretos.
 
-Custo: 1 query a cada 15s só durante a janela de geração. Para depois.
+### O que NÃO muda
 
-## Fallback de falha
+- Prompts refinados (master copywriter, schema visceral 30+ campos): **idênticos**
+- Modelo `gemini-2.5-pro` com fallback `flash`: **mantido**
+- Schema da matriz (4 semanas com gatilhos viscerais): **idêntico**
+- Banco: **nenhuma migration necessária**
+- Edge functions: **nenhum redeploy necessário**
 
-Se a IA falhar de verdade (após retry interno):
-- Banner muda pra: *"Não conseguimos personalizar agora. Você está usando a matriz base. [Tentar novamente]"*
-- Botão de retry dispara só a etapa que falhou
-- App continua 100% funcional com matriz base indefinidamente
+### UX final
 
-## Resumo da sua pergunta
+```text
+Etapa 1: Nome
+Etapa 2: Descrição (≥80 chars)  
+Etapa 3: Estilo
+        ↓ "Começar Jornada"
+Etapa 4: Pipeline visível
+   ⏳ Analisando seu público...      [30-50s]
+   ⏳ Construindo estudo visceral... [30-50s, inicia após 1 acabar]
+   ⏳ Montando sua matriz de 30 dias... [40-90s, inicia após 2]
+        ↓
+✨ Tudo pronto! → redireciona pra /
+```
 
-**Sim** — matriz base aparece imediatamente, usuário usa o app normal, e a personalizada substitui automaticamente quando fica pronta. Sem tela vermelha, sem espera, sem perda de qualidade nos prompts.
+**Tempo total**: ~100-180s, mas com **feedback contínuo** — o usuário vê progresso a cada etapa terminada, não fica olhando pra um spinner genérico.
+
+### Tratamento de erros
+
+Se a etapa 1 falhar:
+- Card vermelho com mensagem amigável: *"Não conseguimos analisar agora. [Tentar novamente]"*
+- Botão refaz só a etapa 1
+- Após 2 retries falhando: mostra opção *"Continuar mesmo assim"* → marca onboarding completo, app abre com matriz base
+
+Se etapa 2 ou 3 falhar:
+- Mesmo padrão, retry só daquela etapa
+- Etapas anteriores não são refeitas (descrição já salva, avatar já salvo)
+
+### Arquivos tocados
+
+- `src/pages/Onboarding.tsx` — refatora `handleFinish` + adiciona tela de progresso
+- `src/hooks/useUserStrategies.ts` — ajuste menor no polling
+- `src/pages/Index.tsx` — remove banner de personalização (vira fallback condicional)
+
+### Deploy
+
+Como **só frontend muda**, basta o auto-deploy do Vercel rodar quando o Lovable sincronizar com o GitHub. **Nada precisa rodar na VPS**, nenhum SQL, nenhum redeploy de função.
 
