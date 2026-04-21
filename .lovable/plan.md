@@ -1,124 +1,186 @@
 
 
-# Diagnóstico real: por que está demorando absurdamente E falhando
+# Plano: remover de vez o “segundo plano” e destravar o cakerollguide@gmail.com
 
-## O que está acontecendo
+## O problema exato
 
-A etapa 1 ("Analisando seu público") está dando erro depois de **muito tempo de espera**. Olhando o código com atenção, a causa é matemática:
-
-### Tempo máximo da etapa 1, hoje
+A tela do print vem de `src/pages/Index.tsx`:
 
 ```text
-callGeminiNative (gemini-2.5-pro):
-  attempt 1: até 55s timeout + 2s sleep
-  attempt 2: até 55s timeout + 5s sleep  
-  attempt 3: até 55s timeout + 12s sleep
-  → primary esgotado: até 184s
-
-  fallback (gemini-2.5-flash):
-  attempt 1: até 55s + 2s
-  attempt 2: até 55s + 5s
-  attempt 3: até 55s + 12s
-  → fallback esgotado: até 184s
-
-TOTAL TEÓRICO POR ETAPA: até 368s = 6 minutos
+Finalizando sua matriz personalizada…
+Aparece automaticamente em instantes. Você já pode explorar o app.
 ```
 
-Mas o **Supabase Edge Functions tem timeout duro de 150s** (e gateways intermediários geralmente cortam antes — 60-120s). Então o que acontece na prática:
-
-1. Frontend chama `generate-audience-profile` (step=description)
-2. Função entra no retry loop do `gemini-2.5-pro`
-3. `gemini-2.5-pro` está lento/instável → timeout de 55s na primeira tentativa
-4. Retry 2 com mais 55s de timeout → gateway corta a request inteira em ~120-150s
-5. Frontend recebe **erro de rede** (não erro estruturado da função)
-6. Card vira vermelho com "Tentar novamente"
-7. Usuário clica → repete o mesmo ciclo de 2 minutos → mesmo erro
-
-## A causa raiz: insistência no `gemini-2.5-pro` com retries longos
-
-`gemini-2.5-pro` é **lento e instável** — facilmente passa de 30-50s por chamada e tem alta taxa de 503. O retry loop atual, ao invés de cair rápido para o `flash`, fica preso tentando 3x o `pro` antes de desistir. E quando finalmente cai pro `flash`, o gateway já matou a request.
-
-Você mesmo confirmou na conversa: *"se eu jogar o prompt no Gemini direto ele responde em segundos"* — porque você está usando o modelo rápido. O `2.5-pro` **não é rápido**, e o app está apostando no produto errado.
-
-## Solução
-
-### 1. Reduzir drasticamente o retry budget no `_shared/gemini.ts`
+Isso é justamente a abordagem de “segundo plano” que deveria ter sido removida. Pior: ela só faz polling esperando a matriz aparecer; ela **não dispara a geração**. Então se o usuário está com:
 
 ```text
-ANTES: pro → 3 retries × 55s = 165s, depois flash → 3 retries × 55s = 165s
-DEPOIS: pro → 1 tentativa × 35s, depois flash → 2 tentativas × 30s
-        Total máximo: 35 + 30 + 30 + ~7s sleep = ~102s (dentro do gateway)
+onboarding_completed = true
+sem user_strategies válido
 ```
 
-Mudanças em `callGeminiNative`:
-- Novo parâmetro opcional `primaryAttempts` (default 3, mas vamos passar 1 nas funções críticas)
-- Novo parâmetro opcional `fallbackAttempts` (default 3, vamos passar 2)
-- Sleeps reduzidos: `[1500, 3000]` em vez de `[2000, 5000, 12000]`
-- Detectar `AbortError` (timeout) e **pular direto pro fallback** em vez de re-tentar o primary
+ele fica preso no dashboard com matriz base e banner infinito.
 
-### 2. Trocar o modelo padrão para `gemini-2.5-flash`
+Além disso, a proteção atual ainda está incompleta: o app decide se o usuário precisa de onboarding olhando só para `user_profiles.onboarding_completed`. Ele não valida se a matriz realmente existe.
 
-Em `generate-audience-profile/index.ts` (steps description e avatar) e `generate-personalized-matrix/index.ts`:
+## Correção principal
+
+### 1. Criar uma trava real de integridade no login/app
+
+Alterar `useUserProfile` para, ao carregar o perfil, validar:
 
 ```text
-ANTES: model: "gemini-2.5-pro", fallbackModel: "gemini-2.5-flash"
-DEPOIS: model: "gemini-2.5-flash", fallbackModel: "gemini-2.5-flash-lite"
+Se onboarding_completed = true
+E não existe user_strategies.strategies com pelo menos 28 itens
+→ corrigir automaticamente onboarding_completed = false
+→ manter/voltar usuário para /onboarding
 ```
 
-**Justificativa:** o `2.5-flash` produz qualidade muito próxima do `pro` para prompts estruturados (responseSchema), com latência 5-10x menor e estabilidade muito maior. Para descrição de público em texto livre e matriz com schema rígido, é a escolha correta. O `2.5-pro` faz sentido para raciocínio complexo de várias páginas — não é o caso aqui.
+Assim, mesmo que qualquer versão antiga, bug, clique em “continuar”, ou estado parcial deixe o usuário como `true`, o app se autocorrige.
 
-### 3. Timeout por chamada reduzido
+Critério de matriz válida:
 
 ```text
-ANTES: timeoutMs: 55000 (cada tentativa)
-DEPOIS: timeoutMs: 35000 no primary, 30000 no fallback
+Array.isArray(strategies) && strategies.length >= 28
 ```
 
-Com `flash` como primary, 35s é mais que suficiente — 95% das chamadas respondem em <15s.
+Uso `>= 28` porque a própria edge function hoje aceita mínimo de 28 antes de salvar, embora o ideal seja 30.
 
-### 4. Tempo total esperado por etapa
+### 2. Remover o banner de “finalizando em segundo plano”
+
+Em `src/pages/Index.tsx`, remover completamente o bloco:
 
 ```text
-description: ~12-25s (era até 184s)
-avatar:      ~15-30s (era até 184s)
-matrix:      ~40-60s (4 semanas em paralelo, cada uma com flash rápido)
-
-TOTAL onboarding: ~70-115s (era até ~9 minutos)
+!hasPersonalized && profile?.onboarding_completed && profile?.description_status === 'ok'
 ```
 
-### 5. Mensagens de erro mais úteis
+Esse banner passa a mensagem errada e mascara o problema. Se não tem matriz personalizada válida, o usuário não deve ficar explorando o app esperando algo que não está sendo gerado; ele deve voltar para o onboarding.
 
-Quando a função falha, o frontend hoje mostra apenas "Tentar novamente". Vou adicionar:
-- Se erro = timeout → "A IA está sobrecarregada agora. Aguarde 30s e tente."
-- Se erro = 429 → "Muitas requisições. Aguarde 1 minuto."
-- Se erro = 503 → "Serviço temporariamente indisponível. Tente novamente."
+### 3. Remover polling de personalização em `useUserStrategies`
 
-Isso dá ao usuário ideia do que está acontecendo em vez de tentar imediatamente de novo (o que piora o problema).
+Simplificar `src/hooks/useUserStrategies.ts`:
 
-## Arquivos modificados
+- Carrega `user_strategies`
+- Se tiver matriz válida, usa personalizada
+- Se não tiver, usa fallback apenas como segurança visual
+- Não exibe estado de “personalizando”
+- Não fica 5 minutos fazendo polling esperando geração em background
 
-- `supabase/functions/_shared/gemini.ts` — adiciona `primaryAttempts`/`fallbackAttempts`, reduz sleeps, salta direto pro fallback em timeout
-- `supabase/functions/generate-audience-profile/index.ts` — troca pro flash + reduz timeout + 1 retry primary, 2 fallback
-- `supabase/functions/generate-personalized-matrix/index.ts` — mesma troca + ajustes
-- `src/pages/Onboarding.tsx` — mensagens de erro contextuais por código
+A geração passa a acontecer somente no pipeline visível do onboarding.
+
+### 4. Fortalecer o onboarding para nunca marcar completo sem matriz
+
+Em `src/pages/Onboarding.tsx`:
+
+- Manter `onboarding_completed = true` apenas depois do pipeline completo
+- Antes de marcar completo, consultar `user_strategies` e validar `strategies.length >= 28`
+- Se a matriz não existir ou for inválida, não marcar completo; deixar etapa `matrix` em erro com botão “Tentar novamente”
+- Remover ou alterar o botão “Continuar mesmo assim” para **não** marcar onboarding como completo sem matriz
+
+Fluxo final:
+
+```text
+Usuário termina formulário
+        ↓
+Pipeline visível:
+1. Análise do público
+2. Estudo visceral
+3. Matriz de 30 dias
+        ↓
+Só se user_strategies válido existir:
+onboarding_completed = true
+        ↓
+Vai para /
+```
+
+Se falhar:
+
+```text
+Fica no onboarding
+mostra etapa com erro
+botão "Tentar novamente"
+não entra no dashboard incompleto
+```
+
+### 5. Corrigir o usuário cakerollguide@gmail.com no banco
+
+Como o backend é Supabase self-hosted, isso precisa ser rodado manualmente no SQL Editor do self-hosted:
+
+```sql
+update public.user_profiles
+set onboarding_completed = false,
+    description_status = 'pending'
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
+
+delete from public.audience_profiles
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
+
+delete from public.user_strategies
+where user_id = (
+  select id from auth.users where email = 'cakerollguide@gmail.com'
+);
+```
+
+Depois disso, esse usuário volta obrigatoriamente para o onboarding e refaz o processo.
+
+## Arquivos que serão alterados
+
+- `src/hooks/useUserProfile.ts`
+  - adiciona validação de integridade: `onboarding_completed=true` só vale se existir matriz válida
+
+- `src/pages/Index.tsx`
+  - remove o banner de “Finalizando sua matriz personalizada…”
+
+- `src/hooks/useUserStrategies.ts`
+  - remove polling/background personalization
+  - valida matriz por tamanho mínimo antes de considerar personalizada
+
+- `src/pages/Onboarding.tsx`
+  - impede marcar onboarding completo sem matriz válida
+  - remove caminho de “continuar mesmo assim” que prende usuário sem dados
+  - mantém retry visível da etapa que falhou
+
+## O que não muda
+
+- Prompts
+- Edge functions
+- Modelos Gemini
+- SQL de schema
+- RLS
+- Fluxo de pagamento
+- Painel admin
 
 ## Deploy
 
-Como **edge functions mudam**, você precisa rodar:
+Como a correção de código é frontend-only:
 
 ```bash
-cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
+# VPS: nada para edge functions
+# Vercel: auto-deploy pelo GitHub
 ```
 
-ou simplesmente:
+Mas, por regra do projeto, após o código sincronizar no GitHub, o bloco seguro para a VPS é:
 
 ```bash
-cd /root/app && git pull origin main && docker compose -f /root/supabase/docker/docker-compose.yml restart functions
+cd /root/app && git pull origin main
 ```
 
-Frontend (Vercel) faz auto-deploy do mesmo push.
+Não precisa rodar:
 
-## Garantia
+```bash
+./scripts/deploy-selfhost.sh
+```
 
-Mesmo que `gemini-2.5-flash` ainda dê instabilidade pontual, o `flash-lite` como fallback responde em <8s consistentemente. O usuário **nunca mais vai esperar 2 minutos por uma falha**. Pior caso: 35s + 30s = 65s e ele ou tem resposta ou tem erro claro com mensagem útil.
+porque nenhuma edge function será alterada.
+
+## Resultado esperado
+
+- O app nunca mais deve mostrar “finalizando em segundo plano” como solução principal
+- Usuário sem matriz válida não entra no dashboard como se estivesse completo
+- `onboarding_completed=true` passa a significar: “perfil + matriz personalizada realmente prontos”
+- O cakerollguide@gmail.com volta para o onboarding após o SQL manual
+- Se a geração falhar, o usuário vê exatamente a etapa que falhou e tenta novamente ali
 
