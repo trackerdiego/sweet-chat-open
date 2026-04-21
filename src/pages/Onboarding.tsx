@@ -352,13 +352,10 @@ const Onboarding = () => {
             </div>
 
             {stuckOnError && (
-              <div className="space-y-3">
-                <p className="text-xs text-center text-muted-foreground">
-                  Está difícil personalizar agora. Você pode entrar no app com a matriz base e tentar de novo depois.
+              <div className="space-y-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Está difícil personalizar agora. Aguarde alguns minutos e clique em "Tentar novamente" na etapa que falhou. Sua experiência só fica disponível depois que a matriz é gerada.
                 </p>
-                <Button onClick={skipPipeline} variant="outline" className="w-full">
-                  Continuar mesmo assim
-                </Button>
               </div>
             )}
           </div>
