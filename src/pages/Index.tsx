@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
 
 const Index = () => {
-  const { strategies, loading: strategiesLoading, hasPersonalized, isPersonalizing } = useUserStrategies();
+  const { strategies, loading: strategiesLoading, hasPersonalized } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
   const { profile, signOut } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
