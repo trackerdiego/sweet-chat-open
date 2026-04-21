@@ -10,20 +10,23 @@ import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
 import { CheckoutModal } from '@/components/CheckoutModal';
-import { ChevronRight, Calendar, LogOut, Crown } from 'lucide-react';
+import { ChevronRight, Calendar, LogOut, Crown, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
 
 const Index = () => {
-  const { strategies, loading: strategiesLoading } = useUserStrategies();
+  const { strategies, loading: strategiesLoading, hasPersonalized, isPersonalizing } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
   const { profile, signOut } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  if (strategiesLoading || strategies.length === 0) {
+  // Só mostra skeleton se ainda não temos NENHUMA estratégia (nem fallback).
+  // Como useUserStrategies inicia com fallbackStrategies, isso é raro — só
+  // num primeiríssimo render antes do useEffect rodar.
+  if (strategiesLoading && strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
         <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
