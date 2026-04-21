@@ -403,6 +403,22 @@ const Onboarding = () => {
               })}
             </div>
 
+            {audienceRetryAvailable && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Button onClick={handleRetryAudience} className="w-full gold-gradient text-primary-foreground">
+                  <RefreshCw size={16} /> Tentar análise de nicho novamente
+                </Button>
+              </motion.div>
+            )}
+
+            {visceralRetryAvailable && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Button onClick={handleRetryVisceral} className="w-full gold-gradient text-primary-foreground">
+                  <RefreshCw size={16} /> Tentar estudo visceral novamente
+                </Button>
+              </motion.div>
+            )}
+
             {matrixRetryAvailable && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
                 <Button onClick={handleRetryMatrix} className="flex-1 gold-gradient text-primary-foreground">
