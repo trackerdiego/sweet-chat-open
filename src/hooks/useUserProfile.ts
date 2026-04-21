@@ -133,8 +133,11 @@ export function useUserProfile() {
 
         setProfile(profileData);
 
-        // Skip session token in preview/iframe to avoid kicking real devices
-        if (!isPreviewEnvironment()) {
+        // Skip session token in preview/iframe to avoid kicking real devices.
+        // ALSO skip while onboarding is not finished — rotating the token
+        // mid-onboarding (e.g. user opened a 2nd tab) causes silent 401s
+        // when handleFinish tries to write user_profiles.
+        if (!isPreviewEnvironment() && profileData.onboarding_completed) {
           const token = getOrCreateSessionToken();
           await (supabase.from as any)('user_profiles')
             .update({ active_session_token: token })
