@@ -1,66 +1,67 @@
 
 
-# Plano: regenerar 5 templates HTML com a URL real da logo
+# Plano: diagnosticar por que a logo não carrega no email
 
-## URL da logo confirmada
+## Confirmações do usuário
 
-```
-https://api.influlab.pro/storage/v1/object/public/emails/imagens/ChatGPT%20Image%2020%20de%20mar.%20de%202026,%2012_05_13%20(1).png
-```
+- A URL `https://api.influlab.pro/storage/v1/object/public/emails/imagens/ChatGPT%20Image%2020%20de%20mar.%20de%202026,%2012_05_13%20(1).png` **abre direto no navegador** ✅
+- O bucket `emails` está marcado como **público** ✅
 
-Já está URL-encoded (espaços como `%20`, vírgula preservada) — pronta pra uso direto no `<img src="...">`.
+Se ambos são "sim", o HTML está correto e a logo deveria aparecer. Vou investigar por que não aparece.
+
+## Hipóteses prováveis
+
+1. **Você está abrindo o `.html` direto do disco** (file://) → muitos navegadores bloqueiam imagens externas em arquivos locais por CORS/mixed-context. **Isso NÃO afeta o email real** — quando o GoTrue enviar, o cliente de email (Gmail, Outlook) carrega normalmente.
+
+2. **Caractere especial na URL** (vírgula `,` e parênteses `(1)`) — alguns parsers HTML/email tratam esses caracteres como delimitadores. Mesmo URL-encoded, é frágil. Renomear o arquivo no bucket pra algo limpo (`influlab-logo.png`) elimina o risco.
+
+3. **Cache do preview do Lovable** servindo a versão antiga do HTML.
 
 ## O que vou fazer
 
-1. **Regenerar `recovery.html`** do zero (o anterior estava corrompido / não abria no preview)
-2. **Substituir `{{LOGO_URL}}`** pela URL real nos 5 templates:
-   - `recovery.html`
-   - `confirmation.html`
-   - `magic-link.html`
-   - `invite.html`
-   - `email-change.html`
-3. **QA visual**: renderizar cada HTML em PNG via headless Chromium e inspecionar — confirmar que a logo carrega da URL pública, botão CTA aparece roxo, layout está íntegro nos 5
-4. **Empacotar** em `/mnt/documents/influlab-email-templates-v2.zip`
+1. **Abrir e inspecionar** os 5 HTMLs do `email-templates-v2` pra confirmar que a tag `<img src="...">` está correta e a URL real (não `{{LOGO_URL}}`) está lá
+2. **Testar a URL da logo via curl** pra confirmar:
+   - Status 200
+   - `Content-Type: image/png`
+   - Sem redirect estranho
+   - Headers CORS permissivos
+3. **Renderizar 1 template num PNG via headless Chromium** com network ativado, e checar:
+   - Se a imagem carrega no contexto HTTP real
+   - Se há erro de console (CORS, 404, mixed content)
+4. **Diagnóstico final**: te dizer se o problema é só preview local (email real funciona) ou se precisa renomear a imagem no bucket
 
-## Estrutura visual mantida
+## Recomendação preventiva
 
-Mesma da v1 (já aprovada):
-- Container 600px centralizado, fundo `#ffffff`
-- Logo no topo, `max-width: 180px`, centralizada — agora carregando da URL real
-- Faixa de acento gradiente roxo→violeta (`hsl(258 60% 55%)` → `hsl(280 70% 60%)`)
-- Título `hsl(260, 20%, 15%)`, corpo `hsl(260, 10%, 45%)`
-- Botão CTA roxo sólido, `border-radius: 12px`, padding 14px 28px
-- Footer com link pro app + email do destinatário
-- Inline styles + layout em `<table>` (compat Outlook/Gmail/iOS Mail)
-
-## Placeholders GoTrue mantidos
-
+Independente do diagnóstico, sugiro **renomear a imagem no bucket** de:
 ```
-{{ .ConfirmationURL }}  → href do botão CTA
-{{ .Email }}            → email do destinatário (footer)
-{{ .NewEmail }}         → email novo (só email-change.html)
-{{ .SiteURL }}          → link do app no footer
+ChatGPT Image 20 de mar. de 2026, 12_05_13 (1).png
 ```
+para:
+```
+influlab-logo.png
+```
+
+Nova URL ficaria limpa:
+```
+https://api.influlab.pro/storage/v1/object/public/emails/imagens/influlab-logo.png
+```
+
+Vantagens:
+- Sem espaços, vírgulas, parênteses → zero risco de parsing em qualquer cliente de email
+- URL legível
+- Fácil de manter
 
 ## Saída
 
-Único artefato: `influlab-email-templates-v2.zip` contendo os 5 HTMLs prontos pra subir no bucket `emails` do seu Supabase self-hosted e apontar no GoTrue.
-
-## Próximos passos pós-entrega (instruções que vou repetir na resposta)
-
-1. Subir os 5 HTMLs no bucket público (ex: `emails/templates/`)
-2. Pegar a URL pública de cada template
-3. Editar `~/supabase/docker/.env`:
-   ```
-   GOTRUE_MAILER_TEMPLATES_RECOVERY=https://api.influlab.pro/storage/v1/object/public/emails/templates/recovery.html
-   GOTRUE_MAILER_SUBJECTS_RECOVERY="Redefinir sua senha"
-   # (repetir pros outros 4)
-   ```
-4. `docker compose up -d --force-recreate auth`
+Após o diagnóstico, gero **`influlab-email-templates-v3.zip`** com os 5 templates apontando pra URL nova (`influlab-logo.png`), pronto pra você:
+1. Renomear o arquivo no bucket Storage
+2. Subir os 5 HTMLs no bucket
+3. Apontar no GoTrue
 
 ## O que NÃO faço
 
-- Não embuto base64 (Gmail/Outlook bloqueiam)
-- Não toco no app, edge functions, ou auth-email-hook
-- Não chamo `email_domain--*` tools (irrelevantes pro fluxo self-hosted GoTrue puro)
+- Não toco no código do app
+- Não envio email de teste (não temos GoTrue aqui — você testa no fluxo real)
+- Não embuto base64 (Gmail bloqueia >100KB)
+- Não uso ferramentas de email_domain (irrelevantes pro self-hosted GoTrue)
 
