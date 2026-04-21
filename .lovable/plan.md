@@ -1,93 +1,68 @@
 
 
-# Plano: estabilizar pipeline de onboarding (sem perder qualidade dos prompts)
+# Resposta: sim, matriz mockada temporária durante a análise
 
-## Diagnóstico — por que onboarding falha mas o resto do app funciona
-
-| Function | Chamadas Gemini | Modelo | Tempo típico | Timeout do gateway |
-|---|---|---|---|---|
-| `generate-script` | 1 | flash | 10-25s | ✅ ok |
-| `generate-tools-content` | 1 | flash | 15-30s | ✅ ok |
-| `generate-daily-guide` | 2 paralelas | flash | 20-35s | ✅ ok |
-| **`generate-audience-profile`** | **2 sequenciais** | **2.5-pro** | **60-180s** | ❌ estoura |
-| **`generate-personalized-matrix`** | **4 paralelas** | **2.5-pro** | **60-120s** | ⚠️ borderline |
-
-**Causa raiz**: o estudo visceral (audience-profile) usa `gemini-2.5-pro` em **duas etapas sequenciais** (descrição + avatar), cada uma com `timeoutMs: 120000` no backend. Total: até 240s. Mas:
-- O Kong/gateway do Supabase self-hosted tem timeout default de ~60s
-- O `supabase.functions.invoke` no browser não streama — aguarda response inteiro
-- Resultado: o frontend recebe erro de rede/timeout antes do Gemini terminar, mesmo com a function ainda viva
-
-Os prompts e a qualidade do estudo visceral **não precisam mudar**. O que muda é a arquitetura: separar as 2 etapas do audience-profile em 2 chamadas client→function distintas (cada uma <60s), igual ao padrão que funciona no resto do app.
-
-## O que vai mudar
-
-### 1. Edge function `generate-audience-profile` — dividir em 2 modos
-
-Hoje a function faz step1+step2 numa request só. Vou aceitar um parâmetro `step` ('description' ou 'avatar') e devolver/persistir parcial:
-
-- **`step: 'description'`** → roda só step1 (gemini-2.5-pro, descrição livre). Persiste `audience_description` em `audience_profiles`. Tempo: ~25-50s.
-- **`step: 'avatar'`** → lê `audience_description` salva, roda step2 (gemini-2.5-pro com schema). Persiste `avatar_profile`. Tempo: ~30-60s.
-
-Cada chamada cabe no timeout do gateway. Os prompts continuam **idênticos** (mesmo system, mesmo schema visceral de 30+ campos, mesmo modelo). Só muda o transporte.
-
-Fallback: se `gemini-2.5-pro` der timeout no `tryModel`, o helper `callGeminiNative` já cai pra `gemini-2.5-flash` automaticamente — só preciso reduzir `timeoutMs` interno de 120s pra 55s pra forçar o fallback antes do gateway cortar.
-
-### 2. Edge function `generate-personalized-matrix` — proteção idêntica ao Stack Overflow pattern
-
-Hoje retorna 500/502 cru quando Gemini falha. Vou:
-- Reduzir `timeoutMs` interno de 90s → 55s por semana (4 chamadas paralelas continuam paralelas, mas com fallback rápido)
-- Garantir que erros retornem `{ error, retryable: true }` com status 200 quando forem falhas transitórias do Gemini, pra o cliente saber distinguir "tente de novo" de "deu ruim de verdade"
-
-Prompts e schema **não mudam**.
-
-### 3. Onboarding (`src/pages/Onboarding.tsx`) — chamar 3 etapas separadas
-
-Substituir a chamada única `generate-audience-profile` por **2 chamadas sequenciais**:
+## Como vai funcionar
 
 ```text
-handleFinish flow:
-1. Salva profile (já existe)
-2. Pipeline UI:
-   ├─ Step "audience" ACTIVE
-   │  └─ invoke('generate-audience-profile', { step: 'description' })
-   │     └─ on success → audience DONE
-   ├─ Step "visceral" ACTIVE
-   │  └─ invoke('generate-audience-profile', { step: 'avatar' })
-   │     └─ on success → visceral DONE
-   ├─ Step "matrix" ACTIVE
-   │  └─ invoke('generate-personalized-matrix') (já existe)
-   │     ├─ on success → matrix DONE → finalize
-   │     └─ on error → mostra retry/skip (já existe)
-   └─ Step "finalize" → updateProfile({ onboarding_completed: true })
+Usuário finaliza onboarding
+        ↓
+Entra direto no app (sem espera)
+        ↓
+Dashboard mostra matriz PADRÃO (fallbackStrategies — já existe em src/data/strategies.ts)
+        ↓
+Em background: descrição → avatar → matriz personalizada
+        ↓
+Quando matriz personalizada salva → app troca automaticamente
 ```
 
-Vantagens:
-- Cada chamada <60s ⇒ não estoura gateway
-- Barra de progresso reflete realidade (cada etapa termina com sucesso real)
-- Se "visceral" (step 2) falhar, "audience" (step 1) já está salva no banco — retry só refaz o avatar, não a descrição inteira
-- Mantém UX atual com os 4 cards ("Analisando", "Estudo visceral", "Matriz", "Finalizando")
+## O que o usuário vê em cada momento
 
-### 4. Retry granular no frontend
+**Momento 1 — acabou de finalizar onboarding (0s):**
+- Entra no dashboard
+- Matriz dos 30 dias visível com conteúdo padrão (`fallbackStrategies`)
+- Banner discreto no topo: *"Personalizando sua matriz com base no seu público... isso leva ~2 minutos"*
+- Pode navegar, ler, marcar tarefas — tudo funciona
 
-Adicionar handler de retry específico pra cada etapa (hoje só matrix tem retry). Se "Estudo visceral" falhar, botão "Tentar novamente" refaz só o step `avatar` — barato e rápido.
+**Momento 2 — análise em andamento (30-90s):**
+- Mesma matriz padrão visível
+- Banner atualiza: *"Estudo do seu público pronto. Gerando matriz personalizada..."*
 
-## Arquivos tocados
+**Momento 3 — matriz personalizada pronta (~120s):**
+- Banner some
+- Toast: *"Sua matriz personalizada está pronta!"*
+- Conteúdo dos 30 dias atualiza automaticamente (hook `useUserStrategies` re-fetch)
+- Os dias que o usuário já viu/marcou continuam com progresso preservado (progresso é por número do dia, não por conteúdo)
 
-- `supabase/functions/generate-audience-profile/index.ts` — aceitar `step` param, dividir lógica, reduzir timeout interno
-- `supabase/functions/generate-personalized-matrix/index.ts` — reduzir timeout interno por semana, padronizar erro retryable
-- `src/pages/Onboarding.tsx` — orquestrar 3 invocações separadas + retry granular por etapa
-- **Nada muda em**: prompts, schemas viscerais, modelos Gemini, `_shared/gemini.ts`, fluxo de finalização, UI dos 4 cards
+## Por que isso funciona sem prejuízo
 
-## O que NÃO faço
+1. **`fallbackStrategies` já existe e já é usado** — o hook `useUserStrategies` já cai nele quando `user_strategies` está vazio. Não vou criar mock novo, só vou tornar essa transição visível e intencional em vez de "acidente de loading".
 
-- Não mudo nenhum prompt (refinados, mantidos)
-- Não troco modelo (continua gemini-2.5-pro pro estudo visceral)
-- Não removo o schema de 30+ campos
-- Não toco em `_shared/gemini.ts` (helper já tem retry/fallback robustos)
-- Não mexo em outras edge functions que já funcionam
-- Não aplico migrations — schema do `audience_profiles` já comporta upsert parcial (`audience_description` separado de `avatar_profile`)
+2. **Progresso é por dia (1-30), não por conteúdo** — quando a matriz personalizada chega, dia 1 continua sendo dia 1. Marcações, streak, pontos: tudo intacto.
 
-## Resultado esperado
+3. **Pillar/estrutura é igual** — fallback e personalizada seguem o mesmo schema (`DayStrategy[]` com pillar, title, hook, tarefas). A troca é transparente visualmente.
 
-Onboarding completo em ~90-150s (3 chamadas curtas em vez de 1 longa que o gateway mata aos 60s). Sem mais erro vermelho no "Estudo visceral", e quando algo realmente falhar, o retry só refaz a etapa que quebrou em vez do pipeline inteiro.
+## Detalhe importante sobre "mockada"
+
+Não é mock no sentido de "dados falsos só pra preencher". É a **matriz base de 30 dias** original do app — a mesma que rodou durante todo o desenvolvimento antes de existir personalização. Conteúdo de qualidade, só não adaptado ao nicho específico do usuário.
+
+## Polling automático
+
+Adiciono polling leve no dashboard:
+- A cada 15s, verifica se `user_strategies` foi populado
+- Quando aparece → atualiza estado → mostra toast
+- Para de pollar após sucesso ou após 5 minutos (timeout)
+
+Custo: 1 query a cada 15s só durante a janela de geração. Para depois.
+
+## Fallback de falha
+
+Se a IA falhar de verdade (após retry interno):
+- Banner muda pra: *"Não conseguimos personalizar agora. Você está usando a matriz base. [Tentar novamente]"*
+- Botão de retry dispara só a etapa que falhou
+- App continua 100% funcional com matriz base indefinidamente
+
+## Resumo da sua pergunta
+
+**Sim** — matriz base aparece imediatamente, usuário usa o app normal, e a personalizada substitui automaticamente quando fica pronta. Sem tela vermelha, sem espera, sem perda de qualidade nos prompts.
 
