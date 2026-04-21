@@ -87,6 +87,18 @@ const Onboarding = () => {
     }
   };
 
+  const markOnboardingCompleted = async () => {
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return;
+      await (supabase.from as any)('user_profiles')
+        .update({ onboarding_completed: true })
+        .eq('user_id', userId);
+    } catch (e) {
+      console.error('[onboarding] failed to mark completed', e);
+    }
+  };
+
   const runPipeline = async (startFrom: PipelineStage = 'audience') => {
     const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
     const startIdx = order.indexOf(startFrom);
@@ -99,7 +111,8 @@ const Onboarding = () => {
       if (!ok) return; // stop on error; user can retry
     }
 
-    // All done
+    // All done — only now mark onboarding as completed
+    await markOnboardingCompleted();
     toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
     setTimeout(() => window.location.replace('/'), 1000);
   };
