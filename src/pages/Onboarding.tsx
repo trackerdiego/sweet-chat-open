@@ -87,6 +87,18 @@ const Onboarding = () => {
     }
   };
 
+  const markOnboardingCompleted = async () => {
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return;
+      await (supabase.from as any)('user_profiles')
+        .update({ onboarding_completed: true })
+        .eq('user_id', userId);
+    } catch (e) {
+      console.error('[onboarding] failed to mark completed', e);
+    }
+  };
+
   const runPipeline = async (startFrom: PipelineStage = 'audience') => {
     const order: PipelineStage[] = ['audience', 'visceral', 'matrix'];
     const startIdx = order.indexOf(startFrom);
@@ -99,7 +111,8 @@ const Onboarding = () => {
       if (!ok) return; // stop on error; user can retry
     }
 
-    // All done
+    // All done — only now mark onboarding as completed
+    await markOnboardingCompleted();
     toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
     setTimeout(() => window.location.replace('/'), 1000);
   };
@@ -107,12 +120,15 @@ const Onboarding = () => {
   const handleFinish = async () => {
     setSaving(true);
 
+    // IMPORTANT: do NOT mark onboarding_completed=true here. We only mark it
+    // after the 3-stage pipeline finishes successfully (or after the user
+    // consciously chooses "Continue anyway"). Otherwise a closed tab leaves
+    // the user stuck with flag=true but no personalized matrix.
     const payload = {
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
       secondary_niches: [] as string[],
       content_style: contentStyle,
-      onboarding_completed: true,
       description_status: 'ok' as const,
     };
 
@@ -178,9 +194,12 @@ const Onboarding = () => {
     if (next && stages[next].status === 'pending' && stages.audience.status !== 'running' && stages.visceral.status !== 'running' && stages.matrix.status !== 'running') {
       runPipeline(next);
     } else if (!next && order.every(s => stages[s].status === 'done')) {
-      // All done from resume
-      toast.success('✨ Tudo pronto!');
-      setTimeout(() => window.location.replace('/'), 800);
+      // All done from resume — mark completed then redirect
+      (async () => {
+        await markOnboardingCompleted();
+        toast.success('✨ Tudo pronto!');
+        setTimeout(() => window.location.replace('/'), 800);
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPipeline]);
@@ -190,7 +209,8 @@ const Onboarding = () => {
     setTimeout(() => runPipeline(stage), 100);
   };
 
-  const skipPipeline = () => {
+  const skipPipeline = async () => {
+    await markOnboardingCompleted();
     toast.message('Você poderá personalizar depois nas configurações.');
     window.location.replace('/');
   };
