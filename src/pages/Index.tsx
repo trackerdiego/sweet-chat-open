@@ -10,20 +10,23 @@ import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
 import { CheckoutModal } from '@/components/CheckoutModal';
-import { ChevronRight, Calendar, LogOut, Crown } from 'lucide-react';
+import { ChevronRight, Calendar, LogOut, Crown, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState } from 'react';
 
 const Index = () => {
-  const { strategies, loading: strategiesLoading } = useUserStrategies();
+  const { strategies, loading: strategiesLoading, hasPersonalized, isPersonalizing } = useUserStrategies();
   const { state, dailyProgress, completedDays } = useInfluencer(strategies);
   const { profile, signOut } = useUserProfile();
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  if (strategiesLoading || strategies.length === 0) {
+  // Só mostra skeleton se ainda não temos NENHUMA estratégia (nem fallback).
+  // Como useUserStrategies inicia com fallbackStrategies, isso é raro — só
+  // num primeiríssimo render antes do useEffect rodar.
+  if (strategiesLoading && strategies.length === 0) {
     return (
       <div className="min-h-screen pb-24 md:pt-20">
         <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
@@ -72,6 +75,21 @@ const Index = () => {
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-4 -mt-6">
+        {isPersonalizing && !hasPersonalized && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="glass-card p-4 border border-primary/20 bg-primary/5 flex items-center gap-3"
+          >
+            <Loader2 size={18} className="text-primary animate-spin shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Personalizando sua matriz de 30 dias…</p>
+              <p className="text-xs text-muted-foreground">
+                Você já pode explorar o app. A matriz adaptada ao seu público aparece sozinha em ~2 min.
+              </p>
+            </div>
+          </motion.div>
+        )}
         {profile && profile.description_status === 'pending' && profile.onboarding_completed && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}

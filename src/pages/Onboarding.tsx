@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -8,8 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, Users, Brain, Calendar, RefreshCw, CheckCircle } from 'lucide-react';
-import { Progress } from '@/components/ui/progress';
+import { ArrowRight, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
 const contentStyles = [
@@ -18,20 +17,74 @@ const contentStyles = [
   { id: 'divertido', label: 'Divertido', description: 'Engraçado e irreverente, com memes e trends', emoji: '🎉' },
 ];
 
-type PipelineStep = {
-  id: string;
-  label: string;
-  sublabel: string;
-  icon: React.ElementType;
-  status: 'pending' | 'active' | 'done' | 'error';
-};
+/**
+ * Dispara a personalização em background sem aguardar resposta.
+ * O frontend não trava: o usuário entra no app imediatamente e a matriz
+ * personalizada é trocada quando ficar pronta (ver useUserStrategies).
+ *
+ * Usa keepalive: true via fetch direto para garantir que a request não seja
+ * cancelada quando a página navegar.
+ */
+async function fireAndForgetPersonalization(payload: {
+  primaryNiche: string;
+  secondaryNiches: string[];
+  contentStyle: string;
+}) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
 
-const INITIAL_STEPS: PipelineStep[] = [
-  { id: 'audience', label: 'Analisando seu nicho e público', sublabel: 'Identificando oportunidades...', icon: Users, status: 'pending' },
-  { id: 'visceral', label: 'Estudo visceral do seu público', sublabel: 'Mapeando medos, desejos e gatilhos...', icon: Brain, status: 'pending' },
-  { id: 'matrix', label: 'Criando sua Matriz de 30 dias', sublabel: 'Construindo estratégias personalizadas...', icon: Calendar, status: 'pending' },
-  { id: 'finalize', label: 'Finalizando seu perfil', sublabel: 'Salvando configurações...', icon: CheckCircle, status: 'pending' },
-];
+    const SUPABASE_URL = "https://api.influlab.pro";
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': (supabase as any).supabaseKey || '',
+    };
+
+    // Step 1: descrição → quando terminar, dispara avatar → quando terminar, dispara matriz.
+    // Encadeamento feito do lado do cliente, mas SEM bloquear a UI: cada chamada é
+    // disparada com keepalive e o frontend não aguarda.
+    const runChain = async () => {
+      try {
+        // 1. descrição
+        const r1 = await fetch(`${SUPABASE_URL}/functions/v1/generate-audience-profile`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...payload, step: 'description' }),
+          keepalive: true,
+        });
+        if (!r1.ok) { console.warn('[bg] description failed', r1.status); return; }
+
+        // 2. avatar
+        const r2 = await fetch(`${SUPABASE_URL}/functions/v1/generate-audience-profile`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...payload, step: 'avatar' }),
+          keepalive: true,
+        });
+        if (!r2.ok) { console.warn('[bg] avatar failed', r2.status); return; }
+
+        // 3. matriz personalizada
+        const r3 = await fetch(`${SUPABASE_URL}/functions/v1/generate-personalized-matrix`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          keepalive: true,
+        });
+        if (!r3.ok) { console.warn('[bg] matrix failed', r3.status); return; }
+
+        console.log('[bg] personalization chain complete');
+      } catch (e) {
+        console.warn('[bg] chain error', e);
+      }
+    };
+
+    // Não awaita: deixa rodar em background.
+    runChain();
+  } catch (e) {
+    console.warn('[bg] failed to start personalization', e);
+  }
+}
 
 const Onboarding = () => {
   const { updateProfile, profile } = useUserProfile();
@@ -44,34 +97,6 @@ const Onboarding = () => {
   );
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
   const [saving, setSaving] = useState(false);
-  const [showPipeline, setShowPipeline] = useState(false);
-  const [pipelineProgress, setPipelineProgress] = useState(0);
-  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>(INITIAL_STEPS);
-  const [matrixRetryAvailable, setMatrixRetryAvailable] = useState(false);
-  const [audienceRetryAvailable, setAudienceRetryAvailable] = useState(false);
-  const [visceralRetryAvailable, setVisceralRetryAvailable] = useState(false);
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopProgressTick = useCallback(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  }, []);
-
-  const startProgressTick = useCallback((max: number) => {
-    stopProgressTick();
-    progressIntervalRef.current = setInterval(() => {
-      setPipelineProgress(prev => {
-        if (prev >= max) return prev;
-        return Math.min(prev + 1, max);
-      });
-    }, 2000);
-  }, [stopProgressTick]);
-
-  useEffect(() => {
-    return () => stopProgressTick();
-  }, [stopProgressTick]);
 
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
@@ -80,159 +105,34 @@ const Onboarding = () => {
     return false;
   };
 
-  const updateStepStatus = (stepId: string, status: PipelineStep['status']) => {
-    setPipelineSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
-  };
-
-  const runAudienceDescription = async (): Promise<boolean> => {
-    const { error } = await supabase.functions.invoke('generate-audience-profile', {
-      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle, step: 'description' },
-    });
-    return !error;
-  };
-
-  const runVisceralAvatar = async (): Promise<boolean> => {
-    const { error } = await supabase.functions.invoke('generate-audience-profile', {
-      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle, step: 'avatar' },
-    });
-    return !error;
-  };
-
-  const runMatrixGeneration = async (): Promise<boolean> => {
-    const { error } = await supabase.functions.invoke('generate-personalized-matrix', {
-      body: { primaryNiche: businessDescription.trim(), secondaryNiches: [], contentStyle },
-    });
-    return !error;
-  };
-
-  const finalizeOnboarding = async () => {
-    updateStepStatus('finalize', 'active');
-    setPipelineProgress(95);
-
-    const completeResult = await updateProfile({ onboarding_completed: true, description_status: 'ok' as any });
-    if (completeResult?.error) {
-      await new Promise(r => setTimeout(r, 1000));
-      const retry = await updateProfile({ onboarding_completed: true, description_status: 'ok' as any });
-      if (retry?.error) {
-        updateStepStatus('finalize', 'error');
-        toast.error('Erro ao finalizar. Tente novamente.');
-        return;
-      }
-    }
-
-    updateStepStatus('finalize', 'done');
-    setPipelineProgress(100);
-    await new Promise(r => setTimeout(r, 800));
-    window.location.replace('/');
-  };
-
-  const continueFromMatrix = async () => {
-    updateStepStatus('matrix', 'active');
-    startProgressTick(85);
-    let matrixSuccess = await runMatrixGeneration();
-    if (!matrixSuccess) {
-      stopProgressTick();
-      await new Promise(r => setTimeout(r, 3000));
-      startProgressTick(90);
-      matrixSuccess = await runMatrixGeneration();
-    }
-    stopProgressTick();
-    if (matrixSuccess) {
-      updateStepStatus('matrix', 'done');
-      setPipelineProgress(92);
-      await finalizeOnboarding();
-    } else {
-      updateStepStatus('matrix', 'error');
-      setPipelineProgress(75);
-      setMatrixRetryAvailable(true);
-    }
-  };
-
-  const continueFromVisceral = async () => {
-    updateStepStatus('visceral', 'active');
-    startProgressTick(55);
-    let ok = await runVisceralAvatar();
-    if (!ok) {
-      stopProgressTick();
-      await new Promise(r => setTimeout(r, 2000));
-      startProgressTick(58);
-      ok = await runVisceralAvatar();
-    }
-    stopProgressTick();
-    if (ok) {
-      updateStepStatus('visceral', 'done');
-      setPipelineProgress(60);
-      await continueFromMatrix();
-    } else {
-      updateStepStatus('visceral', 'error');
-      setPipelineProgress(45);
-      setVisceralRetryAvailable(true);
-    }
-  };
-
-  const handleRetryAudience = async () => {
-    setAudienceRetryAvailable(false);
-    updateStepStatus('audience', 'active');
-    startProgressTick(25);
-    const ok = await runAudienceDescription();
-    stopProgressTick();
-    if (ok) {
-      updateStepStatus('audience', 'done');
-      setPipelineProgress(30);
-      await continueFromVisceral();
-    } else {
-      updateStepStatus('audience', 'error');
-      setAudienceRetryAvailable(true);
-      toast.error('Análise de nicho falhou novamente.');
-    }
-  };
-
-  const handleRetryVisceral = async () => {
-    setVisceralRetryAvailable(false);
-    await continueFromVisceral();
-  };
-
-  const handleRetryMatrix = async () => {
-    setMatrixRetryAvailable(false);
-    await continueFromMatrix();
-  };
-
-  const handleSkipMatrix = async () => {
-    setMatrixRetryAvailable(false);
-    toast.warning('A matriz será gerada em breve. Você já pode explorar o app!');
-    await finalizeOnboarding();
-  };
-
   const handleFinish = async () => {
     setSaving(true);
 
-    let result = await updateProfile({
+    const payload = {
       display_name: displayName.trim(),
       primary_niche: businessDescription.trim(),
-      secondary_niches: [],
+      secondary_niches: [] as string[],
       content_style: contentStyle,
-    });
+      onboarding_completed: true,
+      description_status: 'ok' as const,
+    };
+
+    // 1. Salva o perfil COMPLETO já marcando onboarding_completed=true.
+    // Sem espera por IA: o usuário não pode mais ficar travado em tela vermelha.
+    let result = await updateProfile(payload);
 
     if (result?.error) {
-      await new Promise(r => setTimeout(r, 1000));
-      result = await updateProfile({
-        display_name: displayName.trim(),
-        primary_niche: businessDescription.trim(),
-        secondary_niches: [],
-        content_style: contentStyle,
-      });
+      await new Promise(r => setTimeout(r, 800));
+      result = await updateProfile(payload);
     }
 
     if (result?.error) {
+      // Fallback: upsert direto
       try {
         const { error: directError } = await (supabase.from as any)('user_profiles')
           .upsert({
             user_id: (await supabase.auth.getUser()).data.user?.id,
-            display_name: displayName.trim(),
-            primary_niche: businessDescription.trim(),
-            secondary_niches: [],
-            content_style: contentStyle,
-            onboarding_completed: false,
+            ...payload,
           }, { onConflict: 'user_id' });
         if (directError) {
           toast.error('Erro ao salvar perfil. Tente novamente.');
@@ -246,35 +146,18 @@ const Onboarding = () => {
       }
     }
 
-    setShowPipeline(true);
-    setPipelineProgress(3);
+    // 2. Dispara personalização em background (não aguarda).
+    fireAndForgetPersonalization({
+      primaryNiche: businessDescription.trim(),
+      secondaryNiches: [],
+      contentStyle,
+    });
 
-    // ─── Etapa 1: descrição do público (~30-50s, cabe no gateway de 60s) ───
-    updateStepStatus('audience', 'active');
-    startProgressTick(25);
-
-    let audienceOk = await runAudienceDescription();
-    if (!audienceOk) {
-      stopProgressTick();
-      await new Promise(r => setTimeout(r, 2000));
-      startProgressTick(28);
-      audienceOk = await runAudienceDescription();
-    }
-    stopProgressTick();
-
-    if (!audienceOk) {
-      updateStepStatus('audience', 'error');
-      setPipelineProgress(15);
-      setAudienceRetryAvailable(true);
-      toast.error('Erro ao analisar nicho. Tente novamente.');
-      return;
-    }
-
-    updateStepStatus('audience', 'done');
-    setPipelineProgress(30);
-
-    // ─── Etapa 2: avatar visceral (~30-60s) → cascata pra matriz ───
-    await continueFromVisceral();
+    // 3. Redireciona imediatamente. O dashboard mostra a matriz base e troca
+    //    automaticamente quando a personalizada chegar (polling no useUserStrategies).
+    toast.success('Tudo pronto! Personalizando sua experiência em segundo plano...');
+    await new Promise(r => setTimeout(r, 400));
+    window.location.replace('/');
   };
 
   const steps = [
@@ -362,86 +245,6 @@ const Onboarding = () => {
     </motion.div>,
   ];
 
-  if (showPipeline) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center">
-          <span className="font-serif text-xl font-bold text-primary">InfluLab</span>
-          <p className="text-white/60 text-sm mt-1">Preparando tudo para você</p>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-6">
-          <div className="w-full max-w-sm space-y-8">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-3">
-              <motion.div animate={{ rotate: [0, 5, -5, 0] }} transition={{ repeat: Infinity, duration: 3 }} className="text-5xl">✨</motion.div>
-              <h2 className="font-serif text-xl font-bold">Estamos construindo algo único para você, {displayName}</h2>
-              <p className="text-muted-foreground text-sm">Isso leva cerca de 1 minuto...</p>
-            </motion.div>
-            <div className="space-y-4">
-              {pipelineSteps.map((ps, i) => {
-                const Icon = ps.icon;
-                return (
-                  <motion.div key={ps.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }}
-                    className={`flex items-start gap-3 p-3 rounded-xl transition-all duration-500 ${
-                      ps.status === 'active' ? 'bg-primary/10 ring-1 ring-primary/30' :
-                      ps.status === 'done' ? 'bg-emerald-500/10' :
-                      ps.status === 'error' ? 'bg-destructive/10' : 'bg-muted/30'
-                    }`}
-                  >
-                    <div className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      ps.status === 'active' ? 'bg-primary/20 text-primary' :
-                      ps.status === 'done' ? 'bg-emerald-500/20 text-emerald-500' :
-                      ps.status === 'error' ? 'bg-destructive/20 text-destructive' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {ps.status === 'active' ? <Loader2 size={16} className="animate-spin" /> : ps.status === 'done' ? <Check size={16} /> : <Icon size={16} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${ps.status === 'done' ? 'text-emerald-500' : ps.status === 'active' ? 'text-foreground' : ps.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{ps.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{ps.status === 'done' ? 'Concluído ✓' : ps.status === 'error' ? 'Erro (tentando novamente...)' : ps.sublabel}</p>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {audienceRetryAvailable && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                <Button onClick={handleRetryAudience} className="w-full gold-gradient text-primary-foreground">
-                  <RefreshCw size={16} /> Tentar análise de nicho novamente
-                </Button>
-              </motion.div>
-            )}
-
-            {visceralRetryAvailable && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                <Button onClick={handleRetryVisceral} className="w-full gold-gradient text-primary-foreground">
-                  <RefreshCw size={16} /> Tentar estudo visceral novamente
-                </Button>
-              </motion.div>
-            )}
-
-            {matrixRetryAvailable && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
-                <Button onClick={handleRetryMatrix} className="flex-1 gold-gradient text-primary-foreground">
-                  <RefreshCw size={16} /> Tentar novamente
-                </Button>
-                <Button variant="outline" onClick={handleSkipMatrix} className="flex-1">
-                  Pular e continuar
-                </Button>
-              </motion.div>
-            )}
-
-            <div className="space-y-2">
-              <Progress value={pipelineProgress} className="h-2" />
-              <p className="text-center text-xs text-muted-foreground">
-                {pipelineProgress < 100 ? `${Math.round(pipelineProgress)}% concluído` : 'Finalizado! Redirecionando...'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex flex-col">
       <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center">
@@ -458,7 +261,7 @@ const Onboarding = () => {
           <AnimatePresence mode="wait">{steps[step]}</AnimatePresence>
           <div className="flex gap-3">
             {step > 0 && (
-              <Button variant="outline" onClick={() => setStep(s => s - 1)} className="flex-1">
+              <Button variant="outline" onClick={() => setStep(s => s - 1)} className="flex-1" disabled={saving}>
                 <ArrowLeft size={16} /> Voltar
               </Button>
             )}
@@ -469,10 +272,13 @@ const Onboarding = () => {
             ) : (
               <Button onClick={handleFinish} disabled={saving} className="flex-1 gold-gradient text-primary-foreground shadow-md shadow-primary/20">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {saving ? 'Preparando...' : 'Começar Jornada'}
+                {saving ? 'Salvando...' : 'Começar Jornada'}
               </Button>
             )}
           </div>
+          <p className="text-center text-xs text-muted-foreground px-4">
+            Sua matriz personalizada é gerada em segundo plano. Você já entra no app e ela aparece automaticamente quando estiver pronta (~2 min).
+          </p>
         </div>
       </div>
     </div>
