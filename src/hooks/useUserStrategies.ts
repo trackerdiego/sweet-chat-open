@@ -77,17 +77,20 @@ export function useUserStrategies() {
       setLoading(false);
 
       if (!isPoll && !pollingRef.current) {
-        // Inicia polling: a cada 15s, por até 5min.
+        // Polling agressivo (8s) nos primeiros 30s, depois 15s até 5min total.
         pollStartRef.current = Date.now();
         setIsPersonalizing(true);
-        pollingRef.current = setInterval(() => {
+        const tick = () => {
           const elapsed = Date.now() - pollStartRef.current;
           if (elapsed > 5 * 60 * 1000) {
             stopPolling();
             return;
           }
           fetchStrategies(true);
-        }, 15000);
+          const nextDelay = elapsed < 30_000 ? 8000 : 15000;
+          pollingRef.current = setTimeout(tick, nextDelay) as unknown as ReturnType<typeof setInterval>;
+        };
+        pollingRef.current = setTimeout(tick, 8000) as unknown as ReturnType<typeof setInterval>;
       }
     };
 
