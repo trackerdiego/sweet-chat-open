@@ -194,9 +194,12 @@ const Onboarding = () => {
     if (next && stages[next].status === 'pending' && stages.audience.status !== 'running' && stages.visceral.status !== 'running' && stages.matrix.status !== 'running') {
       runPipeline(next);
     } else if (!next && order.every(s => stages[s].status === 'done')) {
-      // All done from resume
-      toast.success('✨ Tudo pronto!');
-      setTimeout(() => window.location.replace('/'), 800);
+      // All done from resume — mark completed then redirect
+      (async () => {
+        await markOnboardingCompleted();
+        toast.success('✨ Tudo pronto!');
+        setTimeout(() => window.location.replace('/'), 800);
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPipeline]);
@@ -206,7 +209,8 @@ const Onboarding = () => {
     setTimeout(() => runPipeline(stage), 100);
   };
 
-  const skipPipeline = () => {
+  const skipPipeline = async () => {
+    await markOnboardingCompleted();
     toast.message('Você poderá personalizar depois nas configurações.');
     window.location.replace('/');
   };
