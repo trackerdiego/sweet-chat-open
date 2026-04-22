@@ -161,8 +161,30 @@ deploy_docker_fallback() {
   done
 
   echo ""
+  echo "🧪 Validando YAML do docker-compose antes de mexer no container ..."
+  if ! (cd "$STACK" && $DC config -q) 2>/tmp/dc-config-err; then
+    echo "❌ docker-compose.yml inválido em $STACK/docker-compose.yml"
+    echo ""
+    cat /tmp/dc-config-err
+    echo ""
+    echo "👉 Rode para ver a linha exata:"
+    echo "     cd $STACK && docker compose config"
+    echo ""
+    echo "Pegadinhas comuns:"
+    echo "  • 'environment:' com indentação diferente de 'volumes:' (precisam estar no mesmo nível)"
+    echo "  • duas chaves 'depends_on:' no mesmo service (precisa mesclar em uma só)"
+    echo "  • mistura de tab e espaço"
+    exit 1
+  fi
+  echo "   ok"
+
+  echo ""
   echo "🔄 Restart do container functions ..."
-  (cd "$STACK" && $DC restart functions)
+  if ! (cd "$STACK" && $DC restart functions) 2>/tmp/dc-restart-err; then
+    echo "⚠️  restart falhou, tentando up -d --force-recreate ..."
+    cat /tmp/dc-restart-err
+    (cd "$STACK" && $DC up -d --force-recreate functions)
+  fi
 
   echo ""
   echo "⏳ Aguardando container voltar (até 30s) ..."
