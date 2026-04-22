@@ -61,6 +61,8 @@ PRIVATE_FNS=(
   generate-daily-guide
   generate-audience-profile
   generate-personalized-matrix
+  start-onboarding-run
+  get-onboarding-run-status
   transcribe-media
   admin-dashboard
   create-asaas-subscription

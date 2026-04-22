@@ -125,6 +125,45 @@ export type Database = {
         }
         Relationships: []
       }
+      onboarding_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_stage: number
+          error_message: string | null
+          id: string
+          input_payload: Json
+          stages: Json
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_stage?: number
+          error_message?: string | null
+          id?: string
+          input_payload?: Json
+          stages?: Json
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_stage?: number
+          error_message?: string | null
+          id?: string
+          input_payload?: Json
+          stages?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       push_subscriptions: {
         Row: {
           auth: string
