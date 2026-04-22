@@ -86,6 +86,38 @@ Se aparecer `❌ não publicada`:
 
 ---
 
+## 3.1 docker-compose.yml quebrou — diagnóstico rápido
+
+Se o script abortar com `yaml: ... did not find expected key`, o `docker-compose.yml` do stack self-hosted está com erro de indentação. Diagnóstico:
+
+```bash
+cd /root/supabase/docker && docker compose config
+```
+
+Isso aponta a **linha exata** do problema. As 3 pegadinhas mais comuns:
+
+1. **`environment:` com indentação errada** — precisa ficar no mesmo nível de `volumes:` (4 espaços dentro do service). Se aparecer com 3 espaços, o parser quebra.
+2. **`depends_on:` duplicado no mesmo service** — YAML não aceita duas chaves iguais. Mescle em um só bloco:
+   ```yaml
+   depends_on:
+     analytics:
+       condition: service_healthy
+     studio:
+       condition: service_healthy
+   ```
+3. **Mistura de tab e espaço** — YAML é sensível. Use só espaço.
+
+Depois de consertar, valide antes de subir:
+
+```bash
+cd /root/supabase/docker && docker compose config -q && echo OK
+docker compose up -d --force-recreate functions
+```
+
+> O `deploy-selfhost.sh` já roda esse pré-check automaticamente — se o YAML estiver quebrado ele falha cedo com mensagem clara.
+
+---
+
 ## 4. SQL pós-deploy (uma vez só, no Studio)
 
 ```sql
