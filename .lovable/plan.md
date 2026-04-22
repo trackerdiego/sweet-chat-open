@@ -1,96 +1,75 @@
 
 
-# Plano: corrigir o `docker-compose.yml` quebrado da VPS e finalizar o deploy
+# Plano: voltar o login a funcionar destravando o Kong na VPS
 
-## Diagnóstico exato
+## Diagnóstico real
 
-O parser apontou linha 97 e a saída confirma 3 problemas no service **kong** (não no `functions`):
+O print mostra `CORS error` na chamada `POST /auth/v1/token?grant_type=password`. Isso **não é bug do código** do app. Significa uma destas 3 coisas, todas do lado da VPS:
 
-### Problema 1 — `depends_on` duplicado (linhas 28-32)
-```yaml
-    depends_on:
-      analytics:
-        condition: service_healthy
-    depends_on:           ← duplicado, YAML inválido
-      studio:
-        condition: service_healthy
-```
-Uma chave `depends_on` sobrescreve a outra silenciosamente em alguns parsers, mas combinada com o erro 3 quebra tudo.
+1. O container `kong` não está rodando (porque o `docker-compose.yml` está quebrado desde a última edição)
+2. O Kong subiu mas com config antiga sem CORS pro domínio do app (`app.influlab.pro` / `lovable.app`)
+3. O Kong está rodando mas o GoTrue (`auth`) está fora do ar
 
-### Problema 2 — indentação errada de `environment:` (linha ~97)
-```yaml
-    volumes:
-      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
-      ...
+O frontend (`src/integrations/supabase/client.ts`) está correto: aponta pra `https://api.influlab.pro` com a anon key certa. **Não vou mexer no código do app.**
 
-   environment:        ← TRÊS espaços em vez de QUATRO
-      KONG_DATABASE: "off"
-```
-Esse é literalmente o erro `did not find expected key` na linha 97. YAML é sensível a espaço — `environment:` precisa ficar no mesmo nível de `volumes:` (4 espaços).
+## O que vou fazer no repo
 
-### Problema 3 — filhos de `environment:` com indentação errada
-Os filhos estão com 6 espaços a partir de uma chave de 3 espaços. Após corrigir o pai para 4 espaços, os filhos precisam de 6 (mantém-se) — ok, mas vale revisar.
+Nada de código do app. O problema é 100% infra na VPS. Mas vou criar **uma ferramenta de diagnóstico** que você roda na VPS pra eu ver exatamente o que está quebrado, sem precisar adivinhar mais.
 
-## Correção que vou te entregar
+### Arquivo novo: `scripts/diagnose-selfhost.sh`
 
-Vou produzir o **bloco corrigido exato** das linhas 28-100 para você colar por cima na VPS, com:
+Script de diagnóstico read-only que roda na VPS e me mostra de uma vez:
 
-1. Um único `depends_on` mesclando `analytics` + `studio`
-2. `environment:` com indentação certa (4 espaços, alinhado com `volumes:`)
-3. Filhos do `environment:` com 6 espaços consistentes
-
-Você só vai precisar:
-- abrir o arquivo: `nano /root/supabase/docker/docker-compose.yml`
-- substituir as linhas 28-100 pelo bloco que vou te dar
-- validar antes de subir: `cd /root/supabase/docker && docker compose config -q && echo OK`
-- recriar o container das functions: `docker compose up -d --force-recreate functions`
-- validar a publicação: `curl -sI -X OPTIONS https://api.influlab.pro/functions/v1/start-onboarding-run | grep -i x-influlab-function-version`
-
-## Hardening do `scripts/deploy-selfhost.sh`
-
-Para evitar repetir esse vexame, vou adicionar no script:
-
-1. **Pré-check de YAML antes do restart**:
+1. Status de cada container Supabase (`docker compose ps`)
+2. Se o `docker-compose.yml` é válido (`docker compose config -q`)
+3. Últimas 30 linhas de log de `kong`, `auth`, `functions`
+4. Resposta HTTP do preflight CORS:
    ```bash
-   if ! (cd "$STACK" && $DC config -q) 2>/dev/null; then
-     echo "❌ docker-compose.yml inválido em $STACK."
-     echo "   Rode:  cd $STACK && docker compose config"
-     echo "   Para ver a linha exata do erro de indentação."
-     exit 1
-   fi
+   curl -i -X OPTIONS https://api.influlab.pro/auth/v1/token \
+     -H "Origin: https://app.influlab.pro" \
+     -H "Access-Control-Request-Method: POST" \
+     -H "Access-Control-Request-Headers: authorization,apikey,content-type"
    ```
-   Falha cedo, com mensagem clara apontando o arquivo.
+5. Resposta HTTP de `GET /auth/v1/health`
+6. Versão atual do bloco `kong` no `docker-compose.yml` (linhas 14-110)
 
-2. **Fallback automático** `restart` → `up -d --force-recreate functions` se o `restart` falhar mas o YAML estiver OK.
+Tudo formatado, com cabeçalhos claros, pra você colar a saída e eu ver o estado real.
 
-3. **Mensagem orientada** quando o validador final não achar `x-influlab-function-version`, sugerindo:
-   - `docker logs supabase-edge-functions --tail 50`
-   - `docker ps | grep functions`
+## O que você vai rodar na VPS
 
-## Atualização no `MIGRATION-FUNCTIONS.md`
+```bash
+cd /root/app && git pull origin main
+chmod +x scripts/diagnose-selfhost.sh
+./scripts/diagnose-selfhost.sh > /tmp/diag.txt 2>&1
+cat /tmp/diag.txt
+```
 
-Adicionar seção curta **"docker-compose.yml quebrou — diagnóstico rápido"** com:
-- como identificar a linha do erro (`docker compose config`)
-- as 3 pegadinhas mais comuns (indentação de `environment:`, `depends_on` duplicado, mistura tab/espaço)
+Depois você cola a saída aqui. Com base nela eu te entrego em **um único snippet** o conserto do Kong (YAML corrigido + comando de up).
 
-## Arquivos que vou alterar no repo
+## Por que isso vai resolver
 
-- `scripts/deploy-selfhost.sh` — pré-check de YAML + fallback de restart + mensagens orientadas
-- `MIGRATION-FUNCTIONS.md` — seção de diagnóstico de YAML quebrado
+- A última tentativa de mexer no `docker-compose.yml` deixou o YAML inválido (`yaml: line 85, column 20: mapping values are not allowed`)
+- Enquanto o YAML estiver inválido, **nenhum** `docker compose` funciona — nem restart, nem ps, nem nada
+- Ao mesmo tempo, os containers ainda rodam a versão antiga em memória, mas qualquer coisa que dependesse de uma mudança recente (ex: secrets adicionados, CORS atualizado) está fora
+- O CORS error no login é o sintoma de que o Kong não está aceitando o domínio do app
 
-## Arquivos que NÃO vou alterar
+Sem ver o estado atual de `/root/supabase/docker/docker-compose.yml` linhas 70-110, qualquer correção minha é chute. O script de diagnóstico te dá tudo de uma vez.
 
-- Frontend e edge functions — corretos, já no volume da VPS
-- Schema do banco — `onboarding_runs` já criada
-- O próprio `docker-compose.yml` da VPS — não vive no repo, vou te entregar o snippet pra você colar
+## Arquivos alterados
 
-## Resultado esperado
+- `scripts/diagnose-selfhost.sh` (novo) — diagnóstico read-only, não muda nada na VPS
 
-Depois desse ciclo:
-1. Você cola o snippet corrigido no `docker-compose.yml` da VPS
-2. `docker compose config -q` passa sem erro
-3. `docker compose up -d --force-recreate functions` recria o container com o código novo
-4. `curl` em `start-onboarding-run` retorna `x-influlab-function-version`
-5. Onboarding assíncrono entra em produção
-6. Próximos deploys param de quebrar feio porque o script valida o YAML antes de tentar restart
+## Arquivos NÃO alterados
+
+- Frontend, edge functions, schema, `client.ts`, `.env` — tudo correto
+- Não vou tentar adivinhar o YAML da VPS antes de ver o estado real
+
+## Próximos passos depois do diagnóstico
+
+Com a saída do diagnóstico em mãos, no próximo turno eu te entrego:
+1. Bloco YAML corrigido para colar no `docker-compose.yml`
+2. Comando `docker compose up -d --force-recreate kong auth functions`
+3. `curl` final de validação confirmando que login voltou
+
+Hoje à noite você não precisa fazer mais nada além de rodar o script e colar a saída. Amanhã com a cabeça fresca a gente fecha em 1 ciclo.
 
