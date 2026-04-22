@@ -90,9 +90,34 @@ serve(async (req) => {
       feedPost: { type: "array", items: { type: "string" } },
     }, required: ["morningInsight", "morningPoll", "reel", "reelEngagement", "valueStories", "lifestyleStory", "feedPost"] };
 
+    // Retry wrapper: A é crítica (sem ela, sem guia). Se 503/timeout, espera e tenta de novo.
+    // Não conta cota até a chamada A ter sucesso.
+    const callAWithRetry = async () => {
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          return await callGeminiNative({
+            apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptA, schema: schemaA,
+            tag: `daily-guide-A-try${attempt}`, maxOutputTokens: 1800, timeoutMs: 60000,
+            primaryAttempts: 2, fallbackAttempts: 2,
+          });
+        } catch (e) {
+          lastErr = e;
+          const status = e instanceof GeminiError ? e.status : 0;
+          // Só vale retry pra 503/504/timeout. 429/402 sai logo.
+          if (status === 429 || status === 402) throw e;
+          if (attempt < 2) {
+            console.warn(`[daily-guide] call A attempt ${attempt} failed, retrying in 2s`, status);
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+        }
+      }
+      throw lastErr;
+    };
+
     const startedAt = Date.now();
     const [resA, resB] = await Promise.allSettled([
-      callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptA, schema: schemaA, tag: "daily-guide-A", maxOutputTokens: 1800, timeoutMs: 60000 }),
+      callAWithRetry(),
       new Promise((r) => setTimeout(r, 800)).then(() =>
         callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B", maxOutputTokens: 2200, timeoutMs: 60000 })
       ),
@@ -100,13 +125,13 @@ serve(async (req) => {
 
     if (resA.status === "rejected") {
       const e = resA.reason;
-      console.error("[daily-guide] call A failed", e);
+      console.error("[daily-guide] call A failed after retry", e);
       if (e instanceof GeminiError) {
         if (e.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
-        if (e.status === 402) return jsonResponse({ error: "Créditos da IA esgotados." }, 402);
-        return jsonResponse({ error: "Serviço de IA instável. Tente novamente em 1-2 minutos." }, 503);
+        if (e.status === 402) return jsonResponse({ error: "Créditos da IA esgotados. Avise o administrador." }, 402);
+        return jsonResponse({ error: "O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida." }, 503);
       }
-      return jsonResponse({ error: "Erro ao gerar guia diário." }, 500);
+      return jsonResponse({ error: "Erro ao gerar guia diário. Tente novamente." }, 500);
     }
 
     const partA = resA.value.json as Record<string, unknown>;

@@ -177,6 +177,35 @@ Nenhuma das duas chamadas pode chegar perto de 60s — esse é o ponto de toda a
 
 ---
 
+## 6. Healthcheck do Kong (pré-lançamento)
+
+O healthcheck padrão do Kong no stack self-hosted (`kong health` em 5s) é flaky e marca o container como `unhealthy` mesmo quando o tráfego funciona. Isso quebra `depends_on` de outros services (ex.: `functions`) se a VPS reiniciar — foi exatamente o que aconteceu na quebra de 22-abr.
+
+**Antes do lançamento**, ajuste no `~/supabase/docker/docker-compose.yml`, no service `kong`:
+
+```yaml
+healthcheck:
+  test: ["CMD", "kong", "health"]
+  interval: 10s
+  timeout: 10s
+  retries: 5
+  start_period: 60s   # ← era 5s, sobe pra 60s pra dar tempo do Kong booter
+```
+
+Depois: `cd /root/supabase/docker && docker compose up -d --force-recreate kong` e confira `docker compose ps kong` — em ~60s deve mostrar `(healthy)`.
+
+---
+
+## 7. Resiliência Gemini 503 (já no código)
+
+`generate-daily-guide` e `generate-script` agora fazem **2 tentativas no nível da função** (com 2s entre elas) em cima do retry interno do `_shared/gemini.ts` (primary + fallback de modelo). Total: até ~6 tentativas por chamada de IA antes de devolver 503 pro frontend.
+
+**Cota só é consumida em sucesso** — usuário que pegar 503 não perde geração.
+
+Frontend (`DailyGuide.tsx`) mostra toast diferenciado: 429 = limite atingido, 503 = Gemini instável (cota preservada).
+
+---
+
 ## Secrets esperadas
 
 | Secret | Origem | Usada por |
