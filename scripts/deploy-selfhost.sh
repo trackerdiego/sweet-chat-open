@@ -82,6 +82,9 @@ validate_deployed() {
   else
     echo ""
     echo "⚠️  Uma ou mais functions não responderam com o header de versão."
+    echo "   Diagnóstico rápido:"
+    echo "     docker ps | grep functions"
+    echo "     docker logs supabase-edge-functions --tail 80"
     echo "   Veja MIGRATION-FUNCTIONS.md → 'Validação pós-deploy'."
     exit 1
   fi
