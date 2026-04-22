@@ -49,24 +49,6 @@ export function useOnboardingRun() {
     }
   }, []);
 
-  const fetchStatus = useCallback(async (runId?: string) => {
-    try {
-      const params = runId ? { runId } : undefined;
-      const { data, error: invokeErr } = await supabase.functions.invoke('get-onboarding-run-status', {
-        body: undefined,
-        method: 'GET',
-        // @ts-expect-error supabase-js permite query params via headers no v2; usamos fetch direto abaixo se preciso
-      } as any);
-      // O invoke não passa query bem; faço fetch manual.
-      void invokeErr;
-      void data;
-      void params;
-      return null;
-    } catch {
-      return null;
-    }
-  }, []);
-
   // Faz fetch direto à edge para conseguir passar query params
   const pollOnce = useCallback(async (runId?: string) => {
     try {
