@@ -1,117 +1,179 @@
 
 
-# Plano: integrar as correções do Claude (service role + fallback local) no projeto
+# Plano: resolver o timeout do Kong/Nginx no self-hosted via arquitetura assíncrona (job queue)
 
-## Contexto
+## Diagnóstico correto
 
-Você trouxe duas Edge Functions reescritas pelo Claude (`generate-audience-profile` e `generate-personalized-matrix`) que resolvem 3 problemas reais que estão travando o onboarding no self-hosted (`api.influlab.pro`):
+Você acertou. O problema **não é o Gemini** e nem o código das Edge Functions. É infra:
 
-1. As funções usavam o cliente com **anon key** para fazer `upsert` em `audience_profiles` / `user_strategies`. No Lovable Cloud isso "passa" porque o ambiente é mais permissivo, mas no self-hosted RLS bloqueia silenciosamente → o salvamento nunca acontece → onboarding em loop.
-2. `generate-personalized-matrix` usava `Promise.all` — se 1 semana falhasse, a matriz inteira morria.
-3. Nenhuma das duas tinha **fallback local**: se Gemini demorasse/desse 504, o usuário ficava preso 1.5 min e via erro genérico.
+```text
+Browser → Nginx (api.influlab.pro) → Kong → Edge Runtime → Gemini
+                  ↑          ↑
+              timeout     timeout
+              padrão      padrão
+              60s         60s
+```
 
-## O que vou implementar
+No Lovable Cloud, o gateway tolera requests longas (até ~150s) porque está tunado para isso. No self-hosted padrão:
 
-### 1. Substituir `supabase/functions/generate-audience-profile/index.ts`
+- **Nginx**: `proxy_read_timeout` default = 60s
+- **Kong**: `read_timeout` / `write_timeout` default = 60s
+- **Edge Runtime (Deno)**: `worker_timeout_ms` default = 150s, mas o Kong/Nginx mata antes
 
-Aplicar a versão do Claude com:
+A geração da matriz (4 chamadas Gemini sequenciais/paralelas + parsing + upsert) tranquilamente passa de 60s. Resultado: **504 Gateway Timeout** vindo do Nginx ou Kong, mesmo com a função ainda processando por trás. Por isso “tudo verdinho no Lovable, falha no self-hosted”.
 
-- `adminClient` usando `SUPABASE_SERVICE_ROLE_KEY` para todas as escritas em `user_profiles` e `audience_profiles`
-- Validação do JWT do usuário com cliente anon (apenas `auth.getUser()`); writes via service role
-- Timeout agressivo na chamada Gemini (~12s descrição / ~18s avatar)
-- **Fallback local estruturado** quando Gemini falhar/demorar: monta `audience_description` e `avatar_profile` completos a partir do nicho, estilo e descrição do usuário (preenche todos os campos exigidos pelo schema do app)
-- Retorno sempre 200 com `source: "ai" | "fallback"` e header `x-influlab-function-version` pra você confirmar que a VPS está rodando o código novo
+Aumentar timeout do Nginx/Kong é paliativo (funciona, mas usuário fica olhando spinner 90s e qualquer instabilidade quebra de novo). A solução definitiva é **parar de segurar a request HTTP aberta** durante a geração.
 
-### 2. Substituir `supabase/functions/generate-personalized-matrix/index.ts`
+## Solução: arquitetura de job assíncrono
 
-Aplicar a versão do Claude com:
+Em vez de o frontend chamar uma função e esperar ela terminar:
 
-- `adminClient` com service role para ler `audience_profiles` e gravar `user_strategies` + atualizar `user_profiles.onboarding_completed = true`
-- Geração de **matriz local de 30 dias garantida** primeiro (usando `distributeVisceralElements` + nicho + estilo)
-- `Promise.allSettled` por semana: cada semana que o Gemini conseguir melhorar, sobrescreve a matriz local; semanas que falham permanecem com fallback local
-- `onboarding_completed = true` só é setado **depois** que `user_strategies` foi salvo com sucesso e validado (≥ 28 itens, idealmente 30)
-- Header de versão para diagnóstico
+```text
+ANTES (quebra no self-hosted):
+  POST /generate-personalized-matrix
+  ← espera 60-120s ←
+  504 Gateway Timeout
 
-### 3. Não tocar em `src/pages/Onboarding.tsx`
+DEPOIS (imune a timeout de proxy):
+  POST /start-onboarding-run        → retorna em <1s com runId
+  GET  /get-onboarding-run-status   → polling a cada 2s, sempre <1s
+  (processamento real roda em background, fora do ciclo de request HTTP)
+```
 
-O Claude analisou e confirmou que o Onboarding já está bem: tem pipeline visível, retry por etapa, validação `verifyMatrixSaved`, redirect para `/auth` em 401, sem botão "continuar mesmo assim". As correções anteriores já feitas no frontend ficam.
+A request HTTP nunca dura mais que 1-2s. Kong, Nginx, Cloudflare — ninguém tem o que matar.
 
-### 4. Não tocar em `src/hooks/useUserProfile.ts` nem `useUserStrategies.ts`
+## 4 etapas reais (volta ao que funcionava)
 
-Travas de integridade (matriz < 28 → onboarding=false; sem polling de session token durante onboarding) continuam valendo.
+```text
+1. Preparando seu perfil          (instantâneo — só salva form)
+2. Analisando seu público         (Gemini ~10s, em background)
+3. Construindo estudo visceral    (Gemini ~15s, em background)
+4. Montando sua matriz de 30 dias (Gemini ~30s, em background)
+```
+
+Cada etapa atualiza `onboarding_runs.stages` no banco. O frontend pinta verde conforme o status muda no polling.
+
+## Arquitetura técnica
+
+### Nova tabela (SQL manual no self-hosted)
+
+```sql
+create table public.onboarding_runs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  status text not null default 'pending',           -- pending | running | completed | failed
+  current_stage int not null default 1,             -- 1..4
+  stages jsonb not null default '[]'::jsonb,        -- [{stage, status, started_at, finished_at, error}]
+  input_payload jsonb not null default '{}'::jsonb, -- displayName, primaryNiche, contentStyle, etc
+  error_message text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+alter table public.onboarding_runs enable row level security;
+
+create policy "users read own runs" on public.onboarding_runs
+  for select to authenticated using (auth.uid() = user_id);
+
+create policy "service role manages runs" on public.onboarding_runs
+  for all to service_role using (true) with check (true);
+
+create index on public.onboarding_runs (user_id, created_at desc);
+create index on public.onboarding_runs (status) where status in ('pending','running');
+```
+
+### Novas Edge Functions
+
+**`start-onboarding-run`** (rápida, retorna em <1s):
+- valida JWT
+- cria row em `onboarding_runs` com input_payload
+- dispara processamento em background com `EdgeRuntime.waitUntil(...)` — Deno permite continuar executando após o response sair
+- retorna `{ runId }` imediatamente
+- o background worker chama as 4 etapas em sequência, atualizando `stages` no banco
+
+**`get-onboarding-run-status`** (rápida, retorna em <1s):
+- valida JWT
+- lê `onboarding_runs` por id
+- retorna `{ status, current_stage, stages, error_message }`
+
+### Por que `EdgeRuntime.waitUntil` resolve
+
+```typescript
+serve(async (req) => {
+  const { runId } = await criarRun();
+  
+  // Dispara em background — response volta AGORA
+  EdgeRuntime.waitUntil(processarTodasEtapas(runId));
+  
+  return Response.json({ runId }); // ← Kong/Nginx vê resposta em 200ms
+});
+```
+
+`EdgeRuntime.waitUntil` mantém o worker vivo até o background terminar (até `worker_timeout_ms`, default 150s — suficiente). Mas a **conexão HTTP fecha imediatamente**, então Kong/Nginx não têm o que matar.
+
+### Funções existentes viram helpers internos
+
+`generate-audience-profile` e `generate-personalized-matrix` deixam de ser endpoints chamados pelo frontend. Viram módulos importados pelo background worker do `start-onboarding-run`. Mantém toda a lógica atual de fallback local, service role, prompts viscerais — só muda quem chama.
+
+### Frontend (Onboarding.tsx)
+
+```text
+1. Submit do form → chama start-onboarding-run → recebe runId, salva em estado
+2. setInterval(2000) chama get-onboarding-run-status
+3. Atualiza visual dos 4 cards conforme stages mudam
+4. Quando status === 'completed' E matriz validada (>= 28 dias) → redireciona para /
+5. Se status === 'failed' → mostra erro real da etapa que falhou + botão "Tentar de novo"
+6. Se usuário fecha aba e reabre → busca run em andamento e retoma o polling
+```
+
+Isso elimina:
+- 504 do proxy
+- “Não foi possível gerar, tente novamente” como UX padrão
+- perda de progresso ao dar refresh
+- usuário pagar e ficar travado no primeiro uso
 
 ## Arquivos alterados
 
-- `supabase/functions/generate-audience-profile/index.ts` — substituído pela versão com service role + fallback
-- `supabase/functions/generate-personalized-matrix/index.ts` — substituído pela versão com service role + Promise.allSettled + matriz local garantida
+### Edge Functions
+- **NOVO** `supabase/functions/start-onboarding-run/index.ts` — cria run, dispara background, retorna runId
+- **NOVO** `supabase/functions/get-onboarding-run-status/index.ts` — polling de status
+- `supabase/functions/generate-audience-profile/index.ts` — refatorado para exportar helpers reutilizáveis (ou inlinado no worker)
+- `supabase/functions/generate-personalized-matrix/index.ts` — idem
 
-## Arquivos NÃO alterados
+### Frontend
+- `src/pages/Onboarding.tsx` — troca chamadas síncronas por start + polling, 4 cards reais
+- **NOVO** `src/hooks/useOnboardingRun.ts` — encapsula lógica de polling, retomada e validação final
 
-- Frontend: nada
-- Outras Edge Functions: nada
-- Schema/RLS: nada (RLS continua igual; service role bypassa por design)
-- `supabase/functions/_shared/gemini.ts`: mantido
+### Banco
+- SQL manual para o self-hosted criar `onboarding_runs` + policies + índices
+- SQL de reset do `cakerollguide@gmail.com` para reteste limpo
 
-## Secrets
+### Hooks existentes (intactos)
+- `useUserProfile.ts` — mantém trava de integridade
+- `useUserStrategies.ts` — sem mudanças
+- `App.tsx` — sem mudanças
 
-`SUPABASE_SERVICE_ROLE_KEY` já está configurado no projeto (confirmado em `<secrets>`). No self-hosted, você já tem essa secret no `docker-compose.yml` do GoTrue/PostgREST — então o deploy só precisa de `git pull` + redeploy das functions.
+## Sobre Kong/Nginx (opcional, mas recomendado)
 
-## Deploy obrigatório na VPS
+Mesmo com a arquitetura assíncrona, vale subir os timeouts do proxy de 60s → 180s como cinto de segurança. Vou te entregar no final um snippet de `nginx.conf` e `kong.yml` opcional, **mas a app funciona sem isso** porque nenhuma request vai mais durar tanto.
 
-Edge Functions mudam, então não basta Vercel:
+## Deploy
+
+Edge Functions novas + alteradas → exige sync da VPS:
 
 ```bash
 cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
 ```
 
-Conferir que a versão nova subiu:
+E o SQL da `onboarding_runs` rodado uma vez no Studio self-hosted **antes** do deploy.
 
-```bash
-curl -i -X OPTIONS https://api.influlab.pro/functions/v1/generate-audience-profile | grep -i x-influlab-function-version
-```
+## Resultado esperado
 
-Deve retornar o header com a versão nova. Se não retornar, o deploy não pegou.
-
-## SQL de reset do `cakerollguide@gmail.com` (rodar no Studio self-hosted antes de testar)
-
-```sql
--- Volta ao onboarding limpo + premium full pra testar tudo sem bater limite
-update public.user_profiles
-set onboarding_completed = false,
-    description_status   = 'pending',
-    active_session_token = null
-where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
-
-delete from public.audience_profiles
-where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
-
-delete from public.user_strategies
-where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
-
-insert into public.user_usage (user_id, is_premium, tool_generations, chat_messages, script_generations, transcriptions)
-select id, true, 0, 0, 0, 0
-from auth.users where email = 'cakerollguide@gmail.com'
-on conflict (user_id) do update
-set is_premium = true,
-    tool_generations = 0,
-    chat_messages = 0,
-    script_generations = 0,
-    transcriptions = 0,
-    last_tool_date = null,
-    last_chat_date = null,
-    last_script_date = null,
-    last_transcription_date = null;
-
-delete from public.user_progress
-where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
-```
-
-## Resultado esperado após deploy
-
-- Etapa "Analisando seu público" responde em até ~18s **sempre** (IA ou fallback)
-- Etapa "Matriz personalizada" responde em até ~40s **sempre**, com 30 dias garantidos
-- Usuário nunca mais vê 504/1.5 min de espera no onboarding
-- `audience_profiles` e `user_strategies` realmente são gravados (era o bug raiz no self-hosted)
-- `onboarding_completed = true` só após matriz salva e validada
-- Header `x-influlab-function-version` permite confirmar deploy correto na VPS
+- Nenhuma request HTTP do onboarding dura mais que ~2s
+- Kong/Nginx nunca mais devolvem 504 nesse fluxo
+- Os 4 cards pintam de verde conforme cada etapa termina, com progresso real do banco
+- Refresh no meio do onboarding retoma do ponto onde estava
+- `onboarding_completed=true` só após matriz validada
+- Primeira impressão de usuário pagante deixa de ser “erro, tente de novo”
 
