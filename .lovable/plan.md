@@ -1,81 +1,66 @@
 
 
-# Plano: destravar o Kong unhealthy + remover bloqueio de apikey no /auth/v1/health
+# Plano: subir o container `functions` (último passo)
 
-## Diagnóstico — duas coisas separadas
+## Status atual — login JÁ voltou
 
-### 1. Kong subiu mas está `unhealthy`
-- Container `supabase-kong` rodando em `0.0.0.0:8000` ✅
-- Mas healthcheck (`kong health`) está falhando — por isso `functions` recusou subir ("dependency failed to start")
-- O healthcheck do compose é `["CMD", "kong", "health"]`. Se o Kong respondeu CORS corretamente no `/auth/v1/health` (com latência 13ms), o processo está vivo. O `unhealthy` é provavelmente só falta de tempo / `start_period` curto, ou do `kong health` não conseguir falar com o admin API interno.
-- **Não bloqueia o login** — o Kong já está roteando. Só precisa subir o `functions` ignorando esse healthcheck.
+Os 3 primeiros checks passaram:
 
-### 2. `/auth/v1/health` retornou 401 "No API key found"
-- Isso é **comportamento esperado do Kong self-hosted** com plugin `key-auth` ativo na rota
-- A rota `/auth/v1/health` no `kong.yml` exige `apikey` header
-- **NÃO afeta o login do app** — o frontend manda `apikey: <ANON_KEY>` em toda chamada via `supabase-js`
-- Mas a validação do diagnóstico precisa mandar o header pra refletir o uso real
+1. ✅ `/auth/v1/health` → **HTTP 200** com `{"version":"v2.186.0","name":"GoTrue"...}` — auth roteando via Kong
+2. ✅ Preflight CORS do `/auth/v1/token` → **HTTP 200** com `access-control-allow-origin: *` e `access-control-allow-headers: authorization,apikey,content-type` — login do app vai funcionar
+3. ❌ `/functions/v1/start-onboarding-run` → **HTTP 502** — container `functions` ainda não subiu
 
-## Correção em 2 passos
+**Pode tentar logar em https://app.influlab.pro agora — vai entrar.** O onboarding é que vai falhar até subir o `functions`.
 
-### Passo 1 — subir o functions ignorando dependency unhealthy
+## Por que o `functions` não subiu
+
+No comando anterior (`docker compose up -d kong functions`) o Compose abortou o `functions` porque o `kong` estava `unhealthy`. Mesmo com o `--no-deps` no plano anterior, parece que o comando não rodou ou o container ainda não tá no `docker ps`. Vamos forçar agora.
+
+## Comando único pra rodar na VPS
 
 ```bash
 cd /root/supabase/docker
 docker compose up -d --no-deps functions
-docker compose ps kong functions
-```
-
-`--no-deps` faz o functions subir sem esperar o healthcheck do kong (que tá só lento, não morto).
-
-### Passo 2 — validar com o apikey correto (o que o app realmente faz)
-
-Pega a `ANON_KEY` do `.env` e usa nos curls:
-
-```bash
-ANON=$(grep ^ANON_KEY /root/supabase/docker/.env | cut -d= -f2)
-
-# Health do auth COM apikey (esperado: 200 + JSON com "version")
-curl -i https://api.influlab.pro/auth/v1/health -H "apikey: $ANON"
-
-# Preflight CORS do login (esperado: 204 + access-control-allow-origin)
-curl -i -X OPTIONS "https://api.influlab.pro/auth/v1/token?grant_type=password" \
-  -H "Origin: https://app.influlab.pro" \
-  -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: authorization,apikey,content-type"
-
-# Function nova (esperado: 204 + x-influlab-function-version)
+sleep 5
+docker compose ps functions
+docker logs supabase-edge-functions --tail 30 2>&1
 curl -sI -X OPTIONS https://api.influlab.pro/functions/v1/start-onboarding-run \
   | grep -iE 'http|x-influlab-function-version|access-control'
 ```
 
-## Se o functions também ficar unhealthy ou não subir
+## Resultados possíveis
 
-Manda na próxima:
+### Caso A — funcionou (esperado)
+- `docker compose ps functions` mostra `Up X seconds`
+- Logs mostram `Serving functions on http://0.0.0.0:9000` ou similar
+- Curl final retorna `HTTP/2 204` + header `x-influlab-function-version: 2026-04-22-async-job` (ou versão posterior)
+- **Onboarding assíncrono entra em produção**
+
+### Caso B — container subiu mas curl ainda dá 502
+Significa que o nginx-app na VPS está roteando `/functions/v1/*` pra um upstream errado. Manda:
 ```bash
-docker compose up -d --no-deps functions 2>&1 | tail -20
-docker logs supabase-edge-functions --tail 80 2>&1
-docker logs supabase-kong --tail 30 2>&1 | grep -iE 'error|warn|listen'
+docker logs nginx-app-1 --tail 30 2>&1 | grep -i function
+grep -rn 'functions' /etc/nginx/ 2>/dev/null | head -20
 ```
 
-## Por que o login JÁ deve voltar agora
+### Caso C — container não subiu / crash loop
+Manda os logs que o comando acima já gera — eu identifico o erro (provavelmente secret faltando no `environment:` do service `functions` no docker-compose.yml, ou volume errado).
 
-O CORS error original do print (sua mensagem inicial) acontecia porque o Kong estava **completamente fora** (502 do Cloudflare). Agora o Kong está **dentro e respondendo** (`x-kong-response-latency: 13` no curl que você fez). Isso significa:
+## Sem alterações no repo
 
-1. ✅ Cloudflare → nginx → Kong → auth: caminho aberto
-2. ✅ CORS do Kong tá funcionando (`access-control-allow-origin: *` apareceu na resposta)
-3. ✅ Auth respondendo (devolveu JSON estruturado, não erro de conexão)
+O problema é 100% infra na VPS. O repo já tem tudo que precisa (`scripts/deploy-selfhost.sh`, `scripts/diagnose-selfhost.sh`, todas as edge functions atualizadas). Não há nada pra editar.
 
-**Tenta abrir https://app.influlab.pro agora e fazer login.** Provavelmente já vai. O `functions` ainda precisa subir pro onboarding rodar, mas o login em si não depende do container `functions`.
+## Resumo do progresso
 
-## O que NÃO vou alterar no repo
+| Etapa | Status |
+|---|---|
+| YAML do docker-compose válido | ✅ |
+| Kong rodando e roteando | ✅ |
+| Auth respondendo via Kong | ✅ |
+| CORS do login funcionando | ✅ |
+| Login no app | ✅ (testar) |
+| Container functions | ⏳ (1 comando) |
+| Onboarding assíncrono | ⏳ (depende do anterior) |
 
-Nada. O `unhealthy` do Kong é tolerância de healthcheck do compose self-hosted, não afeta o tráfego real. O 401 no `/auth/v1/health` é proteção esperada do Kong. O frontend já manda apikey corretamente.
-
-## Resultado esperado
-
-1. Login no app volta a funcionar (já deve estar funcionando)
-2. `docker compose up -d --no-deps functions` sobe o container faltante
-3. Onboarding assíncrono passa a responder
-4. Próxima rodada: a gente investiga porque o healthcheck do Kong tá lento, mas é cosmético — sem urgência
+Você está a 1 comando de fechar tudo. Vai descansar — quando rodar amanhã e colar a saída, eu fecho.
 
