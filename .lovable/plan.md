@@ -1,179 +1,103 @@
 
 
-# Plano: resolver o timeout do Kong/Nginx no self-hosted via arquitetura assíncrona (job queue)
+# Plano: deploy das edge functions assíncronas na VPS self-hosted
 
-## Diagnóstico correto
+## Status atual
 
-Você acertou. O problema **não é o Gemini** e nem o código das Edge Functions. É infra:
+- SQL da `onboarding_runs` aplicado no banco self-hosted ✅
+- `git pull` na VPS trouxe os arquivos novos ✅
+- `./scripts/deploy-selfhost.sh` falhou: `SUPABASE_ACCESS_TOKEN` não definido ❌
+- `curl` em `start-onboarding-run` não retorna `x-influlab-function-version` → função não publicada ❌
 
-```text
-Browser → Nginx (api.influlab.pro) → Kong → Edge Runtime → Gemini
-                  ↑          ↑
-              timeout     timeout
-              padrão      padrão
-              60s         60s
+Falta apenas **publicar as edge functions** na VPS.
+
+## O que vou fazer
+
+### 1. Refatorar `scripts/deploy-selfhost.sh` com 2 modos
+
+**Modo CLI** (atual): exige `SUPABASE_ACCESS_TOKEN` + `PROJECT_REF`, usa `supabase functions deploy`.
+
+**Modo Docker fallback** (novo): se as variáveis não existirem, o script:
+- detecta o caminho do volume das functions (`~/supabase/docker/volumes/functions/` ou via `docker compose config`)
+- faz `rsync` das pastas em `supabase/functions/` para o volume
+- roda `docker compose -f ~/supabase/docker/docker-compose.yml restart functions`
+- aguarda o container voltar saudável
+- valida cada function nova com `curl -I` checando `x-influlab-function-version`
+
+Isso elimina a dependência de token CLI no self-hosted.
+
+### 2. Adicionar bloco de validação automatizada no fim do script
+
+Após o deploy, rodar automaticamente:
+
+```bash
+for fn in start-onboarding-run get-onboarding-run-status generate-audience-profile generate-personalized-matrix; do
+  curl -sI -X OPTIONS "https://api.influlab.pro/functions/v1/$fn" \
+    | grep -i 'x-influlab-function-version' \
+    && echo "✅ $fn OK" \
+    || echo "❌ $fn não publicada"
+done
 ```
 
-No Lovable Cloud, o gateway tolera requests longas (até ~150s) porque está tunado para isso. No self-hosted padrão:
+Resultado claro no terminal: o usuário sabe na hora se cada function subiu.
 
-- **Nginx**: `proxy_read_timeout` default = 60s
-- **Kong**: `read_timeout` / `write_timeout` default = 60s
-- **Edge Runtime (Deno)**: `worker_timeout_ms` default = 150s, mas o Kong/Nginx mata antes
+### 3. Atualizar `MIGRATION-FUNCTIONS.md`
 
-A geração da matriz (4 chamadas Gemini sequenciais/paralelas + parsing + upsert) tranquilamente passa de 60s. Resultado: **504 Gateway Timeout** vindo do Nginx ou Kong, mesmo com a função ainda processando por trás. Por isso “tudo verdinho no Lovable, falha no self-hosted”.
+Adicionar 3 seções curtas:
+- **SQL no Studio**: como aplicar SQL via Studio SQL Editor ou `docker exec ... psql` (nunca no bash puro)
+- **Deploy sem token**: explicação do modo fallback
+- **Validação pós-deploy**: comandos `curl` de checagem do header de versão
 
-Aumentar timeout do Nginx/Kong é paliativo (funciona, mas usuário fica olhando spinner 90s e qualquer instabilidade quebra de novo). A solução definitiva é **parar de segurar a request HTTP aberta** durante a geração.
+### 4. Comando final que o usuário vai rodar
 
-## Solução: arquitetura de job assíncrono
-
-Em vez de o frontend chamar uma função e esperar ela terminar:
-
-```text
-ANTES (quebra no self-hosted):
-  POST /generate-personalized-matrix
-  ← espera 60-120s ←
-  504 Gateway Timeout
-
-DEPOIS (imune a timeout de proxy):
-  POST /start-onboarding-run        → retorna em <1s com runId
-  GET  /get-onboarding-run-status   → polling a cada 2s, sempre <1s
-  (processamento real roda em background, fora do ciclo de request HTTP)
-```
-
-A request HTTP nunca dura mais que 1-2s. Kong, Nginx, Cloudflare — ninguém tem o que matar.
-
-## 4 etapas reais (volta ao que funcionava)
-
-```text
-1. Preparando seu perfil          (instantâneo — só salva form)
-2. Analisando seu público         (Gemini ~10s, em background)
-3. Construindo estudo visceral    (Gemini ~15s, em background)
-4. Montando sua matriz de 30 dias (Gemini ~30s, em background)
-```
-
-Cada etapa atualiza `onboarding_runs.stages` no banco. O frontend pinta verde conforme o status muda no polling.
-
-## Arquitetura técnica
-
-### Nova tabela (SQL manual no self-hosted)
-
-```sql
-create table public.onboarding_runs (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  status text not null default 'pending',           -- pending | running | completed | failed
-  current_stage int not null default 1,             -- 1..4
-  stages jsonb not null default '[]'::jsonb,        -- [{stage, status, started_at, finished_at, error}]
-  input_payload jsonb not null default '{}'::jsonb, -- displayName, primaryNiche, contentStyle, etc
-  error_message text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  completed_at timestamptz
-);
-
-alter table public.onboarding_runs enable row level security;
-
-create policy "users read own runs" on public.onboarding_runs
-  for select to authenticated using (auth.uid() = user_id);
-
-create policy "service role manages runs" on public.onboarding_runs
-  for all to service_role using (true) with check (true);
-
-create index on public.onboarding_runs (user_id, created_at desc);
-create index on public.onboarding_runs (status) where status in ('pending','running');
-```
-
-### Novas Edge Functions
-
-**`start-onboarding-run`** (rápida, retorna em <1s):
-- valida JWT
-- cria row em `onboarding_runs` com input_payload
-- dispara processamento em background com `EdgeRuntime.waitUntil(...)` — Deno permite continuar executando após o response sair
-- retorna `{ runId }` imediatamente
-- o background worker chama as 4 etapas em sequência, atualizando `stages` no banco
-
-**`get-onboarding-run-status`** (rápida, retorna em <1s):
-- valida JWT
-- lê `onboarding_runs` por id
-- retorna `{ status, current_stage, stages, error_message }`
-
-### Por que `EdgeRuntime.waitUntil` resolve
-
-```typescript
-serve(async (req) => {
-  const { runId } = await criarRun();
-  
-  // Dispara em background — response volta AGORA
-  EdgeRuntime.waitUntil(processarTodasEtapas(runId));
-  
-  return Response.json({ runId }); // ← Kong/Nginx vê resposta em 200ms
-});
-```
-
-`EdgeRuntime.waitUntil` mantém o worker vivo até o background terminar (até `worker_timeout_ms`, default 150s — suficiente). Mas a **conexão HTTP fecha imediatamente**, então Kong/Nginx não têm o que matar.
-
-### Funções existentes viram helpers internos
-
-`generate-audience-profile` e `generate-personalized-matrix` deixam de ser endpoints chamados pelo frontend. Viram módulos importados pelo background worker do `start-onboarding-run`. Mantém toda a lógica atual de fallback local, service role, prompts viscerais — só muda quem chama.
-
-### Frontend (Onboarding.tsx)
-
-```text
-1. Submit do form → chama start-onboarding-run → recebe runId, salva em estado
-2. setInterval(2000) chama get-onboarding-run-status
-3. Atualiza visual dos 4 cards conforme stages mudam
-4. Quando status === 'completed' E matriz validada (>= 28 dias) → redireciona para /
-5. Se status === 'failed' → mostra erro real da etapa que falhou + botão "Tentar de novo"
-6. Se usuário fecha aba e reabre → busca run em andamento e retoma o polling
-```
-
-Isso elimina:
-- 504 do proxy
-- “Não foi possível gerar, tente novamente” como UX padrão
-- perda de progresso ao dar refresh
-- usuário pagar e ficar travado no primeiro uso
-
-## Arquivos alterados
-
-### Edge Functions
-- **NOVO** `supabase/functions/start-onboarding-run/index.ts` — cria run, dispara background, retorna runId
-- **NOVO** `supabase/functions/get-onboarding-run-status/index.ts` — polling de status
-- `supabase/functions/generate-audience-profile/index.ts` — refatorado para exportar helpers reutilizáveis (ou inlinado no worker)
-- `supabase/functions/generate-personalized-matrix/index.ts` — idem
-
-### Frontend
-- `src/pages/Onboarding.tsx` — troca chamadas síncronas por start + polling, 4 cards reais
-- **NOVO** `src/hooks/useOnboardingRun.ts` — encapsula lógica de polling, retomada e validação final
-
-### Banco
-- SQL manual para o self-hosted criar `onboarding_runs` + policies + índices
-- SQL de reset do `cakerollguide@gmail.com` para reteste limpo
-
-### Hooks existentes (intactos)
-- `useUserProfile.ts` — mantém trava de integridade
-- `useUserStrategies.ts` — sem mudanças
-- `App.tsx` — sem mudanças
-
-## Sobre Kong/Nginx (opcional, mas recomendado)
-
-Mesmo com a arquitetura assíncrona, vale subir os timeouts do proxy de 60s → 180s como cinto de segurança. Vou te entregar no final um snippet de `nginx.conf` e `kong.yml` opcional, **mas a app funciona sem isso** porque nenhuma request vai mais durar tanto.
-
-## Deploy
-
-Edge Functions novas + alteradas → exige sync da VPS:
+Depois das mudanças, o ciclo completo na VPS vira:
 
 ```bash
 cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
 ```
 
-E o SQL da `onboarding_runs` rodado uma vez no Studio self-hosted **antes** do deploy.
+Sem precisar de token. Sem precisar lembrar de comandos de Docker. O script detecta o cenário e age sozinho.
+
+## Arquivos alterados
+
+- `scripts/deploy-selfhost.sh` — adiciona modo Docker fallback + validação automática
+- `MIGRATION-FUNCTIONS.md` — atualiza runbook self-hosted
+
+## Arquivos NÃO alterados
+
+- Frontend (`Onboarding.tsx`, `useOnboardingRun.ts`) — já corretos
+- Edge Functions (`start-onboarding-run`, `get-onboarding-run-status`, etc.) — já corretas
+- Schema do banco — `onboarding_runs` já criada
+- Hooks de integridade (`useUserProfile`, `useUserStrategies`) — intactos
+
+## Reset do usuário de teste (rodar no Studio SQL Editor, não no bash)
+
+```sql
+update public.user_profiles
+set onboarding_completed = false,
+    description_status   = 'pending',
+    active_session_token = null
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+
+delete from public.audience_profiles where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+delete from public.user_strategies   where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+delete from public.user_progress     where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+delete from public.onboarding_runs   where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+
+insert into public.user_usage (user_id, is_premium)
+select id, true from auth.users where email = 'cakerollguide@gmail.com'
+on conflict (user_id) do update
+set is_premium = true,
+    tool_generations = 0, chat_messages = 0,
+    script_generations = 0, transcriptions = 0,
+    last_tool_date = null, last_chat_date = null,
+    last_script_date = null, last_transcription_date = null;
+```
 
 ## Resultado esperado
 
-- Nenhuma request HTTP do onboarding dura mais que ~2s
-- Kong/Nginx nunca mais devolvem 504 nesse fluxo
-- Os 4 cards pintam de verde conforme cada etapa termina, com progresso real do banco
-- Refresh no meio do onboarding retoma do ponto onde estava
-- `onboarding_completed=true` só após matriz validada
-- Primeira impressão de usuário pagante deixa de ser “erro, tente de novo”
+- `./scripts/deploy-selfhost.sh` roda sem token e publica as 4 functions afetadas
+- Validação automática no fim do script confirma `x-influlab-function-version` em cada uma
+- Usuário consegue testar o onboarding assíncrono completo no app
+- Primeira impressão deixa de ser 504/erro
 
