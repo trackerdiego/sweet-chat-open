@@ -44,6 +44,7 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
         if (status === 401) toast.error('Sessão expirada. Faça login novamente.');
         else if (status === 402) toast.error(backendMsg || 'Créditos da IA esgotados. Avise o administrador.');
         else if (status === 429) toast.error(backendMsg || 'Muitas requisições ou limite atingido. Aguarde um momento.');
+        else if (status === 503) toast.error(backendMsg || 'A IA do Google está instável agora. Aguarde 1-2 minutos e tente de novo — sua cota não foi consumida.', { duration: 6000 });
         else if (status === 504 || /timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
         else if (status === 502) toast.error(backendMsg || 'A IA retornou resposta inválida. Tente novamente.');
         else if (status === 500) toast.error(backendMsg || 'Erro interno na IA. Tente novamente.');

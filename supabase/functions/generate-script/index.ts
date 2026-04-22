@@ -71,22 +71,40 @@ serve(async (req) => {
 
     const prompt = `Crie uma versão NOVA e MELHORADA do script para o Dia ${day}.\nPilar: ${pillarLabel} (${pillar})\nTítulo: ${title}\n${visceralElement ? `GATILHO VISCERAL: ${visceralElement}\n` : ""}Script de referência (NÃO copie):\n- Hook: ${viralHook}\n- Corpo: ${storytellingBody}\n- CTA: ${subtleConversion}\n\nGere script completamente novo. Adapte ao nicho "${primaryNiche || 'lifestyle'}". Retorne JSON com viralHook, storytellingBody e subtleConversion.`;
 
-    let result;
-    try {
-      result = await callGeminiNative({
-        apiKey: GOOGLE_GEMINI_API_KEY,
-        systemInstruction,
-        prompt,
-        schema: { type: "object", properties: { viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" } }, required: ["viralHook", "storytellingBody", "subtleConversion"] },
-        tag: "generate-script",
-        maxOutputTokens: 2000,
-        timeoutMs: 60000,
-      });
-    } catch (e) {
+    // Retry de nível função: 1 retry extra com 2s se Gemini cair em 503/504/timeout.
+    // Não conta cota até sucesso.
+    let result: Awaited<ReturnType<typeof callGeminiNative>> | undefined;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        result = await callGeminiNative({
+          apiKey: GOOGLE_GEMINI_API_KEY,
+          systemInstruction,
+          prompt,
+          schema: { type: "object", properties: { viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" } }, required: ["viralHook", "storytellingBody", "subtleConversion"] },
+          tag: `generate-script-try${attempt}`,
+          maxOutputTokens: 2000,
+          timeoutMs: 60000,
+          primaryAttempts: 2,
+          fallbackAttempts: 2,
+        });
+        break;
+      } catch (e) {
+        lastErr = e;
+        const status = e instanceof GeminiError ? e.status : 0;
+        if (status === 429 || status === 402) break;
+        if (attempt < 2) {
+          console.warn(`[generate-script] attempt ${attempt} failed, retrying in 2s`, status);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+    }
+    if (!result) {
+      const e = lastErr;
       if (e instanceof GeminiError) {
         if (e.status === 429) return jsonResponse({ error: "Muitas requisições à IA. Aguarde alguns segundos." }, 429);
         if (e.status === 402) return jsonResponse({ error: "Créditos da IA esgotados." }, 402);
-        if (e.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente." }, 503);
+        if (e.status === 503) return jsonResponse({ error: "O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida." }, 503);
         return jsonResponse({ error: e.message }, 502);
       }
       throw e;
