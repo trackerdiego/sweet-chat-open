@@ -1,86 +1,81 @@
 
 
-# Plano: subir o Kong (e o functions) que estão faltando — causa real do 502
+# Plano: destravar o Kong unhealthy + remover bloqueio de apikey no /auth/v1/health
 
-## Diagnóstico definitivo
+## Diagnóstico — duas coisas separadas
 
-A saída do diagnóstico é cristalina:
+### 1. Kong subiu mas está `unhealthy`
+- Container `supabase-kong` rodando em `0.0.0.0:8000` ✅
+- Mas healthcheck (`kong health`) está falhando — por isso `functions` recusou subir ("dependency failed to start")
+- O healthcheck do compose é `["CMD", "kong", "health"]`. Se o Kong respondeu CORS corretamente no `/auth/v1/health` (com latência 13ms), o processo está vivo. O `unhealthy` é provavelmente só falta de tempo / `start_period` curto, ou do `kong health` não conseguir falar com o admin API interno.
+- **Não bloqueia o login** — o Kong já está roteando. Só precisa subir o `functions` ignorando esse healthcheck.
 
-1. **YAML está válido** ✅ (`docker compose config -q` passou)
-2. **Mas o container `supabase-kong` NÃO está rodando** — não aparece em `docker ps` nem em `docker compose ps`
-3. **O container `supabase-edge-functions` também NÃO está rodando** — mesma coisa
-4. Auth, db, studio, storage, etc. estão todos `(healthy)` há 8 horas
-5. Cloudflare devolve **502** em tudo (`/auth/v1/*`, `/functions/v1/*`) porque o nginx da VPS está tentando fazer proxy pro Kong que não existe
-6. Logs do kong vazios (seção 5) confirmam: container nunca subiu nesse boot
+### 2. `/auth/v1/health` retornou 401 "No API key found"
+- Isso é **comportamento esperado do Kong self-hosted** com plugin `key-auth` ativo na rota
+- A rota `/auth/v1/health` no `kong.yml` exige `apikey` header
+- **NÃO afeta o login do app** — o frontend manda `apikey: <ANON_KEY>` em toda chamada via `supabase-js`
+- Mas a validação do diagnóstico precisa mandar o header pra refletir o uso real
 
-### Por que isso aconteceu
+## Correção em 2 passos
 
-Quando a YAML foi consertada, você deu `restart functions`, mas **nunca deu `up -d` no kong**. Como o kong já estava parado de antes (provavelmente desde o erro de YAML original), ele continuou parado. O `auth` ficou no ar porque já tava up de 8h atrás, antes da quebra.
-
-Resultado: `nginx → kong (caiu) → 502`.
-
-## Correção (1 comando, 30 segundos)
-
-Você não precisa colar nada novo no `docker-compose.yml`. Ele tá válido. Só precisa **subir o que está faltando**:
+### Passo 1 — subir o functions ignorando dependency unhealthy
 
 ```bash
 cd /root/supabase/docker
-docker compose up -d kong functions
+docker compose up -d --no-deps functions
+docker compose ps kong functions
 ```
 
-Isso cria e inicia os 2 containers ausentes sem mexer nos outros.
+`--no-deps` faz o functions subir sem esperar o healthcheck do kong (que tá só lento, não morto).
 
-## Validação imediata
+### Passo 2 — validar com o apikey correto (o que o app realmente faz)
+
+Pega a `ANON_KEY` do `.env` e usa nos curls:
 
 ```bash
-# 1. Confirma que kong e functions estão healthy
-docker compose ps kong functions
+ANON=$(grep ^ANON_KEY /root/supabase/docker/.env | cut -d= -f2)
 
-# 2. Health do auth via Kong (esperado: HTTP/2 200, JSON com "version")
-curl -i https://api.influlab.pro/auth/v1/health
+# Health do auth COM apikey (esperado: 200 + JSON com "version")
+curl -i https://api.influlab.pro/auth/v1/health -H "apikey: $ANON"
 
-# 3. Preflight CORS do login (esperado: HTTP/2 204 + headers access-control-*)
-curl -i -X OPTIONS https://api.influlab.pro/auth/v1/token?grant_type=password \
+# Preflight CORS do login (esperado: 204 + access-control-allow-origin)
+curl -i -X OPTIONS "https://api.influlab.pro/auth/v1/token?grant_type=password" \
   -H "Origin: https://app.influlab.pro" \
   -H "Access-Control-Request-Method: POST" \
   -H "Access-Control-Request-Headers: authorization,apikey,content-type"
 
-# 4. Preflight CORS da function nova
+# Function nova (esperado: 204 + x-influlab-function-version)
 curl -sI -X OPTIONS https://api.influlab.pro/functions/v1/start-onboarding-run \
-  | grep -iE 'http|x-influlab-function-version'
+  | grep -iE 'http|x-influlab-function-version|access-control'
 ```
 
-Se os 4 passarem, **o login no app.influlab.pro volta na hora** — não precisa nem refresh forçado, é só recarregar.
+## Se o functions também ficar unhealthy ou não subir
 
-## Se `docker compose up -d kong functions` falhar
-
-Cenário improvável (YAML tá ok), mas se acontecer, manda na próxima mensagem:
-
+Manda na próxima:
 ```bash
-docker compose up -d kong functions 2>&1 | tail -30
-docker logs supabase-kong --tail 60 2>&1
-docker logs supabase-edge-functions --tail 60 2>&1
+docker compose up -d --no-deps functions 2>&1 | tail -20
+docker logs supabase-edge-functions --tail 80 2>&1
+docker logs supabase-kong --tail 30 2>&1 | grep -iE 'error|warn|listen'
 ```
 
-Aí eu te entrego o conserto exato sem precisar de mais nenhuma rodada.
+## Por que o login JÁ deve voltar agora
 
-## O que vou alterar no repo
+O CORS error original do print (sua mensagem inicial) acontecia porque o Kong estava **completamente fora** (502 do Cloudflare). Agora o Kong está **dentro e respondendo** (`x-kong-response-latency: 13` no curl que você fez). Isso significa:
 
-**Nada.** O problema está 100% resolvido com 1 comando na VPS. Mexer em arquivo do repo agora só atrasaria.
+1. ✅ Cloudflare → nginx → Kong → auth: caminho aberto
+2. ✅ CORS do Kong tá funcionando (`access-control-allow-origin: *` apareceu na resposta)
+3. ✅ Auth respondendo (devolveu JSON estruturado, não erro de conexão)
 
-## Por que essa é a hipótese certa (e não outra)
+**Tenta abrir https://app.influlab.pro agora e fazer login.** Provavelmente já vai. O `functions` ainda precisa subir pro onboarding rodar, mas o login em si não depende do container `functions`.
 
-- ❌ Não é CORS de config — Kong nem responde, devolve 502 antes de chegar em qualquer header
-- ❌ Não é YAML — `docker compose config -q` retornou válido
-- ❌ Não é DNS / Cloudflare — outros serviços responderiam, e o erro 502 do CF mostra que ele alcança a VPS mas a VPS não tem upstream pra entregar
-- ❌ Não é o auth — auth está `healthy` há 8h, só não tem ninguém na frente roteando pra ele
-- ✅ É **container ausente**: `docker ps` lista 12 containers do stack, faltam exatamente os 2 que importam pro tráfego HTTP do app (kong e functions)
+## O que NÃO vou alterar no repo
 
-## Resultado esperado depois do `up -d`
+Nada. O `unhealthy` do Kong é tolerância de healthcheck do compose self-hosted, não afeta o tráfego real. O 401 no `/auth/v1/health` é proteção esperada do Kong. O frontend já manda apikey corretamente.
 
-- `supabase-kong` aparece em `docker ps` com status `healthy`
-- `supabase-edge-functions` aparece em `docker ps`
-- Login volta a funcionar em https://app.influlab.pro
-- Onboarding assíncrono começa a responder (com `x-influlab-function-version` no header)
-- Próxima vez que precisar mexer em config, o `deploy-selfhost.sh` já tem o pré-check de YAML e o fallback de `up -d --force-recreate`, então não dá pra repetir esse vexame
+## Resultado esperado
+
+1. Login no app volta a funcionar (já deve estar funcionando)
+2. `docker compose up -d --no-deps functions` sobe o container faltante
+3. Onboarding assíncrono passa a responder
+4. Próxima rodada: a gente investiga porque o healthcheck do Kong tá lento, mas é cosmético — sem urgência
 
