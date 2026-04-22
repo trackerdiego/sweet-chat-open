@@ -1,83 +1,81 @@
 
 
-# Diagnóstico: o "Erro ao salvar perfil" é o single-session-limit deslogando o próprio usuário
+# Plano: integrar as correções do Claude (service role + fallback local) no projeto
 
-## O que acontece (lendo o print de network)
+## Contexto
 
-A sequência das requisições no print é:
+Você trouxe duas Edge Functions reescritas pelo Claude (`generate-audience-profile` e `generate-personalized-matrix`) que resolvem 3 problemas reais que estão travando o onboarding no self-hosted (`api.influlab.pro`):
 
-```text
-GET user_profiles?select=active_session_token  → 200  (polling de single-session)
-GET user_profiles?select=active_session_token  → 200  (polling de single-session)
-GET user_profiles?user_id=eq.353d1276-...      → 406  (← aqui já não tem sessão válida)
-GET user_profiles?user_id=eq.353d1276-...      → 406
-POST user_profiles?on_conflict=user_id          → 401  (← o upsert do handleFinish)
-GET user_profiles?select=active_session_token  → 200
-GET user_profiles?select=active_session_token  → 200
+1. As funções usavam o cliente com **anon key** para fazer `upsert` em `audience_profiles` / `user_strategies`. No Lovable Cloud isso "passa" porque o ambiente é mais permissivo, mas no self-hosted RLS bloqueia silenciosamente → o salvamento nunca acontece → onboarding em loop.
+2. `generate-personalized-matrix` usava `Promise.all` — se 1 semana falhasse, a matriz inteira morria.
+3. Nenhuma das duas tinha **fallback local**: se Gemini demorasse/desse 504, o usuário ficava preso 1.5 min e via erro genérico.
+
+## O que vou implementar
+
+### 1. Substituir `supabase/functions/generate-audience-profile/index.ts`
+
+Aplicar a versão do Claude com:
+
+- `adminClient` usando `SUPABASE_SERVICE_ROLE_KEY` para todas as escritas em `user_profiles` e `audience_profiles`
+- Validação do JWT do usuário com cliente anon (apenas `auth.getUser()`); writes via service role
+- Timeout agressivo na chamada Gemini (~12s descrição / ~18s avatar)
+- **Fallback local estruturado** quando Gemini falhar/demorar: monta `audience_description` e `avatar_profile` completos a partir do nicho, estilo e descrição do usuário (preenche todos os campos exigidos pelo schema do app)
+- Retorno sempre 200 com `source: "ai" | "fallback"` e header `x-influlab-function-version` pra você confirmar que a VPS está rodando o código novo
+
+### 2. Substituir `supabase/functions/generate-personalized-matrix/index.ts`
+
+Aplicar a versão do Claude com:
+
+- `adminClient` com service role para ler `audience_profiles` e gravar `user_strategies` + atualizar `user_profiles.onboarding_completed = true`
+- Geração de **matriz local de 30 dias garantida** primeiro (usando `distributeVisceralElements` + nicho + estilo)
+- `Promise.allSettled` por semana: cada semana que o Gemini conseguir melhorar, sobrescreve a matriz local; semanas que falham permanecem com fallback local
+- `onboarding_completed = true` só é setado **depois** que `user_strategies` foi salvo com sucesso e validado (≥ 28 itens, idealmente 30)
+- Header de versão para diagnóstico
+
+### 3. Não tocar em `src/pages/Onboarding.tsx`
+
+O Claude analisou e confirmou que o Onboarding já está bem: tem pipeline visível, retry por etapa, validação `verifyMatrixSaved`, redirect para `/auth` em 401, sem botão "continuar mesmo assim". As correções anteriores já feitas no frontend ficam.
+
+### 4. Não tocar em `src/hooks/useUserProfile.ts` nem `useUserStrategies.ts`
+
+Travas de integridade (matriz < 28 → onboarding=false; sem polling de session token durante onboarding) continuam valendo.
+
+## Arquivos alterados
+
+- `supabase/functions/generate-audience-profile/index.ts` — substituído pela versão com service role + fallback
+- `supabase/functions/generate-personalized-matrix/index.ts` — substituído pela versão com service role + Promise.allSettled + matriz local garantida
+
+## Arquivos NÃO alterados
+
+- Frontend: nada
+- Outras Edge Functions: nada
+- Schema/RLS: nada (RLS continua igual; service role bypassa por design)
+- `supabase/functions/_shared/gemini.ts`: mantido
+
+## Secrets
+
+`SUPABASE_SERVICE_ROLE_KEY` já está configurado no projeto (confirmado em `<secrets>`). No self-hosted, você já tem essa secret no `docker-compose.yml` do GoTrue/PostgREST — então o deploy só precisa de `git pull` + redeploy das functions.
+
+## Deploy obrigatório na VPS
+
+Edge Functions mudam, então não basta Vercel:
+
+```bash
+cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
 ```
 
-Tradução: enquanto o usuário estava no passo 3 do onboarding, **a sessão JWT dele caducou ou o `active_session_token` no banco passou a divergir do que ele tem em localStorage**. Quando ele clicou "Começar Jornada":
+Conferir que a versão nova subiu:
 
-1. `updateProfile` chamou `.update().eq('user_id', userId).select().single()` — o servidor já não autenticava como o dono da row → PostgREST retorna **406** (RLS filtra a row, `.single()` não acha nada e responde Not Acceptable).
-2. O retry imediato deu mesma 406.
-3. O fallback `.upsert(...)` exige INSERT permission e o servidor responde **401** porque o JWT não é mais válido.
-4. Toast: "Erro ao salvar perfil. Tente novamente." → o usuário fica preso, porque qualquer clique a partir daí dispara o mesmo 401.
-
-A causa é o `useUserProfile.fetchProfile`: assim que o perfil é carregado, ele **sobrescreve o `active_session_token` com um novo UUID**. Se o usuário tem outra aba (ou abriu o link em duas janelas, ou entrou via banner do PWA + Safari), uma das duas sobrescreve a outra e a vítima começa a tomar 401 sem aviso visual — só descobre quando tenta salvar.
-
-Combinado com o erro 406 "happy path" do PostgREST, a UX vira: clica → erro genérico → tenta de novo → mesmo erro → desiste.
-
-## Correção em 4 frentes
-
-### 1. Não invalidar a sessão durante o onboarding
-
-Em `useUserProfile.fetchProfile`, hoje:
-
-```text
-- carrega profile
-- gera novo session_token e grava no banco
-- inicia polling a cada 30s — se token divergir, signOut imediato
+```bash
+curl -i -X OPTIONS https://api.influlab.pro/functions/v1/generate-audience-profile | grep -i x-influlab-function-version
 ```
 
-Mudança: **não rotacionar o `active_session_token` enquanto o usuário ainda não completou o onboarding** (`profile.onboarding_completed === false`). O polling também não roda nesse caso. Isso elimina:
+Deve retornar o header com a versão nova. Se não retornar, o deploy não pegou.
 
-- A janela em que duas abas se chutam mutuamente
-- O risco de cair na metade do pipeline e perder o progresso
-- A 401 silenciosa no `handleFinish`
-
-O lock de single-session passa a valer apenas para usuários já no app (após onboarding), que é o cenário de "compartilhamento de login" que motivou a feature.
-
-### 2. Tratar 401/406 em `updateProfile` e `handleFinish` com mensagem real
-
-Hoje `updateProfile` retorna `{ data, error }` mas `handleFinish` só checa `result?.error`. Quando a sessão cai e `updateProfile` retorna `undefined` (porque `if (!session?.user) return;`), `result?.error` é `undefined` → falsy → vai pro fallback `.upsert` que toma 401 → erro genérico.
-
-Mudanças:
-
-- `updateProfile` passa a detectar `error.code === 'PGRST116'` (single() sem row) e código 401, retornar erro estruturado
-- `handleFinish` passa a:
-  - Re-checar a sessão via `supabase.auth.getSession()` antes de qualquer write
-  - Se sessão inválida → `toast.error("Sua sessão expirou. Faça login novamente.")` + redirect para `/auth`
-  - Se 406 no update (perfil sumiu): tentar `upsert` direto com `user_id` do `getUser()`
-  - Se 401: redirect pro login, não ficar travado
-
-### 3. Remover o fallback que mascara o erro real
-
-A sequência atual `update → retry → upsert` esconde a causa. O fluxo passa a ser:
-
-```text
-1. getSession() — sessão válida?
-   não → redirect /auth
-2. upsert direto (insere se não existir, atualiza se existir) — uma só request
-3. se erro: mostra a mensagem específica do erro
-```
-
-Isso elimina o duplo round-trip e torna o erro diagnosticável.
-
-### 4. Destravar o usuário no banco (manual no self-hosted)
-
-Como o backend é Supabase self-hosted (`api.influlab.pro`) e o `supabase--read_query` aqui aponta pro Lovable Cloud, o reset precisa ser executado por você manualmente no SQL Editor do self-hosted:
+## SQL de reset do `cakerollguide@gmail.com` (rodar no Studio self-hosted antes de testar)
 
 ```sql
+-- Volta ao onboarding limpo + premium full pra testar tudo sem bater limite
 update public.user_profiles
 set onboarding_completed = false,
     description_status   = 'pending',
@@ -89,43 +87,31 @@ where user_id = (select id from auth.users where email = 'cakerollguide@gmail.co
 
 delete from public.user_strategies
 where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
+
+insert into public.user_usage (user_id, is_premium, tool_generations, chat_messages, script_generations, transcriptions)
+select id, true, 0, 0, 0, 0
+from auth.users where email = 'cakerollguide@gmail.com'
+on conflict (user_id) do update
+set is_premium = true,
+    tool_generations = 0,
+    chat_messages = 0,
+    script_generations = 0,
+    transcriptions = 0,
+    last_tool_date = null,
+    last_chat_date = null,
+    last_script_date = null,
+    last_transcription_date = null;
+
+delete from public.user_progress
+where user_id = (select id from auth.users where email = 'cakerollguide@gmail.com');
 ```
 
-O `active_session_token = null` é importante: sem isso, na próxima vez que ele logar, o polling detecta divergência e desloga de novo no meio do onboarding.
+## Resultado esperado após deploy
 
-## Arquivos alterados
-
-- `src/hooks/useUserProfile.ts`
-  - Não rotacionar `active_session_token` enquanto `onboarding_completed=false`
-  - Não iniciar polling enquanto `onboarding_completed=false`
-  - `updateProfile` retorna erro estruturado em vez de `undefined` quando sessão inválida
-  - Adiciona detecção de 401/PGRST116
-
-- `src/pages/Onboarding.tsx`
-  - `handleFinish`: re-checa sessão antes de salvar, usa upsert único, redireciona para `/auth` em 401, mostra mensagens específicas
-
-## O que NÃO muda
-
-- Edge functions (sem deploy de função)
-- Modelos Gemini, prompts, schemas
-- Lógica de pipeline (audience → visceral → matrix)
-- Trava de integridade no `useUserProfile` (matriz < 28 → onboarding=false)
-- Free tier, admin, Asaas
-
-## Deploy
-
-Frontend-only. Auto-deploy Vercel. Na VPS:
-
-```bash
-cd /root/app && git pull origin main
-```
-
-Sem `./scripts/deploy-selfhost.sh`. Mais o SQL acima rodado uma vez no Studio self-hosted pra destravar o `cakerollguide@gmail.com`.
-
-## Resultado esperado
-
-- O usuário não é mais deslogado no meio do onboarding
-- O erro "Erro ao salvar perfil" deixa de ocorrer; se a sessão de fato expirar, ele é mandado para `/auth` com mensagem clara
-- O `cakerollguide@gmail.com` volta ao onboarding limpo após o SQL
-- O lock de single-session continua funcionando normalmente para usuários já no app
+- Etapa "Analisando seu público" responde em até ~18s **sempre** (IA ou fallback)
+- Etapa "Matriz personalizada" responde em até ~40s **sempre**, com 30 dias garantidos
+- Usuário nunca mais vê 504/1.5 min de espera no onboarding
+- `audience_profiles` e `user_strategies` realmente são gravados (era o bug raiz no self-hosted)
+- `onboarding_completed = true` só após matriz salva e validada
+- Header `x-influlab-function-version` permite confirmar deploy correto na VPS
 
