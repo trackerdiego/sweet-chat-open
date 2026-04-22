@@ -1,13 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
+import { callGeminiNative } from "../_shared/gemini.ts";
+
+const FUNCTION_VERSION = "2025-04-22-service-role-fallback";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Expose-Headers": "x-influlab-function-version",
+  "x-influlab-function-version": FUNCTION_VERSION,
 };
 
-console.log("[audience-profile] boot — split steps (description|avatar), gateway-safe timeout");
+console.log(`[audience-profile] boot v=${FUNCTION_VERSION}`);
 
 const AVATAR_SCHEMA = {
   type: "object",
@@ -31,12 +36,12 @@ const AVATAR_SCHEMA = {
     sevenSinsCurrent: {
       type: "object",
       properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-      required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
+      required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"],
     },
     sevenSinsFuture: {
       type: "object",
       properties: { greed: { type: "string" }, gluttony: { type: "string" }, envy: { type: "string" }, wrath: { type: "string" }, lust: { type: "string" }, sloth: { type: "string" }, pride: { type: "string" } },
-      required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"]
+      required: ["greed", "gluttony", "envy", "wrath", "lust", "sloth", "pride"],
     },
     shameTriggers: { type: "array", items: { type: "string" } },
     anxietyDrivers: { type: "array", items: { type: "string" } },
@@ -49,15 +54,58 @@ const AVATAR_SCHEMA = {
   required: ["niche", "avatar", "primaryGoal", "primaryComplaint", "ultimateFear", "deepOccultDesire"],
 };
 
-function geminiErrorResponse(e: GeminiError) {
-  const status = e.status === 429 ? 429 : 503;
-  const msg = e.status === 429
-    ? "Limite de requisições excedido. Tente novamente."
-    : "Serviço de IA instável. Tente novamente em 1-2 minutos.";
-  return new Response(
-    JSON.stringify({ error: msg, retryable: true }),
-    { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
+// ─── Fallback local quando Gemini falha/demora ────────────────────
+function buildFallbackDescription(primaryNiche: string, secondaryList: string, styleDesc: string): string {
+  return `Público-alvo de criadores(as) brasileiros(as) interessados(as) em ${primaryNiche}${secondaryList ? `, com afinidade por ${secondaryList}` : ""}. São pessoas entre 22 e 40 anos, conectadas, que consomem conteúdo curto e direto nas redes sociais (Instagram, TikTok, YouTube). Buscam transformação real e prática, valorizam autenticidade e se identificam com criadores(as) que falam de forma ${styleDesc}. Sentem frustração com promessas vazias do mercado digital, têm medo de investir tempo/dinheiro e não ver resultado, e desejam profundamente uma virada de chave que dê sentido ao seu trabalho diário. Preferem aprender com quem demonstra resultado e mostra o caminho passo a passo, sem enrolação. Comportamento: salvam posts úteis, comentam quando se identificam, seguem por consistência, abandonam quando o conteúdo vira só venda.`;
+}
+
+function buildFallbackAvatar(primaryNiche: string, secondaryList: string, styleDesc: string, audienceDescription: string): Record<string, unknown> {
+  return {
+    niche: primaryNiche,
+    avatar: `Pessoa entre 25 e 38 anos, brasileira, conectada, em busca de domínio em ${primaryNiche}. Já tentou de tudo, está cansada de receitas prontas e quer um caminho próprio.`,
+    primaryGoal: `Conquistar autoridade e resultado consistente em ${primaryNiche}, sentindo orgulho do próprio trabalho.`,
+    primaryComplaint: "Faço tudo que dizem pra fazer e mesmo assim não vejo resultado proporcional ao esforço.",
+    secondaryGoals: ["Construir uma audiência real e fiel", "Ter renda previsível com o que ama", "Ser reconhecido(a) como referência no nicho"],
+    secondaryComplaints: ["Algoritmo imprevisível", "Falta de tempo para criar com qualidade", "Sensação de gritar no vácuo"],
+    promises: ["Clareza sobre o que postar", "Direção estratégica concreta", "Resultados mensuráveis"],
+    benefits: ["Mais engajamento real", "Posicionamento claro", "Confiança na própria voz"],
+    objections: ["Já tentei várias estratégias e nenhuma funcionou", "Não tenho tempo pra mais um método", "Vai ser igual aos outros"],
+    confusions: ["Não sei se devo focar em volume ou qualidade", "Não entendo o que o algoritmo realmente quer", "Não sei medir o que está funcionando"],
+    ultimateFear: "Continuar invisível, trabalhando muito e sem nunca ser reconhecido(a) — desperdiçar a chance da minha vida.",
+    falseSolutions: ["Postar mais vezes por dia", "Copiar trends sem contexto", "Comprar seguidores ou engajamento"],
+    mistakenBeliefs: ["Quem ganha é quem posta mais", "É tudo questão de sorte com o algoritmo", "Preciso aparecer perfeito(a) pra dar certo"],
+    frustrations: ["Vídeo viralizar uma vez e nunca mais", "Não saber o que postar amanhã", "Comparar-se com criadores(as) maiores"],
+    everydayRelatability: `Acorda olhando notificações, sente uma pontada quando o post não bombou, abre o app dos concorrentes e se compara, faz café e tenta reescrever o roteiro pela quinta vez.`,
+    commonEnemy: "Os gurus que vendem fórmulas mágicas e o algoritmo que muda as regras toda semana.",
+    tribe: `Comunidade brasileira de criadores(as) sérios(as) em ${primaryNiche}${secondaryList ? ` e ${secondaryList}` : ""}, que querem crescer com estratégia e não com sorte.`,
+    deepOccultDesire: "Ser visto(a) como referência incontestável — ter pessoas dizendo 'foi você que mudou minha forma de ver isso'.",
+    coreWounds: ["Sentir que o esforço não é reconhecido", "Medo de não ser bom(a) o suficiente", "Vergonha de tentar e falhar publicamente"],
+    sevenSinsCurrent: {
+      greed: "Quer mais alcance, mais seguidores, mais views — sempre.",
+      gluttony: "Consome cursos, mentorias, ebooks sem aplicar.",
+      envy: "Olha para criadores(as) maiores e sente que poderia ser ele(a).",
+      wrath: "Raiva de algoritmos, de comentários tóxicos, de plágios.",
+      lust: "Deseja a vida do criador(a) de sucesso — viagens, liberdade, status.",
+      sloth: "Procrastina o que é difícil (estratégia) e foca no fácil (postar qualquer coisa).",
+      pride: "Acha que já sabe o suficiente — resiste a mudar de método.",
+    },
+    sevenSinsFuture: {
+      greed: "Quer dominar o nicho e ser top 1.",
+      gluttony: "Devorar todo conhecimento estratégico de verdade.",
+      envy: "Ser invejado(a) pelos pares.",
+      wrath: "Provar pra quem duvidou que era possível.",
+      lust: "Viver da própria criação com liberdade total.",
+      sloth: "Construir um sistema que rode com menos esforço diário.",
+      pride: "Sentir orgulho legítimo do que construiu.",
+    },
+    shameTriggers: ["Vídeo com poucas views", "Comentário negativo público", "Família perguntando 'isso dá dinheiro?'"],
+    anxietyDrivers: ["Mudanças do algoritmo", "Falta de ideia para o próximo post", "Comparação com concorrentes"],
+    hopeAnchors: ["Um comentário sincero de alguém impactado(a)", "Crescimento mesmo que pequeno", "Convite ou reconhecimento de pares"],
+    decisionTriggers: ["Ver resultado real de alguém parecido(a)", "Sentir que o método é claro e aplicável", "Promessa de economizar tempo"],
+    verbalTriggers: ["Estratégia", "Autoridade", "Posicionamento", "Sem enrolação", "Resultado real"],
+    identityAnchors: [`Sou criador(a) de conteúdo em ${primaryNiche}`, "Sou alguém que constrói algo próprio", "Sou referência em formação"],
+    selfImageGap: "Vê-se como alguém com potencial enorme, mas sente que ainda não foi reconhecido(a) — gap entre o que é por dentro e o que mostra por fora.",
+  };
 }
 
 serve(async (req) => {
@@ -69,12 +117,21 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: authHeader } } });
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada");
+
+    // Cliente anon SÓ pra validar JWT
+    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const userId = user.id;
+
+    // Cliente admin (service role) pra writes — bypassa RLS no self-hosted
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     const body = await req.json().catch(() => ({}));
     const { primaryNiche, secondaryNiches, contentStyle, step } = body as {
@@ -92,43 +149,46 @@ serve(async (req) => {
     };
     const styleDesc = styleMap[contentStyle || "casual"] || styleMap.casual;
 
-    // Default = 'description' para compat com chamadas antigas (frontend novo manda explícito).
     const stepName = step === "avatar" ? "avatar" : "description";
 
     // ─────────────────────────────────────────────────────────────
-    // STEP 1: descrição do público (texto livre)
+    // STEP 1: descrição do público
     // ─────────────────────────────────────────────────────────────
     if (stepName === "description") {
       if (!primaryNiche) {
         return new Response(JSON.stringify({ error: "primaryNiche é obrigatório" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      console.log("[audience-profile] Step 1: audience description");
-      let step1;
+      console.log("[audience-profile] Step 1: description");
+      let audienceDescription = "";
+      let source: "ai" | "fallback" = "ai";
+
       try {
-        step1 = await callGeminiNative({
+        const step1 = await callGeminiNative({
           apiKey: GOOGLE_GEMINI_API_KEY,
           systemInstruction: `Você é uma estrategista de público digital especialista em criadores(as) de conteúdo brasileiros(as). Crie uma descrição rica e detalhada do público-alvo ideal. Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a).`,
-          prompt: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`,
+          prompt: `Crie uma descrição detalhada do público-alvo ideal para um(a) criador(a) de conteúdo brasileiro(a) com base nesta descrição:\n\n${primaryNiche}\n\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ""}\nEstilo de comunicação: ${styleDesc}\n\nA descrição deve incluir:\n- Quem são essas pessoas (demografia, psicografia)\n- O que consomem de conteúdo\n- Quais suas principais dores e frustrações\n- Quais seus desejos e aspirações\n- Como se comportam nas redes sociais\n- O que as motiva a seguir criadores(as) de conteúdo\n- Qual transformação buscam\n\nSeja específico(a), visceral e profundo(a). Nada genérico.`,
           model: "gemini-2.5-flash",
           fallbackModel: "gemini-2.5-flash-lite",
           tag: "audience-step1",
-          maxOutputTokens: 4000,
-          timeoutMs: 35000,
-          fallbackTimeoutMs: 30000,
+          maxOutputTokens: 3000,
+          timeoutMs: 12000,
+          fallbackTimeoutMs: 12000,
           primaryAttempts: 1,
-          fallbackAttempts: 2,
+          fallbackAttempts: 1,
         });
+        audienceDescription = (step1.text || "").trim();
+        if (!audienceDescription || audienceDescription.length < 80) {
+          throw new Error("descrição muito curta ou vazia");
+        }
+        console.log(`[audience-profile] Step 1 ai ok — ${audienceDescription.length} chars, model=${step1.modelUsed}`);
       } catch (e) {
-        if (e instanceof GeminiError) return geminiErrorResponse(e);
-        throw e;
+        source = "fallback";
+        audienceDescription = buildFallbackDescription(primaryNiche, secondaryList, styleDesc);
+        console.warn(`[audience-profile] Step 1 fallback — ${e instanceof Error ? e.message : String(e)}`);
       }
 
-      const audienceDescription = step1.text || "";
-      if (!audienceDescription) throw new Error("Etapa 1 não retornou descrição");
-      console.log(`[audience-profile] Step 1 ok — ${audienceDescription.length} chars, model=${step1.modelUsed}`);
-
-      const { error: upsertError } = await supabase
+      const { error: upsertError } = await adminClient
         .from("audience_profiles")
         .upsert({
           user_id: userId,
@@ -136,64 +196,73 @@ serve(async (req) => {
           generated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
 
-      if (upsertError) console.error("Error saving audience description:", upsertError);
+      if (upsertError) {
+        console.error("[audience-profile] upsert description failed:", upsertError);
+        return new Response(JSON.stringify({ error: "Falha ao salvar descrição", retryable: true, detail: upsertError.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
 
-      return new Response(JSON.stringify({ step: "description", audienceDescription }), {
+      // Marca description_status na user_profiles
+      await adminClient.from("user_profiles").update({ description_status: "ready" }).eq("user_id", userId);
+
+      return new Response(JSON.stringify({ step: "description", audienceDescription, source }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STEP 2: avatar visceral (responseSchema)
+    // STEP 2: avatar visceral
     // ─────────────────────────────────────────────────────────────
-    console.log("[audience-profile] Step 2: visceral avatar");
+    console.log("[audience-profile] Step 2: avatar");
 
-    // Lê descrição já salva
-    const { data: existing } = await supabase
+    const { data: existing } = await adminClient
       .from("audience_profiles")
       .select("audience_description")
       .eq("user_id", userId)
       .maybeSingle();
 
-    const audienceDescription = existing?.audience_description || "";
+    let audienceDescription = existing?.audience_description || "";
     if (!audienceDescription) {
-      return new Response(JSON.stringify({ error: "Descrição de público não encontrada. Rode step='description' primeiro.", retryable: true }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // Em vez de 400, gera fallback de descrição na hora pra não travar
+      audienceDescription = buildFallbackDescription(primaryNiche || "criação de conteúdo", secondaryList, styleDesc);
+      await adminClient.from("audience_profiles").upsert({
+        user_id: userId,
+        audience_description: audienceDescription,
+        generated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
     }
 
     const niche = primaryNiche || "";
+    let avatarProfile: Record<string, unknown> = {};
+    let source: "ai" | "fallback" = "ai";
 
-    const avatarSystem = `Act as a Master Copywriter and Direct Response Strategist, specializing in deep psychology and consumer behavior. Your language must be visceral, real, and dimensional. You do not tolerate vague or superficial answers.\n\nYour mission is to build the most robust and compelling Avatar Profile possible, based on the product/audience information below. You must analyze and fill in ALL of the following fields in ONE SINGLE RESPONSE.\n\nUse your vast knowledge base to infer realistic details, going beyond the obvious. I do not want generic answers. I want the psychological truth behind this avatar.\n\nCRITICAL INSTRUCTION: All of your answers and all output must be in Native Brazilian Portuguese (Português Nativo do Brasil). Use linguagem neutra de gênero — NUNCA use termos exclusivamente femininos ou masculinos. Use formas neutras ou com barra (criador/a, autêntico/a, inspirado/a).`;
-
-    const avatarPrompt = `[Product/Audience]= Criador(a) de conteúdo digital brasileiro(a). Descrição do negócio/conteúdo:\n"${niche}"\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ''}\nEstilo de comunicação: ${styleDesc}.\n\nDescrição detalhada do público-alvo:\n${audienceDescription}\n\nCom base nessas informações, preencha o perfil completo do avatar no formato JSON definido pelo schema. Seja visceral, profundo(a) e específico(a). NADA genérico. Preencha TODOS os campos.`;
-
-    let step2;
     try {
-      step2 = await callGeminiNative({
+      const step2 = await callGeminiNative({
         apiKey: GOOGLE_GEMINI_API_KEY,
-        systemInstruction: avatarSystem,
-        prompt: avatarPrompt,
+        systemInstruction: `Act as a Master Copywriter and Direct Response Strategist, specializing in deep psychology and consumer behavior. Your language must be visceral, real, and dimensional. You do not tolerate vague or superficial answers.\n\nYour mission is to build the most robust and compelling Avatar Profile possible. You must analyze and fill in ALL of the following fields in ONE SINGLE RESPONSE.\n\nCRITICAL: All output must be in Native Brazilian Portuguese. Use linguagem neutra de gênero.`,
+        prompt: `[Product/Audience]= Criador(a) de conteúdo digital brasileiro(a). Descrição do negócio/conteúdo:\n"${niche}"\n${secondaryList ? `Interesses complementares: ${secondaryList}` : ""}\nEstilo: ${styleDesc}.\n\nDescrição detalhada do público:\n${audienceDescription}\n\nPreencha o perfil completo do avatar no formato JSON do schema. Visceral, profundo(a), específico(a). NADA genérico. Preencha TODOS os campos.`,
         schema: AVATAR_SCHEMA,
         model: "gemini-2.5-flash",
         fallbackModel: "gemini-2.5-flash-lite",
         tag: "audience-step2",
         maxOutputTokens: 8192,
-        timeoutMs: 35000,
-        fallbackTimeoutMs: 30000,
+        timeoutMs: 18000,
+        fallbackTimeoutMs: 16000,
         primaryAttempts: 1,
-        fallbackAttempts: 2,
+        fallbackAttempts: 1,
       });
+      const parsed = step2.json as Record<string, unknown>;
+      if (!parsed || typeof parsed !== "object" || !parsed.avatar) {
+        throw new Error("avatar inválido");
+      }
+      avatarProfile = parsed;
+      console.log(`[audience-profile] Step 2 ai ok — ${Object.keys(avatarProfile).length} campos, model=${step2.modelUsed}`);
     } catch (e) {
-      if (e instanceof GeminiError) return geminiErrorResponse(e);
-      throw e;
+      source = "fallback";
+      avatarProfile = buildFallbackAvatar(niche || "criação de conteúdo", secondaryList, styleDesc, audienceDescription);
+      console.warn(`[audience-profile] Step 2 fallback — ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const avatarProfile = step2.json as Record<string, unknown>;
-    if (!avatarProfile || typeof avatarProfile !== "object") {
-      throw new Error("Etapa 2 retornou avatar inválido");
-    }
-    console.log(`[audience-profile] Step 2 ok — ${Object.keys(avatarProfile).length} campos, model=${step2.modelUsed}`);
-
-    const { error: upsertError } = await supabase
+    const { error: upsertError } = await adminClient
       .from("audience_profiles")
       .upsert({
         user_id: userId,
@@ -202,16 +271,19 @@ serve(async (req) => {
         generated_at: new Date().toISOString(),
       }, { onConflict: "user_id" });
 
-    if (upsertError) console.error("Error saving avatar profile:", upsertError);
+    if (upsertError) {
+      console.error("[audience-profile] upsert avatar failed:", upsertError);
+      return new Response(JSON.stringify({ error: "Falha ao salvar avatar", retryable: true, detail: upsertError.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
-    return new Response(JSON.stringify({ step: "avatar", audienceDescription, avatarProfile }), {
+    return new Response(JSON.stringify({ step: "avatar", audienceDescription, avatarProfile, source }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("generate-audience-profile error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido", retryable: true }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
