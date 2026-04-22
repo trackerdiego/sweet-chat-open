@@ -1,75 +1,86 @@
 
 
-# Plano: voltar o login a funcionar destravando o Kong na VPS
+# Plano: subir o Kong (e o functions) que estão faltando — causa real do 502
 
-## Diagnóstico real
+## Diagnóstico definitivo
 
-O print mostra `CORS error` na chamada `POST /auth/v1/token?grant_type=password`. Isso **não é bug do código** do app. Significa uma destas 3 coisas, todas do lado da VPS:
+A saída do diagnóstico é cristalina:
 
-1. O container `kong` não está rodando (porque o `docker-compose.yml` está quebrado desde a última edição)
-2. O Kong subiu mas com config antiga sem CORS pro domínio do app (`app.influlab.pro` / `lovable.app`)
-3. O Kong está rodando mas o GoTrue (`auth`) está fora do ar
+1. **YAML está válido** ✅ (`docker compose config -q` passou)
+2. **Mas o container `supabase-kong` NÃO está rodando** — não aparece em `docker ps` nem em `docker compose ps`
+3. **O container `supabase-edge-functions` também NÃO está rodando** — mesma coisa
+4. Auth, db, studio, storage, etc. estão todos `(healthy)` há 8 horas
+5. Cloudflare devolve **502** em tudo (`/auth/v1/*`, `/functions/v1/*`) porque o nginx da VPS está tentando fazer proxy pro Kong que não existe
+6. Logs do kong vazios (seção 5) confirmam: container nunca subiu nesse boot
 
-O frontend (`src/integrations/supabase/client.ts`) está correto: aponta pra `https://api.influlab.pro` com a anon key certa. **Não vou mexer no código do app.**
+### Por que isso aconteceu
 
-## O que vou fazer no repo
+Quando a YAML foi consertada, você deu `restart functions`, mas **nunca deu `up -d` no kong**. Como o kong já estava parado de antes (provavelmente desde o erro de YAML original), ele continuou parado. O `auth` ficou no ar porque já tava up de 8h atrás, antes da quebra.
 
-Nada de código do app. O problema é 100% infra na VPS. Mas vou criar **uma ferramenta de diagnóstico** que você roda na VPS pra eu ver exatamente o que está quebrado, sem precisar adivinhar mais.
+Resultado: `nginx → kong (caiu) → 502`.
 
-### Arquivo novo: `scripts/diagnose-selfhost.sh`
+## Correção (1 comando, 30 segundos)
 
-Script de diagnóstico read-only que roda na VPS e me mostra de uma vez:
-
-1. Status de cada container Supabase (`docker compose ps`)
-2. Se o `docker-compose.yml` é válido (`docker compose config -q`)
-3. Últimas 30 linhas de log de `kong`, `auth`, `functions`
-4. Resposta HTTP do preflight CORS:
-   ```bash
-   curl -i -X OPTIONS https://api.influlab.pro/auth/v1/token \
-     -H "Origin: https://app.influlab.pro" \
-     -H "Access-Control-Request-Method: POST" \
-     -H "Access-Control-Request-Headers: authorization,apikey,content-type"
-   ```
-5. Resposta HTTP de `GET /auth/v1/health`
-6. Versão atual do bloco `kong` no `docker-compose.yml` (linhas 14-110)
-
-Tudo formatado, com cabeçalhos claros, pra você colar a saída e eu ver o estado real.
-
-## O que você vai rodar na VPS
+Você não precisa colar nada novo no `docker-compose.yml`. Ele tá válido. Só precisa **subir o que está faltando**:
 
 ```bash
-cd /root/app && git pull origin main
-chmod +x scripts/diagnose-selfhost.sh
-./scripts/diagnose-selfhost.sh > /tmp/diag.txt 2>&1
-cat /tmp/diag.txt
+cd /root/supabase/docker
+docker compose up -d kong functions
 ```
 
-Depois você cola a saída aqui. Com base nela eu te entrego em **um único snippet** o conserto do Kong (YAML corrigido + comando de up).
+Isso cria e inicia os 2 containers ausentes sem mexer nos outros.
 
-## Por que isso vai resolver
+## Validação imediata
 
-- A última tentativa de mexer no `docker-compose.yml` deixou o YAML inválido (`yaml: line 85, column 20: mapping values are not allowed`)
-- Enquanto o YAML estiver inválido, **nenhum** `docker compose` funciona — nem restart, nem ps, nem nada
-- Ao mesmo tempo, os containers ainda rodam a versão antiga em memória, mas qualquer coisa que dependesse de uma mudança recente (ex: secrets adicionados, CORS atualizado) está fora
-- O CORS error no login é o sintoma de que o Kong não está aceitando o domínio do app
+```bash
+# 1. Confirma que kong e functions estão healthy
+docker compose ps kong functions
 
-Sem ver o estado atual de `/root/supabase/docker/docker-compose.yml` linhas 70-110, qualquer correção minha é chute. O script de diagnóstico te dá tudo de uma vez.
+# 2. Health do auth via Kong (esperado: HTTP/2 200, JSON com "version")
+curl -i https://api.influlab.pro/auth/v1/health
 
-## Arquivos alterados
+# 3. Preflight CORS do login (esperado: HTTP/2 204 + headers access-control-*)
+curl -i -X OPTIONS https://api.influlab.pro/auth/v1/token?grant_type=password \
+  -H "Origin: https://app.influlab.pro" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,apikey,content-type"
 
-- `scripts/diagnose-selfhost.sh` (novo) — diagnóstico read-only, não muda nada na VPS
+# 4. Preflight CORS da function nova
+curl -sI -X OPTIONS https://api.influlab.pro/functions/v1/start-onboarding-run \
+  | grep -iE 'http|x-influlab-function-version'
+```
 
-## Arquivos NÃO alterados
+Se os 4 passarem, **o login no app.influlab.pro volta na hora** — não precisa nem refresh forçado, é só recarregar.
 
-- Frontend, edge functions, schema, `client.ts`, `.env` — tudo correto
-- Não vou tentar adivinhar o YAML da VPS antes de ver o estado real
+## Se `docker compose up -d kong functions` falhar
 
-## Próximos passos depois do diagnóstico
+Cenário improvável (YAML tá ok), mas se acontecer, manda na próxima mensagem:
 
-Com a saída do diagnóstico em mãos, no próximo turno eu te entrego:
-1. Bloco YAML corrigido para colar no `docker-compose.yml`
-2. Comando `docker compose up -d --force-recreate kong auth functions`
-3. `curl` final de validação confirmando que login voltou
+```bash
+docker compose up -d kong functions 2>&1 | tail -30
+docker logs supabase-kong --tail 60 2>&1
+docker logs supabase-edge-functions --tail 60 2>&1
+```
 
-Hoje à noite você não precisa fazer mais nada além de rodar o script e colar a saída. Amanhã com a cabeça fresca a gente fecha em 1 ciclo.
+Aí eu te entrego o conserto exato sem precisar de mais nenhuma rodada.
+
+## O que vou alterar no repo
+
+**Nada.** O problema está 100% resolvido com 1 comando na VPS. Mexer em arquivo do repo agora só atrasaria.
+
+## Por que essa é a hipótese certa (e não outra)
+
+- ❌ Não é CORS de config — Kong nem responde, devolve 502 antes de chegar em qualquer header
+- ❌ Não é YAML — `docker compose config -q` retornou válido
+- ❌ Não é DNS / Cloudflare — outros serviços responderiam, e o erro 502 do CF mostra que ele alcança a VPS mas a VPS não tem upstream pra entregar
+- ❌ Não é o auth — auth está `healthy` há 8h, só não tem ninguém na frente roteando pra ele
+- ✅ É **container ausente**: `docker ps` lista 12 containers do stack, faltam exatamente os 2 que importam pro tráfego HTTP do app (kong e functions)
+
+## Resultado esperado depois do `up -d`
+
+- `supabase-kong` aparece em `docker ps` com status `healthy`
+- `supabase-edge-functions` aparece em `docker ps`
+- Login volta a funcionar em https://app.influlab.pro
+- Onboarding assíncrono começa a responder (com `x-influlab-function-version` no header)
+- Próxima vez que precisar mexer em config, o `deploy-selfhost.sh` já tem o pré-check de YAML e o fallback de `up -d --force-recreate`, então não dá pra repetir esse vexame
 
