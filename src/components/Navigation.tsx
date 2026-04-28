@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -150,10 +150,14 @@ export function Navigation() {
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" sideOffset={8} className="mb-2">
-              <DropdownMenuItem disabled className="gap-2 opacity-100 cursor-default">
-                <Coins size={16} className="text-primary" />
-                <span className="font-semibold">{wallet.coins_balance}</span>
-                <span className="text-xs text-muted-foreground">coins</span>
+              <DropdownMenuItem onClick={() => navigate('/carteira')} className="gap-2">
+                <WalletIcon size={16} className="text-primary" />
+                <span className="flex-1">Carteira</span>
+                <span className="text-xs font-semibold tabular-nums text-muted-foreground">🪙 {wallet.coins_balance}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/indique')} className="gap-2">
+                <Gift size={16} className="text-primary" />
+                <span>Indicar amigos</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleNotificationToggle}
