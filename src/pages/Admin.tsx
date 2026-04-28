@@ -6,7 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target, RefreshCw } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target, RefreshCw, Activity } from "lucide-react";
+import LaunchHealthDashboard from "@/components/admin/LaunchHealthDashboard";
 
 interface UserData {
   user_id: string;
