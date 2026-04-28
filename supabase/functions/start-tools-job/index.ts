@@ -88,18 +88,24 @@ serve(async (req) => {
           prompt: toolConfig.user(userInput, niche),
           schema: TOOL_SCHEMAS[toolType],
           tag: `tools-${toolType}`,
+          model: "gemini-2.5-flash",
+          midModel: "gemini-2.5-flash-lite",
+          fallbackModel: "gemini-2.5-pro",
           maxOutputTokens: 3000,
-          timeoutMs: 75000,
+          timeoutMs: 45000,
+          midTimeoutMs: 35000,
           fallbackTimeoutMs: 60000,
-          primaryAttempts: 2,
-          fallbackAttempts: 2,
+          primaryAttempts: 3,
+          midAttempts: 2,
+          fallbackAttempts: 1,
         });
       } catch (e) {
         if (e instanceof GeminiError) {
           if (e.status === 429) throw new JobError("Muitas requisições à IA. Aguarde alguns segundos e tente de novo.");
           if (e.status === 402) throw new JobError("Créditos da IA esgotados.");
-          if (e.status === 503) throw new JobError("O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente.");
-          throw new JobError(e.message);
+          if (e.status === 502) throw new JobError("A IA respondeu em formato inválido. Tente novamente.", e);
+          if (e.status === 503) throw new JobError("O serviço de IA está instável agora. Aguarde 1-2 minutos e tente novamente.", e);
+          throw new JobError(e.message, e);
         }
         throw e;
       }

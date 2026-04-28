@@ -94,7 +94,8 @@ function parseLooseJson(raw: string): unknown {
 export type GeminiOptions = {
   apiKey: string;
   systemInstruction?: string;
-  prompt: string;
+  prompt?: string;
+  contents?: Array<{ role?: string; parts: Array<Record<string, unknown>> }>;
   schema?: object; // se presente, força JSON estruturado via responseSchema
   // Cascata de modelos: tenta primary → mid → fallback. Cada nível com seus attempts.
   model?: string; // default gemini-2.5-pro
@@ -121,9 +122,21 @@ export type GeminiResult = {
 };
 
 export class GeminiError extends Error {
-  constructor(public status: number, public detail: string) {
+  constructor(
+    public status: number,
+    public detail: string,
+    public attempts?: number,
+    public modelUsed?: string,
+  ) {
     super(`Gemini ${status}: ${detail}`);
   }
+}
+
+function extractTextFromEnvelope(envelope: unknown): string | null {
+  const candidates = (envelope as Record<string, unknown> | null)?.["candidates"];
+  const firstCandidate = Array.isArray(candidates) ? candidates[0] : undefined;
+  const extractedText = firstCandidate?.content?.parts?.[0]?.text;
+  return typeof extractedText === "string" ? extractedText : null;
 }
 
 async function callOnce(
@@ -144,6 +157,44 @@ async function callOnce(
     });
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function repairJsonWithGemini(opts: {
+  apiKey: string;
+  rawText: string;
+  schema: object;
+  tag: string;
+  remainingMs: number;
+}): Promise<unknown | null> {
+  if (opts.remainingMs < 5000) return null;
+  const body: Record<string, unknown> = {
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `Corrija o texto abaixo para JSON válido que respeite o schema solicitado. Retorne APENAS o JSON, sem markdown.\n\nTEXTO:\n${opts.rawText.slice(0, 12000)}`,
+      }],
+    }],
+    generationConfig: {
+      maxOutputTokens: 4096,
+      responseMimeType: "application/json",
+      responseSchema: sanitizeSchema(opts.schema),
+    },
+  };
+  try {
+    const res = await callOnce("gemini-2.5-flash-lite", body, opts.apiKey, Math.min(12000, opts.remainingMs));
+    const text = await res.text();
+    if (!res.ok) {
+      logEvent("json-repair-fail", { tag: opts.tag, status: res.status, sample: text.slice(0, 200) });
+      return null;
+    }
+    const envelope = JSON.parse(text);
+    const repairedText = extractTextFromEnvelope(envelope);
+    if (!repairedText) return null;
+    return parseLooseJson(repairedText);
+  } catch (e) {
+    logEvent("json-repair-error", { tag: opts.tag, err: e instanceof Error ? e.message : String(e) });
+    return null;
   }
 }
 
@@ -168,7 +219,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   }
 
   const body: Record<string, unknown> = {
-    contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
+    contents: opts.contents ?? [{ role: "user", parts: [{ text: opts.prompt ?? "" }] }],
     generationConfig,
   };
   if (opts.systemInstruction) {
@@ -226,7 +277,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
           }
           // 4xx não-retriable (auth, schema inválido, etc.) — propaga imediatamente
           logEvent("hard-fail", { tag: opts.tag, model, attempt: i + 1, status: res.status, latencyMs: latency });
-          throw new GeminiError(res.status, text.slice(0, 500));
+          throw new GeminiError(res.status, text.slice(0, 500), totalAttempts, model);
         }
 
         // 200 OK — checa finishReason
@@ -293,7 +344,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   if (!success) {
     const detail = lastError ? `${lastError.status}: ${lastError.detail}` : "no upstream response";
     logEvent("all-tiers-failed", { tag: opts.tag, totalAttempts, latencyMs, lastError });
-    throw new GeminiError(lastError?.status || 503, `All Gemini tiers failed (${totalAttempts} attempts): ${detail}`);
+    throw new GeminiError(lastError?.status || 503, `All Gemini tiers failed (${totalAttempts} attempts): ${detail}`, totalAttempts, usedModel);
   }
 
   const { text } = success;
@@ -301,24 +352,33 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   try {
     envelope = JSON.parse(text);
   } catch {
-    throw new GeminiError(502, "Gemini retornou body não-JSON");
+    throw new GeminiError(502, "Gemini retornou body não-JSON", totalAttempts, usedModel);
   }
-  const partText = (envelope as Record<string, unknown> | null)
-    ?.["candidates"] as unknown;
-  const firstCandidate = Array.isArray(partText) ? partText[0] : undefined;
-  const extractedText = firstCandidate?.content?.parts?.[0]?.text;
+  const extractedText = extractTextFromEnvelope(envelope);
 
   if (typeof extractedText !== "string") {
     console.error(`[${opts.tag}] unexpected envelope`, JSON.stringify(envelope).slice(0, 600));
-    throw new GeminiError(502, "Gemini retornou envelope sem text");
+    throw new GeminiError(502, "Gemini retornou envelope sem text", totalAttempts, usedModel);
   }
 
   if (opts.schema) {
     try {
       return { json: parseLooseJson(extractedText), modelUsed: usedModel, latencyMs, attempts: totalAttempts };
     } catch (e) {
-      console.error(`[${opts.tag}] failed to parse JSON`, { sample: extractedText.slice(0, 400), err: String(e) });
-      throw new GeminiError(502, "Gemini retornou JSON inválido");
+      console.warn(`[${opts.tag}] failed to parse JSON; trying repair`, { sample: extractedText.slice(0, 400), err: String(e) });
+      const canRepair = globalDeadline - Date.now() >= 5000;
+      if (canRepair) totalAttempts++;
+      const repaired = await repairJsonWithGemini({
+        apiKey: opts.apiKey,
+        rawText: extractedText,
+        schema: opts.schema,
+        tag: opts.tag,
+        remainingMs: globalDeadline - Date.now(),
+      });
+      if (repaired) {
+        return { json: repaired, modelUsed: `${usedModel}+json-repair`, latencyMs: Date.now() - startedAt, attempts: totalAttempts };
+      }
+      throw new GeminiError(502, "A IA respondeu em formato JSON inválido", totalAttempts, usedModel);
     }
   }
   return { text: extractedText, modelUsed: usedModel, latencyMs, attempts: totalAttempts };
