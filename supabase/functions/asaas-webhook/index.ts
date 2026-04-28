@@ -3,21 +3,85 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, asaas-access-token, x-cron-secret",
 };
 
 const ASAAS_BASE = "https://api.asaas.com/v3";
 const REFERRAL_CREDIT_BRL = 10;
 
-async function fetchSubscription(asaasSubId: string, apiKey: string) {
-  const res = await fetch(`${ASAAS_BASE}/subscriptions/${asaasSubId}`, {
-    headers: { access_token: apiKey },
-  });
-  return res.ok ? await res.json() : null;
+// ---------- Helpers ----------
+function inferPlanFromValue(value: number | undefined | null): "monthly" | "annual" | null {
+  if (value == null) return null;
+  const v = Number(value);
+  if (v >= 250) return "annual"; // 297 / 397
+  if (v >= 30) return "monthly"; // 47
+  return null;
 }
 
+function addDaysISO(baseISO: string | Date, days: number): string {
+  const d = new Date(baseISO);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString();
+}
+
+function isoDate(d: any): string | null {
+  if (!d) return null;
+  try { return new Date(d).toISOString(); } catch { return null; }
+}
+
+async function fetchSubscription(asaasSubId: string, apiKey: string) {
+  try {
+    const res = await fetch(`${ASAAS_BASE}/subscriptions/${asaasSubId}`, {
+      headers: { access_token: apiKey },
+    });
+    return res.ok ? await res.json() : null;
+  } catch (e) {
+    console.error("fetchSubscription error:", e);
+    return null;
+  }
+}
+
+// ---------- Audit log (idempotência) ----------
+async function logWebhookEvent(admin: any, body: any, userId: string | null) {
+  const eventId: string | undefined = body?.id;
+  if (!eventId) {
+    console.warn("Webhook sem event id — pulando audit log");
+    return { alreadyProcessed: false };
+  }
+  const { error } = await admin.from("asaas_webhook_events").insert({
+    event_id: eventId,
+    event_type: body.event ?? "unknown",
+    payload: body,
+    user_id: userId,
+  });
+  if (error) {
+    if (String(error.code) === "23505" || String(error.message ?? "").includes("duplicate")) {
+      // Já recebemos esse event_id antes
+      const { data: prior } = await admin
+        .from("asaas_webhook_events")
+        .select("processed_at")
+        .eq("event_id", eventId)
+        .maybeSingle();
+      return { alreadyProcessed: !!prior?.processed_at };
+    }
+    console.error("audit log insert error:", error);
+  }
+  return { alreadyProcessed: false };
+}
+
+async function markProcessed(admin: any, eventId: string | undefined, errorMsg?: string) {
+  if (!eventId) return;
+  await admin
+    .from("asaas_webhook_events")
+    .update({
+      processed_at: new Date().toISOString(),
+      processing_error: errorMsg ?? null,
+    })
+    .eq("event_id", eventId);
+}
+
+// ---------- Referral ----------
 async function processReferralPayment(admin: any, userId: string) {
-  // Idempotente: só processa se status='pending'
   const { data: refRow } = await admin
     .from("referrals")
     .select("id, referrer_id, status")
@@ -39,10 +103,8 @@ async function processReferralPayment(admin: any, userId: string) {
     .eq("status", "pending");
   if (upErr) { console.error("referral update error:", upErr); return; }
 
-  // Garante wallet do referrer
   await admin.from("user_wallet").upsert({ user_id: refRow.referrer_id }, { onConflict: "user_id" });
 
-  // Loga transação (idempotente via reference_id único)
   const { error: txErr } = await admin.from("coin_transactions").insert({
     user_id: refRow.referrer_id,
     amount: 0,
@@ -54,7 +116,6 @@ async function processReferralPayment(admin: any, userId: string) {
     console.error("referral tx insert error:", txErr);
   }
 
-  // Credita BRL no wallet
   const { data: w } = await admin.from("user_wallet")
     .select("referral_credits_brl").eq("user_id", refRow.referrer_id).maybeSingle();
   const current = Number(w?.referral_credits_brl ?? 0);
@@ -65,26 +126,73 @@ async function processReferralPayment(admin: any, userId: string) {
   console.log(`Referral paid: referrer=${refRow.referrer_id} +R$${REFERRAL_CREDIT_BRL}`);
 }
 
-async function syncSubscriptionState(admin: any, userId: string, status: string, asaasSubId?: string, apiKey?: string) {
-  const patch: Record<string, unknown> = { user_id: userId, status, updated_at: new Date().toISOString() };
+// ---------- Sync subscription_state (PAYLOAD-FIRST) ----------
+type SyncInput = {
+  userId: string;
+  status: string;
+  // Dados extraídos do payload (preferidos)
+  asaasSubId?: string | null;
+  asaasCustomerId?: string | null;
+  cycle?: string | null;        // MONTHLY | YEARLY
+  value?: number | null;
+  nextDueDate?: string | null;  // ISO
+  // Fallback API
+  apiKey?: string;
+};
 
-  if (asaasSubId) {
-    patch.asaas_subscription_id = asaasSubId;
-    if (apiKey) {
-      const sub = await fetchSubscription(asaasSubId, apiKey);
-      if (sub?.nextDueDate) patch.current_period_end = new Date(sub.nextDueDate).toISOString();
-      if (sub?.customer) patch.asaas_customer_id = sub.customer;
-      if (sub?.cycle === "MONTHLY") patch.plan = "monthly";
-      else if (sub?.cycle === "YEARLY") patch.plan = "annual";
+async function syncSubscriptionState(admin: any, input: SyncInput) {
+  const patch: Record<string, unknown> = {
+    user_id: input.userId,
+    status: input.status,
+    updated_at: new Date().toISOString(),
+  };
+
+  // 1) Aplica o que veio direto do payload
+  if (input.asaasSubId) patch.asaas_subscription_id = input.asaasSubId;
+  if (input.asaasCustomerId) patch.asaas_customer_id = input.asaasCustomerId;
+
+  if (input.cycle === "MONTHLY") patch.plan = "monthly";
+  else if (input.cycle === "YEARLY") patch.plan = "annual";
+  else {
+    const inferred = inferPlanFromValue(input.value ?? null);
+    if (inferred) patch.plan = inferred;
+  }
+
+  if (input.nextDueDate) {
+    const iso = isoDate(input.nextDueDate);
+    if (iso) patch.current_period_end = iso;
+  }
+
+  // 2) Só chama API se faltar info crítica E tivermos apiKey
+  const missingPeriod = !patch.current_period_end;
+  const missingCustomer = !patch.asaas_customer_id;
+  if (input.asaasSubId && (missingPeriod || missingCustomer) && input.apiKey) {
+    const sub = await fetchSubscription(input.asaasSubId, input.apiKey);
+    if (sub) {
+      if (!patch.current_period_end && sub.nextDueDate) {
+        const iso = isoDate(sub.nextDueDate);
+        if (iso) patch.current_period_end = iso;
+      }
+      if (!patch.asaas_customer_id && sub.customer) patch.asaas_customer_id = sub.customer;
+      if (!patch.plan) {
+        if (sub.cycle === "MONTHLY") patch.plan = "monthly";
+        else if (sub.cycle === "YEARLY") patch.plan = "annual";
+      }
     }
   }
 
-  await admin.from("subscription_state").upsert(patch, { onConflict: "user_id" });
+  // 3) Fallback final pra current_period_end (não deixa NULL se for assinatura ativa)
+  if (!patch.current_period_end && (input.status === "active" || input.status === "trial")) {
+    const days = patch.plan === "annual" ? 365 : 30;
+    patch.current_period_end = addDaysISO(new Date(), days);
+  }
+
+  const { error } = await admin.from("subscription_state").upsert(patch, { onConflict: "user_id" });
+  if (error) console.error("subscription_state upsert error:", error, patch);
+  else console.log("subscription_state synced:", patch);
 }
 
-// Após PAYMENT_RECEIVED, se aplicamos um desconto (monthly_redemption) na fatura,
-// restaura o `value` da subscription Asaas pro preço cheio do plano. Caso contrário,
-// o valor com desconto persistiria nas próximas faturas.
+// ---------- Reverte desconto após PAYMENT_RECEIVED ----------
 async function revertSubscriptionValueIfDiscounted(admin: any, userId: string, asaasSubId: string | undefined, apiKey: string) {
   if (!asaasSubId) return;
   const { data: red } = await admin
@@ -96,11 +204,8 @@ async function revertSubscriptionValueIfDiscounted(admin: any, userId: string, a
     .limit(1)
     .maybeSingle();
   if (!red) return;
-  // Só reverte se foi desconto de fato (mensal). No anual, discount_brl_total = 0
-  // porque mexemos em nextDueDate, não em value — não há nada pra reverter.
   if (Number(red.discount_brl_total ?? 0) <= 0) return;
 
-  // Inferir preço cheio: lê plan e usa tabela fixa (mesmos valores do create-asaas-subscription)
   const { data: ss } = await admin
     .from("subscription_state")
     .select("plan")
@@ -119,78 +224,228 @@ async function revertSubscriptionValueIfDiscounted(admin: any, userId: string, a
   } catch (e) { console.error("revert error:", e); }
 }
 
+// ---------- Core processing ----------
+async function processEvent(admin: any, body: any, apiKey?: string) {
+  const event = body.event;
+
+  // Resolve user a partir de payment OU subscription
+  function resolvePaymentContext() {
+    const p = body.payment ?? {};
+    return {
+      userId: (p.externalReference as string | null) ?? null,
+      asaasSubId: (p.subscription as string | undefined) ?? undefined,
+      asaasCustomerId: (p.customer as string | undefined) ?? undefined,
+      value: (p.value as number | undefined) ?? undefined,
+      nextDueDate: (p.dueDate as string | undefined) ?? undefined,
+    };
+  }
+
+  function resolveSubscriptionContext() {
+    const s = body.subscription ?? {};
+    return {
+      userId: (s.externalReference as string | null) ?? null,
+      asaasSubId: (s.id as string | undefined) ?? undefined,
+      asaasCustomerId: (s.customer as string | undefined) ?? undefined,
+      cycle: (s.cycle as string | undefined) ?? undefined,
+      value: (s.value as number | undefined) ?? undefined,
+      nextDueDate: (s.nextDueDate as string | undefined) ?? undefined,
+      status: (s.status as string | undefined) ?? undefined,
+    };
+  }
+
+  // ===== SUBSCRIPTION_CREATED / SUBSCRIPTION_UPDATED =====
+  if (["SUBSCRIPTION_CREATED", "SUBSCRIPTION_UPDATED"].includes(event)) {
+    const ctx = resolveSubscriptionContext();
+    if (!ctx.userId) {
+      console.warn(`${event}: sem externalReference, pulando`);
+      return { userId: null };
+    }
+    const status = ctx.status === "ACTIVE" ? "active" : "trial";
+    await syncSubscriptionState(admin, {
+      userId: ctx.userId,
+      status,
+      asaasSubId: ctx.asaasSubId,
+      asaasCustomerId: ctx.asaasCustomerId,
+      cycle: ctx.cycle,
+      value: ctx.value,
+      nextDueDate: ctx.nextDueDate,
+      apiKey,
+    });
+    console.log(`${event} processado para user ${ctx.userId}`);
+    return { userId: ctx.userId };
+  }
+
+  // ===== PAYMENT_CONFIRMED / PAYMENT_RECEIVED =====
+  if (["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"].includes(event)) {
+    let ctx = resolvePaymentContext();
+    let userId = ctx.userId;
+
+    if (!userId && ctx.asaasSubId && apiKey) {
+      const sub = await fetchSubscription(ctx.asaasSubId, apiKey);
+      userId = sub?.externalReference ?? null;
+    }
+    if (!userId) {
+      console.error("No user_id found in webhook payload");
+      return { userId: null };
+    }
+
+    console.log("Activating premium for user:", userId);
+
+    const { error } = await admin.from("user_usage").update({ is_premium: true }).eq("user_id", userId);
+    if (error?.code === "PGRST116") {
+      await admin.from("user_usage").insert({ user_id: userId, is_premium: true });
+    }
+
+    await syncSubscriptionState(admin, {
+      userId,
+      status: "active",
+      asaasSubId: ctx.asaasSubId,
+      asaasCustomerId: ctx.asaasCustomerId,
+      value: ctx.value,
+      nextDueDate: ctx.nextDueDate,
+      apiKey,
+    });
+
+    await processReferralPayment(admin, userId);
+    if (apiKey) await revertSubscriptionValueIfDiscounted(admin, userId, ctx.asaasSubId, apiKey);
+
+    console.log("Premium activated successfully for:", userId);
+    return { userId };
+  }
+
+  // ===== PAYMENT_OVERDUE / REFUNDED / DELETED =====
+  if (["PAYMENT_OVERDUE", "PAYMENT_REFUNDED", "PAYMENT_DELETED"].includes(event)) {
+    const ctx = resolvePaymentContext();
+    let userId = ctx.userId;
+    if (!userId && ctx.asaasSubId && apiKey) {
+      const sub = await fetchSubscription(ctx.asaasSubId, apiKey);
+      userId = sub?.externalReference ?? null;
+    }
+    if (userId) {
+      console.log(`Deactivating premium for user (${event}):`, userId);
+      await admin.from("user_usage").update({ is_premium: false }).eq("user_id", userId);
+      await syncSubscriptionState(admin, {
+        userId,
+        status: "past_due",
+        asaasSubId: ctx.asaasSubId,
+        asaasCustomerId: ctx.asaasCustomerId,
+        apiKey,
+      });
+    }
+    return { userId };
+  }
+
+  // ===== SUBSCRIPTION_DELETED / INACTIVE =====
+  if (["SUBSCRIPTION_DELETED", "SUBSCRIPTION_INACTIVE"].includes(event)) {
+    const ctx = resolveSubscriptionContext();
+    if (ctx.userId) {
+      console.log("Deactivating premium for user (subscription):", ctx.userId);
+      await admin.from("user_usage").update({ is_premium: false }).eq("user_id", ctx.userId);
+      await syncSubscriptionState(admin, {
+        userId: ctx.userId,
+        status: "canceled",
+        asaasSubId: ctx.asaasSubId,
+        asaasCustomerId: ctx.asaasCustomerId,
+        cycle: ctx.cycle,
+        apiKey,
+      });
+    }
+    return { userId: ctx.userId };
+  }
+
+  console.log("Evento ignorado (sem handler):", event);
+  return { userId: null };
+}
+
+// ---------- HTTP entrypoint ----------
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const webhookToken = Deno.env.get("ASAAS_WEBHOOK_TOKEN");
-  const receivedToken = req.headers.get("asaas-access-token");
-  if (webhookToken && receivedToken !== webhookToken) {
-    console.error("Invalid webhook token");
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  const apiKey = Deno.env.get("ASAAS_API_KEY") ?? undefined;
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
 
   try {
-    const body = await req.json();
-    const event = body.event;
-    const apiKey = Deno.env.get("ASAAS_API_KEY") ?? undefined;
+    const rawBody = await req.json();
 
-    console.log("Asaas webhook received:", event, JSON.stringify(body).slice(0, 500));
-
-    const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    async function resolveUserIdFromPayment(): Promise<{ userId: string | null; asaasSubId?: string }> {
-      let userId: string | null = body.payment?.externalReference ?? null;
-      const asaasSubId: string | undefined = body.payment?.subscription;
-      if (!userId && asaasSubId && apiKey) {
-        const sub = await fetchSubscription(asaasSubId, apiKey);
-        userId = sub?.externalReference ?? null;
+    // ===== MODO REPROCESS =====
+    if (rawBody?.action === "reprocess") {
+      const cronSecret = Deno.env.get("CRON_SECRET");
+      const provided = req.headers.get("x-cron-secret");
+      if (!cronSecret || provided !== cronSecret) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      return { userId, asaasSubId };
-    }
-
-    if (["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"].includes(event)) {
-      const { userId, asaasSubId } = await resolveUserIdFromPayment();
-      if (!userId) {
-        console.error("No user_id found in webhook payload");
-        return new Response(JSON.stringify({ error: "No user reference" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const eventId = rawBody.event_id as string | undefined;
+      if (!eventId) {
+        return new Response(JSON.stringify({ error: "event_id required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-
-      console.log("Activating premium for user:", userId);
-
-      const { error } = await admin.from("user_usage").update({ is_premium: true }).eq("user_id", userId);
-      if (error?.code === "PGRST116") {
-        await admin.from("user_usage").insert({ user_id: userId, is_premium: true });
+      const { data: row, error } = await admin
+        .from("asaas_webhook_events")
+        .select("payload")
+        .eq("event_id", eventId)
+        .maybeSingle();
+      if (error || !row) {
+        return new Response(JSON.stringify({ error: "event not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-
-      await syncSubscriptionState(admin, userId, "active", asaasSubId, apiKey);
-      await processReferralPayment(admin, userId);
-      if (apiKey) await revertSubscriptionValueIfDiscounted(admin, userId, asaasSubId, apiKey);
-
-      console.log("Premium activated successfully for:", userId);
-    }
-
-    if (["PAYMENT_OVERDUE", "PAYMENT_REFUNDED", "PAYMENT_DELETED"].includes(event)) {
-      const { userId, asaasSubId } = await resolveUserIdFromPayment();
-      if (userId) {
-        console.log(`Deactivating premium for user (${event}):`, userId);
-        await admin.from("user_usage").update({ is_premium: false }).eq("user_id", userId);
-        await syncSubscriptionState(admin, userId, "past_due", asaasSubId, apiKey);
+      try {
+        const result = await processEvent(admin, row.payload, apiKey);
+        await markProcessed(admin, eventId);
+        return new Response(JSON.stringify({ reprocessed: true, ...result }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e: any) {
+        await markProcessed(admin, eventId, String(e?.message ?? e));
+        throw e;
       }
     }
 
-    if (["SUBSCRIPTION_DELETED", "SUBSCRIPTION_INACTIVE"].includes(event)) {
-      const userId = body.subscription?.externalReference;
-      const asaasSubId = body.subscription?.id;
-      if (userId) {
-        console.log("Deactivating premium for user (subscription):", userId);
-        await admin.from("user_usage").update({ is_premium: false }).eq("user_id", userId);
-        await syncSubscriptionState(admin, userId, "canceled", asaasSubId, apiKey);
-      }
+    // ===== MODO WEBHOOK NORMAL =====
+    const webhookToken = Deno.env.get("ASAAS_WEBHOOK_TOKEN");
+    const receivedToken = req.headers.get("asaas-access-token");
+    if (webhookToken && receivedToken !== webhookToken) {
+      console.error("Invalid webhook token");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const event = rawBody.event;
+    console.log("Asaas webhook received:", event, "id:", rawBody.id);
+
+    // 1) LOG-FIRST (idempotência)
+    const { alreadyProcessed } = await logWebhookEvent(admin, rawBody, null);
+    if (alreadyProcessed) {
+      console.log("Evento já processado, retornando 200:", rawBody.id);
+      return new Response(JSON.stringify({ received: true, deduped: true }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 2) PROCESSA
+    let processingError: string | undefined;
+    let result: { userId: string | null } = { userId: null };
+    try {
+      result = await processEvent(admin, rawBody, apiKey);
+    } catch (e: any) {
+      processingError = String(e?.message ?? e);
+      console.error("processEvent error:", e);
+    }
+
+    // 3) MARCA processado + atualiza user_id se descobrimos
+    await markProcessed(admin, rawBody.id, processingError);
+    if (result.userId && rawBody.id) {
+      await admin
+        .from("asaas_webhook_events")
+        .update({ user_id: result.userId })
+        .eq("event_id", rawBody.id);
     }
 
     return new Response(JSON.stringify({ received: true }), {
