@@ -373,7 +373,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
         rawText: extractedText,
         schema: opts.schema,
         tag: opts.tag,
-        remainingMs: Math.max(5000, globalDeadline - Date.now()),
+        remainingMs: globalDeadline - Date.now(),
       });
       if (repaired) {
         return { json: repaired, modelUsed: `${usedModel}+json-repair`, latencyMs: Date.now() - startedAt, attempts: totalAttempts };
