@@ -25,41 +25,47 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
   const [aiContent, setAiContentLocal] = useState<AiGuideContent | null>(null);
   const sections = getDailyGuideContent(strategy);
 
+  // Job assíncrono: start-daily-guide-job + polling get-ai-job-status (imune a timeout Kong/Cloudflare)
   const handleGenerateAI = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-daily-guide', { body: { pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, weeklyTheme: weeklyTheme || '', dayTitle: strategy.title, day: strategy.day, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' } });
-      if (error) {
-        console.error('[DailyGuide] invoke error', error);
-        const ctx = (error as { context?: { status?: number; body?: unknown } }).context;
-        const status = ctx?.status;
-        let backendMsg = '';
-        try {
-          const body = ctx?.body;
-          if (typeof body === 'string') backendMsg = (JSON.parse(body) as { error?: string })?.error || '';
-          else if (body && typeof body === 'object') backendMsg = (body as { error?: string }).error || '';
-        } catch { /* ignore */ }
-        const msg = backendMsg || (error as { message?: string }).message || '';
+      const { data, error } = await supabase.functions.invoke('start-daily-guide-job', {
+        body: { pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, weeklyTheme: weeklyTheme || '', dayTitle: strategy.title, day: strategy.day, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' },
+      });
+      if (error) throw error;
+      const apiErr = (data as { error?: string })?.error;
+      if (apiErr) throw new Error(apiErr);
+      const jobId = (data as { jobId?: string })?.jobId;
+      if (!jobId) throw new Error('Resposta inválida do servidor');
 
-        if (status === 401) toast.error('Sessão expirada. Faça login novamente.');
-        else if (status === 402) toast.error(backendMsg || 'Créditos da IA esgotados. Avise o administrador.');
-        else if (status === 429) toast.error(backendMsg || 'Muitas requisições ou limite atingido. Aguarde um momento.');
-        else if (status === 503) toast.error(backendMsg || 'A IA do Google está instável agora. Aguarde 1-2 minutos e tente de novo — sua cota não foi consumida.', { duration: 6000 });
-        else if (status === 504 || /timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
-        else if (status === 502) toast.error(backendMsg || 'A IA retornou resposta inválida. Tente novamente.');
-        else if (status === 500) toast.error(backendMsg || 'Erro interno na IA. Tente novamente.');
-        else toast.error(backendMsg || 'Erro ao gerar sugestões. Tente novamente.');
-        return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const baseUrl = (supabase as any).supabaseUrl as string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apikey = (supabase as any).supabaseKey as string;
+
+      const startedAt = Date.now();
+      let content: AiGuideContent | null = null;
+      while (Date.now() - startedAt < 5 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
+        url.searchParams.set('jobId', jobId);
+        const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${session.access_token}`, apikey } });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const job = json?.job;
+        if (!job) continue;
+        if (job.status === 'done') { content = job.result as AiGuideContent; break; }
+        if (job.status === 'failed') throw new Error(job.error_message || 'Erro ao processar');
       }
-      if (data?.error) { console.error('[DailyGuide] data error', data); toast.error(data.error); return; }
-      const content = data as AiGuideContent;
+      if (!content) throw new Error('A geração demorou mais que o esperado.');
+
       setAiContentLocal(content); onAiContent?.(content); setAiGenerated(true);
       toast.success('Sugestões personalizadas geradas com IA! ✨');
     } catch (e) {
-      console.error('[DailyGuide] catch', e);
-      const msg = e instanceof Error ? e.message : '';
-      if (/timeout|abort/i.test(msg)) toast.error('A IA está demorando mais que o normal. Tente novamente em alguns segundos.');
-      else toast.error(msg || 'Erro ao gerar sugestões.');
+      console.error('[DailyGuide] error', e);
+      toast.error(e instanceof Error ? e.message : 'Erro ao gerar sugestões.');
     } finally { setLoading(false); }
   };
 
