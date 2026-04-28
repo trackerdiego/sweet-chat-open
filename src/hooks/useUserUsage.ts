@@ -133,6 +133,7 @@ export function useUserUsage() {
     remainingTranscriptions,
     remainingChat,
     incrementUsage,
+    refreshUsage,
     freeLimits: FREE_LIMITS,
   };
 }
