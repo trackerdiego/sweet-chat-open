@@ -21,7 +21,9 @@ import ResetPassword from "./pages/ResetPassword";
 import Landing from "./pages/Landing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
+import Renew from "./pages/Renew";
 import NotFound from "./pages/NotFound";
+import { PixDueBanner } from "./components/PixDueBanner";
 
 const queryClient = new QueryClient();
 
