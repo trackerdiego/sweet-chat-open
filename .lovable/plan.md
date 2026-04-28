@@ -1,142 +1,158 @@
 
-## Fase 2 — Carteira, Indicações e Sincronização de Assinatura
+## Fase 3 — Paywall após Trial + Desconto Automático no Asaas
 
-Objetivo: deixar o sistema de coins/indicações **visível e funcional ponta a ponta**, e fazer o `subscription_state` ser a fonte da verdade real (não só `user_usage.is_premium`). Ainda **sem paywall** e **sem desconto automático no Asaas** (isso fica pra Fase 3).
-
----
-
-### 1. Páginas novas
-
-#### `/carteira` (`src/pages/Wallet.tsx`)
-- Cabeçalho com saldo grande: `🪙 {coins_balance}` + sub-linha "≈ R$ X,XX em desconto" (1 coin = R$ 0,01, taxa de conversão definida em constante `COIN_TO_BRL = 0.01`).
-- Card "Créditos de indicação": `R$ {referral_credits_brl}` separado dos coins (caminho diferente — vem de indicação paga).
-- Lifetime: "Total ganho desde sempre: {lifetime_coins_earned} coins".
-- Lista das últimas 20 `coin_transactions` (já vem do `useWallet`): ícone por tipo, label PT-BR (`task_complete` → "Tarefa concluída", `streak_bonus` → "Bônus de streak 7 dias", `referral_bonus` → "Indicação paga", `redeem_discount` → "Desconto aplicado"), data relativa ("há 2h"), valor (+/-).
-- Banner suave no topo: "Use seus coins pra ganhar desconto na mensalidade — Em breve" (não funcional na Fase 2, só sinalização).
-- Link/CTA "Indique amigos →" que vai pra `/indique`.
-
-#### `/indique` (`src/pages/Referral.tsx`)
-- Card grande com o código do usuário (lido de `referral_codes`): `INFLU-XYZ123`.
-- Link compartilhável pré-formado: `https://app.influlab.pro/auth?ref=XYZ123`.
-- Botão "Copiar link" (clipboard API + toast).
-- Botões de share nativos (WhatsApp, Telegram) usando `window.open` com mensagens prontas.
-- Explicação curta: "Quando seu indicado pagar a 1ª mensalidade, você ganha **R$ 10 em créditos** (creditados automaticamente aqui)."
-- Lista de indicações do usuário (via `referrals` onde `referrer_id = auth.uid()`): nome mascarado (`Maria S.` — cruzar com `user_profiles.display_name`), status (`pending` → "Aguardando 1º pagamento", `paid` → "✅ Pagou — você ganhou R$ 10", `expired` → "Expirou").
-- Contador no topo: "X indicações pagas · R$ Y ganhos".
-
-#### Rotas em `App.tsx`
-- Adicionar `/carteira` → `<Wallet/>` e `/indique` → `<Referral/>` (ambas autenticadas).
-
-#### Hook `useReferrals` novo
-- Lê `referral_codes` (próprio) e `referrals where referrer_id = uid` com join opcional pra display_name.
-- Expõe `code`, `referrals[]`, `paidCount`, `totalEarnedBrl`.
+Objetivo: ativar o modelo **100% pago** com trial de 7 dias e fazer os coins/créditos virarem **desconto real na próxima fatura** automaticamente, via cron + PATCH na subscription do Asaas.
 
 ---
 
-### 2. Captura de `?ref=` no signup (`src/pages/Auth.tsx`)
+### 1. `useSubscription` — fonte da verdade nova
 
-Mudança mínima e segura:
-- Ao montar `Auth`, ler `?ref=` da URL e salvar em `localStorage.setItem('pending_ref', code)` (TTL implícito: dura até o signup).
-- No `handleSubmit` do **signup** (não do login), depois do `signUp` retornar com sucesso (com ou sem session), chamar nova edge function `register-referral` com `{ code }` no body. Ela valida o código, cria a row em `referrals` (status `pending`), e limpa o localStorage.
-- Se o código for inválido, ignora silenciosamente (não bloqueia signup — referral é bônus).
-- Mostra um banner pequeno acima do form: "🎁 Você foi convidado por @{nome do referrer}" quando `?ref=` está presente e válido (resolve via SELECT em `referral_codes` join `user_profiles`).
+Hook novo `src/hooks/useSubscription.ts` que lê `subscription_state`:
 
-#### Edge function `register-referral`
-- Pequena, síncrona (<300ms).
-- Body: `{ code: string }`.
-- Valida JWT do usuário recém-cadastrado.
-- SELECT em `referral_codes` por `code` → pega `referrer_id`.
-- Guarda contra auto-indicação (`referrer_id !== user.id`).
-- Guarda contra duplicata (constraint `unique(referred_user_id)` — vou pedir SQL extra, ver seção 5).
-- INSERT em `referrals` com `status='pending'`, `referred_code=code`.
-- Retorna `{ ok: true }`.
+- Retorna `{ status, trialEndsAt, currentPeriodEnd, plan, daysLeftInTrial, isActive, isTrialing, isExpired, hasAccess, loading }`.
+- `hasAccess = status === 'active' || (status === 'trial' && trialEndsAt > now)`.
+- `daysLeftInTrial = ceil((trialEndsAt - now) / day)`.
+- `useUserUsage` continua existindo pra compatibilidade dos contadores diários (script/tool/chat/transcription), mas **`isPremium` lá vira derivado de `hasAccess`** (conceitualmente — pra não quebrar componentes existentes, vou injetar via override mínimo: `useUserUsage` lê `subscription_state` e popula `is_premium` no return baseado em `hasAccess`).
 
 ---
 
-### 3. Sincronização `subscription_state` no fluxo de pagamento
+### 2. Paywall global
 
-O webhook hoje só mexe em `user_usage.is_premium`. Vamos espelhar tudo em `subscription_state` E processar indicação no 1º pagamento.
+**Componente novo** `src/components/AccessGuard.tsx`:
+- Wrapper que usa `useSubscription`. Se `!hasAccess && !loading`, renderiza tela de bloqueio cheia (não dá pra fechar).
+- Tela de bloqueio: mensagem "Seu acesso expirou" / "Seu trial acabou", CTA grande "Assinar agora" (abre `CheckoutModal`), botão secundário "Ver minha indicação" (vai pra `/indique` — incentivo a chamar amigos pra ganhar crédito).
+- Variante quando `isTrialing`: **NÃO bloqueia**, mas mostra banner persistente no topo do app: "🎁 X dias grátis restantes — Assine agora pra continuar".
+- Aplicado em `App.tsx` envolvendo todas as rotas autenticadas (exceto `/onboarding`, `/carteira`, `/indique` — essas devem ser acessíveis pra não prender o usuário antes da decisão).
 
-#### `create-asaas-subscription/index.ts`
-- Após criar a assinatura no Asaas, **upsert** em `subscription_state`:
-  - `status` permanece `trial` (só vira `active` quando o webhook confirma pagamento).
-  - `asaas_subscription_id` = `subscriptionData.id`.
-  - `asaas_customer_id` = `customerId`.
-  - `plan` = `'monthly' | 'yearly'`.
-
-#### `asaas-webhook/index.ts` — em `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`:
-1. Mantém o update em `user_usage.is_premium = true` (compatibilidade — `useUserUsage` ainda é usado em vários lugares).
-2. Upsert em `subscription_state`: `status='active'`, `current_period_end = nextDueDate da subscription` (busca via API Asaas — já tá fazendo fetch do sub quando precisa).
-3. **Processamento de indicação (idempotente):**
-   - SELECT em `referrals` onde `referred_user_id = userId AND status = 'pending'`.
-   - Se achou: UPDATE pra `status='paid'`, `first_payment_at=now()`, `credit_awarded_brl=10`.
-   - Credita R$ 10 no wallet do referrer: UPDATE `user_wallet SET referral_credits_brl = referral_credits_brl + 10` onde `user_id = referrer_id`.
-   - Loga em `coin_transactions` do referrer (type=`referral_bonus`, amount=`0` — coins não, é credit BRL — com `metadata: {credit_brl: 10, referral_id}` e `reference_id='referral-{referral_id}'` pra idempotência).
-   - Idempotente: a query `WHERE status='pending'` garante que só corre uma vez (no 2º payment_confirmed o status já é `paid`).
-
-#### Eventos de falha (`PAYMENT_OVERDUE`, etc.):
-- Mantém `user_usage.is_premium=false`.
-- Upsert `subscription_state.status='past_due'` (ou `canceled` em SUBSCRIPTION_DELETED).
+**Remover gates do tipo "free_days":**
+- `useUserUsage.canAccessDay` agora retorna sempre `true` se `hasAccess` (não tem mais limite de 7 dias dentro do app — quem tá no trial vê tudo, quem expirou vê o paywall).
+- Remover blur de `Matrix.tsx`/`Tasks.tsx` baseado em `canAccessDay` — eles continuam chamando o método mas ele vira no-op pra usuários com `hasAccess`.
+- Manter os contadores diários (script/tool/chat) **só durante trial** — quem tem `status='active'` tem ilimitado, quem tá no trial respeita os mesmos `FREE_LIMITS` atuais.
 
 ---
 
-### 4. Indicador na navegação
+### 3. Resgate de coins/créditos — UI
 
-- Adicionar item no DropdownMenu de Config: "🎁 Indicar amigos" → navega pra `/indique`.
-- Adicionar item: "💰 Carteira" → navega pra `/carteira` (substitui o item disabled atual que só mostra coins).
-- Manter o badge de coins no trigger do dropdown (já existe).
+#### `/carteira` ganha botão "Aplicar na próxima fatura"
+- Visível só se `subscription_state.status === 'active'` E o usuário tem coins > 0 ou referral_credits > 0.
+- Modal de confirmação:
+  - Mostra: saldo atual em coins (R$ X,XX), créditos R$ Y,YY → desconto total Z na próxima fatura (R$47 - desconto).
+  - Limita: desconto não pode passar do valor da fatura (e.g. se mensalidade = R$47 e usuário tem R$100 em créditos, só usa R$47, sobra R$53).
+  - Avisa: "Pode ser aplicado 1x por mês. A aplicação acontece automaticamente no dia da renovação."
+- Na verdade: a aplicação **já é automática via cron**. O botão é só pra **opt-out / antecipar visualização** — vou simplificar: **não tem botão**, é tudo automático. A UI da Carteira só **mostra**: "Próximo desconto previsto: R$ X,XX em DD/MM" baseado em `current_period_end` e saldo atual.
+
+Decisão pra simplicidade: **sem botão, tudo automático.** UI da Carteira mostra preview do desconto da próxima fatura.
 
 ---
 
-### 5. SQL adicional pro Studio self-hosted
+### 4. Cron de aplicação de desconto
 
-Bloco SQL pequeno pra rodar no api.influlab.pro:
+#### Edge function nova: `apply-monthly-discounts`
+- Disparada por cron da VPS (crontab → curl) **diariamente às 03:00 BRT**.
+- Lógica:
+  1. SELECT `subscription_state` onde `status='active'` AND `current_period_end::date = (CURRENT_DATE + INTERVAL '2 days')` (aplica 2 dias antes da renovação — janela segura pro Asaas processar).
+  2. Pra cada user: lê `user_wallet` (coins_balance + referral_credits_brl).
+  3. Calcula desconto total: `coins * 0.01 + referral_credits_brl`, capped no valor da fatura (R$47 mensal ou R$397 anual — busca no Asaas pelo `asaas_subscription_id`).
+  4. Se desconto > 0:
+     - Verifica idempotência: SELECT `monthly_redemptions` por `(user_id, period_month=YYYY-MM da current_period_end)`. Se já tem, pula.
+     - PATCH na subscription Asaas: `value = price - discount` (próxima fatura só). Asaas API: `PATCH /subscriptions/{id}` com `value` novo + `updatePendingPayments=true`.
+     - Insere `monthly_redemptions` (lock idempotente).
+     - Debita `user_wallet`: `coins_balance -= coinsUsed`, `referral_credits_brl -= creditsUsed`. **Não debita `lifetime_coins_earned`** (esse é cumulativo).
+     - Loga em `coin_transactions` (type=`redeem_discount`, amount=`-coinsUsed`, reference_id=`redeem-{period_month}`, metadata={discount_brl, period_month}).
+  5. **Reverter o valor da subscription depois**: cria edge function complementar `revert-subscription-value` agendada pra rodar **5 dias depois**, OU mais simples: usa `PATCH` com `value` original quando o webhook `PAYMENT_RECEIVED` confirmar.
 
+**Decisão sobre reverter:** o jeito mais limpo é o webhook `PAYMENT_RECEIVED` chamar PATCH de volta pro valor cheio. Vou adicionar isso no `asaas-webhook` quando ele detectar que aquela `monthly_redemption` foi consumida.
+
+#### Padrão self-hosted (curl + crontab)
+Não usa pg_cron. Vai no crontab da VPS:
+```cron
+0 6 * * * curl -X POST https://api.influlab.pro/functions/v1/apply-monthly-discounts -H "Authorization: Bearer $CRON_TOKEN" >> /var/log/apply-discounts.log 2>&1
+```
+A function valida `Authorization: Bearer ${CRON_SECRET}` no header (novo secret).
+
+---
+
+### 5. Migração de dados (SQL pro Studio)
+
+**Trial de 7 dias pra todos free atuais (já feito na Fase 1).** Verificar se `subscription_state` tem todos. Se não tiver (signup novo entre Fase 1 e 3), o `handle_new_user` precisa criar.
+
+#### Trigger pra criar `subscription_state` no signup
 ```sql
--- Garante 1 indicação por usuário (não pode ter sido indicado por 2 pessoas)
-ALTER TABLE public.referrals
-  ADD CONSTRAINT referrals_referred_user_unique UNIQUE (referred_user_id);
-
--- Idempotência da credit log de indicação
-ALTER TABLE public.coin_transactions
-  ADD CONSTRAINT coin_tx_user_ref_unique UNIQUE (user_id, reference_id);
--- (talvez já exista da Fase 1 — IF NOT EXISTS via DO block pra ser safe)
+-- Atualiza handle_new_user pra também criar subscription_state em trial
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  INSERT INTO public.user_profiles (...) ...; -- já existe
+  INSERT INTO public.subscription_state (user_id, status, trial_ends_at)
+  VALUES (NEW.id, 'trial', now() + INTERVAL '7 days')
+  ON CONFLICT (user_id) DO NOTHING;
+  INSERT INTO public.user_wallet (user_id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+  -- gera referral_code se ainda não tem
+  INSERT INTO public.referral_codes (user_id, code)
+  VALUES (NEW.id, upper(substring(replace(NEW.id::text,'-',''), 1, 8)))
+  ON CONFLICT DO NOTHING;
+  RETURN NEW;
+END $$;
 ```
 
-A constraint de `coin_transactions` provavelmente já foi criada na Fase 1 (a função `award_task_coins` usa `ON CONFLICT (user_id, reference_id)`); o SQL vai ser entregue com `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$` pra não quebrar.
+#### Backfill pra usuários sem subscription_state
+```sql
+INSERT INTO public.subscription_state (user_id, status, trial_ends_at)
+SELECT u.user_id,
+  CASE WHEN COALESCE(uu.is_premium, false) THEN 'active' ELSE 'trial' END,
+  CASE WHEN COALESCE(uu.is_premium, false) THEN NULL ELSE now() + INTERVAL '7 days' END
+FROM public.user_profiles u
+LEFT JOIN public.user_usage uu ON uu.user_id = u.user_id
+WHERE NOT EXISTS (SELECT 1 FROM public.subscription_state s WHERE s.user_id = u.user_id);
+```
 
 ---
 
-### 6. O que NÃO entra nesta fase
+### 6. CheckoutModal — leve atualização
 
-- ❌ Paywall global / bloqueio após trial expirar
-- ❌ Aplicação automática de desconto na fatura Asaas (PATCH no `value` da subscription)
-- ❌ Cron mensal de redenção
-- ❌ Remoção do `useUserUsage`/`FREE_LIMITS` (mantido pra retrocompatibilidade)
-- ❌ Notificação push avisando "indicação pagou" (entra na Fase 3 se fizer sentido)
+- Após redirect pro Asaas (após assinar), assume otimisticamente que vira `active` quando webhook chegar.
+- Adiciona menção sutil: "Você ainda tem X dias grátis — sua assinatura começa após o trial" se `isTrialing`. (Cosmético — Asaas sempre cobra de cara, mas a mensagem reforça que o usuário não tá perdendo nada.)
+- Sem mudança estrutural.
 
 ---
 
-### 7. Entregáveis ao final da Fase 2
+### 7. Secrets novos
 
-1. `src/pages/Wallet.tsx` + `src/pages/Referral.tsx` + rotas no App.tsx
-2. `src/hooks/useReferrals.ts`
-3. Edge function nova `register-referral`
-4. `asaas-webhook/index.ts` atualizado (sub-state sync + processa indicação paga)
-5. `create-asaas-subscription/index.ts` atualizado (upsert sub-state)
-6. `src/pages/Auth.tsx` com captura de `?ref=` + banner de convite
-7. Navigation com links pra Carteira/Indique
-8. Bloco SQL pro Studio + comando bash de deploy pra VPS
+- `CRON_SECRET` — token bearer pro endpoint `apply-monthly-discounts` validar que é o crontab.
 
 ---
 
-### Riscos / atenção
+### 8. Entregáveis
 
-- **Idempotência da indicação**: garantida por `WHERE status='pending'` no UPDATE + `unique(user_id, reference_id)` em `coin_transactions`. Mesmo se o webhook duplicar, o UPDATE não acha row pra atualizar na 2ª vez.
-- **Auto-indicação**: bloqueada na edge function `register-referral` (`referrer_id !== user.id`).
-- **Código inválido**: signup nunca falha por causa de ref ruim — log + ignore.
-- **Backfill**: usuários atuais não têm indicação registrada — tudo bem, sistema começa a contar dos novos signups.
-- **Premium atual virando active no sub-state**: já foi feito na Fase 1 via migration. Novos pagamentos atualizam normal.
-- **`subscription_state` vs `user_usage.is_premium`**: ambos vão coexistir. Frontend de paywall (Fase 3) lerá `subscription_state`. Hooks atuais (`useUserUsage`) continuam vendo `is_premium`.
+1. `src/hooks/useSubscription.ts` novo
+2. `src/hooks/useUserUsage.ts` adaptado pra ler `is_premium` de `subscription_state.hasAccess` (compat)
+3. `src/components/AccessGuard.tsx` + integração no `App.tsx`
+4. `src/components/TrialBanner.tsx` (banner persistente durante trial)
+5. `src/pages/Wallet.tsx` mostra "Próximo desconto previsto"
+6. Edge function `apply-monthly-discounts`
+7. `asaas-webhook` reverte `value` da subscription após `PAYMENT_RECEIVED` quando `monthly_redemption` foi aplicada
+8. SQL pro Studio: trigger atualizado + backfill de subscription_state
+9. Crontab snippet pro user adicionar na VPS
+10. Bloco copia-e-cola pra VPS no final
+
+---
+
+### 9. O que NÃO entra nesta fase
+
+- ❌ Remoção total de `useUserUsage` (mantido pra contadores diários)
+- ❌ Notificações push de "trial vai expirar em X dias"
+- ❌ Página admin pra forçar/estender trial (próxima fase opcional)
+- ❌ Cupom/promo manual
+
+---
+
+### 10. Riscos / pontos de atenção
+
+- **PATCH no Asaas com `value` reduzido afeta SÓ a próxima fatura?** Sim, se passar `updatePendingPayments=true` ele atualiza só a fatura pendente; depois precisa reverter. **Crítico**: se não revertermos, o usuário fica pagando o valor descontado pra sempre. Vamos reverter no `PAYMENT_RECEIVED`.
+- **Idempotência total**: `monthly_redemptions(user_id, period_month)` precisa ser UNIQUE. Vou adicionar via SQL.
+- **Race condition do cron**: se o cron rodar 2x no mesmo dia, o `unique(user_id, period_month)` bloqueia. ✅
+- **Trial expirado mas usuário não assinou**: vê o paywall mas pode entrar em /carteira e /indique. Isso permite ele indicar amigos pra ganhar créditos e voltar (não tira do funil).
+- **Premium atual**: continua `active`, recebe descontos automáticos imediatamente se tiver coins acumulados.
+- **Conversão coin → BRL**: 1 coin = R$ 0,01 (10 tarefas/dia × 30 dias = 3000 coins = R$30 desconto numa mensalidade de R$47, ou seja, ~64% de desconto se completar tudo. Vou marcar isso como ponto pra ajuste posterior se ficar generoso demais).
 
 Aprova pra eu começar a implementar?
