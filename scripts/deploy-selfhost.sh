@@ -165,7 +165,8 @@ deploy_docker_fallback() {
   fi
 
   echo ""
-  echo "📦 Sincronizando ${#ALL_FNS[@]} functions para $VOL ..."
+  mapfile -t DEPLOY_FNS < <(deploy_list)
+  echo "📦 Sincronizando ${#DEPLOY_FNS[@]} functions para $VOL ..."
   local SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/supabase/functions"
   if [[ ! -d "$SRC_DIR" ]]; then
     echo "❌ Não encontrei $SRC_DIR"
@@ -178,7 +179,7 @@ deploy_docker_fallback() {
     cp -a "$SRC_DIR/_shared/." "$VOL/_shared/"
     echo "  → _shared"
   fi
-  for fn in "${ALL_FNS[@]}"; do
+  for fn in "${DEPLOY_FNS[@]}"; do
     if [[ -d "$SRC_DIR/$fn" ]]; then
       mkdir -p "$VOL/$fn"
       cp -a "$SRC_DIR/$fn/." "$VOL/$fn/"
@@ -249,17 +250,16 @@ deploy_cli() {
   fi
 
   echo ""
-  echo "🚀 Deployando ${#PUBLIC_FNS[@]} functions públicas ..."
-  for fn in "${PUBLIC_FNS[@]}"; do
-    echo "  → $fn (--no-verify-jwt)"
-    supabase functions deploy "$fn" --no-verify-jwt
-  done
-
-  echo ""
-  echo "🚀 Deployando ${#PRIVATE_FNS[@]} functions privadas ..."
-  for fn in "${PRIVATE_FNS[@]}"; do
-    echo "  → $fn"
-    supabase functions deploy "$fn"
+  mapfile -t DEPLOY_FNS < <(deploy_list)
+  echo "🚀 Deployando ${#DEPLOY_FNS[@]} functions ..."
+  for fn in "${DEPLOY_FNS[@]}"; do
+    if printf '%s\n' "${PUBLIC_FNS[@]}" | grep -qx "$fn"; then
+      echo "  → $fn (--no-verify-jwt)"
+      supabase functions deploy "$fn" --no-verify-jwt
+    else
+      echo "  → $fn"
+      supabase functions deploy "$fn"
+    fi
   done
 
   validate_deployed
