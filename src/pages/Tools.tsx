@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { AiChat } from '@/components/AiChat';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 
 type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat';
 
@@ -187,7 +188,7 @@ const stepLabels: Record<ProcessingStep, string> = {
 // Usado no Tools porque o componente é "fire-and-forget" — não preciso de estado reativo de status.
 async function runAiJob<T = unknown>(functionName: string, payload: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(functionName, { body: payload });
-  if (error) throw error;
+  if (error) throw await createEdgeFunctionError(error, `Falha ao iniciar ${functionName}.`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const apiErr = (data as any)?.error as string | undefined;
   if (apiErr) throw new Error(apiErr);
@@ -211,7 +212,7 @@ async function runAiJob<T = unknown>(functionName: string, payload: Record<strin
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${session.access_token}`, apikey },
     });
-    if (!res.ok) continue;
+    if (!res.ok) throw new Error(await getResponseErrorMessage(res));
     const json = await res.json();
     const job = json?.job;
     if (!job) continue;
