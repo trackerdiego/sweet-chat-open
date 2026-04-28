@@ -96,6 +96,9 @@ async function revertSubscriptionValueIfDiscounted(admin: any, userId: string, a
     .limit(1)
     .maybeSingle();
   if (!red) return;
+  // Só reverte se foi desconto de fato (mensal). No anual, discount_brl_total = 0
+  // porque mexemos em nextDueDate, não em value — não há nada pra reverter.
+  if (Number(red.discount_brl_total ?? 0) <= 0) return;
 
   // Inferir preço cheio: lê plan e usa tabela fixa (mesmos valores do create-asaas-subscription)
   const { data: ss } = await admin

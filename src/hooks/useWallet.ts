@@ -28,7 +28,10 @@ export function useWallet() {
   const [loading, setLoading] = useState(true);
 
   const fetchWallet = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    // Usa getSession (cacheado, sem network) em vez de getUser pra evitar
+    // contenção do auth lock quando vários hooks rodam em paralelo.
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) {
       setWallet(EMPTY_WALLET);
       setLoading(false);
