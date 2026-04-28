@@ -47,6 +47,7 @@ PRIVATE_FNS=(
   create-asaas-subscription
   award-task-coins
   register-referral
+  apply-monthly-discounts
 )
 
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
