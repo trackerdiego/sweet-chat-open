@@ -457,7 +457,8 @@ export default function Landing() {
       </Section>
 
       {/* ─── Pricing ─── */}
-      <Section id="planos" className="py-24 px-4 bg-charcoal scroll-mt-20">
+      <div id="planos" className="scroll-mt-20">
+      <Section className="py-24 px-4 bg-charcoal">
         <div className="container max-w-md mx-auto">
           <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
