@@ -100,6 +100,14 @@ export class JobError extends Error {
   }
 }
 
+function getGeminiMeta(e: unknown): { attempts?: number; model_used?: string } {
+  const direct = e as { attempts?: unknown; modelUsed?: unknown; cause?: unknown } | null;
+  const cause = direct?.cause as { attempts?: unknown; modelUsed?: unknown } | null;
+  const attempts = typeof direct?.attempts === "number" ? direct.attempts : typeof cause?.attempts === "number" ? cause.attempts : undefined;
+  const modelUsed = typeof direct?.modelUsed === "string" ? direct.modelUsed : typeof cause?.modelUsed === "string" ? cause.modelUsed : undefined;
+  return { ...(attempts !== undefined ? { attempts } : {}), ...(modelUsed ? { model_used: modelUsed } : {}) };
+}
+
 // deno-lint-ignore no-explicit-any
 type EdgeRuntimeLike = { waitUntil: (p: Promise<any>) => void };
 
@@ -153,6 +161,7 @@ export function runInBackground(
         ? e.message
         : "Erro desconhecido";
       console.error(`[ai-job-runner] job ${jobId} failed:`, e);
+      const geminiMeta = getGeminiMeta(e);
       try {
         await admin
           .from("ai_jobs")
@@ -160,6 +169,7 @@ export function runInBackground(
             status: "failed",
             error_message: userMessage.slice(0, 500),
             completed_at: new Date().toISOString(),
+            ...geminiMeta,
           })
           .eq("id", jobId);
       } catch (persistErr) {
