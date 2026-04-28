@@ -16,36 +16,42 @@ export type Database = {
     Tables: {
       ai_jobs: {
         Row: {
+          attempts: number | null
           completed_at: string | null
           created_at: string
           error_message: string | null
           id: string
           input_payload: Json
           job_type: string
+          model_used: string | null
           result: Json | null
           started_at: string | null
           status: string
           user_id: string
         }
         Insert: {
+          attempts?: number | null
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
           id?: string
           input_payload?: Json
           job_type: string
+          model_used?: string | null
           result?: Json | null
           started_at?: string | null
           status?: string
           user_id: string
         }
         Update: {
+          attempts?: number | null
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
           id?: string
           input_payload?: Json
           job_type?: string
+          model_used?: string | null
           result?: Json | null
           started_at?: string | null
           status?: string
