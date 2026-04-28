@@ -156,10 +156,11 @@ export default function Help() {
                   <li className="bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
                     <p className="text-foreground font-medium mb-0.5">📆 Plano anual</p>
                     <p>
-                      Seus coins viram <strong className="text-foreground">dias extras de plano</strong>,
-                      somados ao fim da sua assinatura. A cada{' '}
-                      <strong className="text-foreground">2.475 coins acumulados</strong> você ganha
-                      <strong className="text-foreground"> +30 dias grátis</strong> automaticamente.
+                      Seus coins viram <strong className="text-foreground">dias extras de plano</strong>.
+                      A cada <strong className="text-foreground">2.475 coins acumulados</strong>, o sistema
+                      adiciona <strong className="text-foreground">+30 dias</strong> ao fim da sua assinatura
+                      <strong className="text-foreground"> automaticamente, todo mês</strong> — você não
+                      precisa esperar a renovação.
                     </p>
                   </li>
                 </ul>
