@@ -160,6 +160,44 @@ async function callOnce(
   }
 }
 
+async function repairJsonWithGemini(opts: {
+  apiKey: string;
+  rawText: string;
+  schema: object;
+  tag: string;
+  remainingMs: number;
+}): Promise<unknown | null> {
+  if (opts.remainingMs < 5000) return null;
+  const body: Record<string, unknown> = {
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `Corrija o texto abaixo para JSON válido que respeite o schema solicitado. Retorne APENAS o JSON, sem markdown.\n\nTEXTO:\n${opts.rawText.slice(0, 12000)}`,
+      }],
+    }],
+    generationConfig: {
+      maxOutputTokens: 4096,
+      responseMimeType: "application/json",
+      responseSchema: sanitizeSchema(opts.schema),
+    },
+  };
+  try {
+    const res = await callOnce("gemini-2.5-flash-lite", body, opts.apiKey, Math.min(12000, opts.remainingMs));
+    const text = await res.text();
+    if (!res.ok) {
+      logEvent("json-repair-fail", { tag: opts.tag, status: res.status, sample: text.slice(0, 200) });
+      return null;
+    }
+    const envelope = JSON.parse(text);
+    const repairedText = extractTextFromEnvelope(envelope);
+    if (!repairedText) return null;
+    return parseLooseJson(repairedText);
+  } catch (e) {
+    logEvent("json-repair-error", { tag: opts.tag, err: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+}
+
 export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResult> {
   const primary = opts.model ?? "gemini-2.5-pro";
   const mid = opts.midModel ?? "gemini-2.5-flash";
