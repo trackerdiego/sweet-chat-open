@@ -263,11 +263,15 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
   function resolvePaymentContext() {
     const p = body.payment ?? {};
     return {
+      paymentId: (p.id as string | undefined) ?? undefined,
       userId: (p.externalReference as string | null) ?? null,
       asaasSubId: (p.subscription as string | undefined) ?? undefined,
       asaasCustomerId: (p.customer as string | undefined) ?? undefined,
       value: (p.value as number | undefined) ?? undefined,
       nextDueDate: (p.dueDate as string | undefined) ?? undefined,
+      billingType: (p.billingType as string | undefined) ?? undefined,
+      invoiceUrl: (p.invoiceUrl as string | undefined) ?? undefined,
+      status: (p.status as string | undefined) ?? undefined,
     };
   }
 
