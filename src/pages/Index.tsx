@@ -10,7 +10,7 @@ import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
 import { CheckoutModal } from '@/components/CheckoutModal';
-import { ChevronRight, Calendar, LogOut, Crown, Loader2 } from 'lucide-react';
+import { ChevronRight, Calendar, LogOut, Crown, Loader2, HelpCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
