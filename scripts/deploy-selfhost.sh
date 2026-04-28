@@ -50,6 +50,9 @@ PRIVATE_FNS=(
   award-task-coins
   register-referral
   apply-monthly-discounts
+  get-pending-invoice
+  switch-to-credit-card
+  notify-pix-due-soon
 )
 
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
