@@ -3,6 +3,7 @@
 // Vídeo é convertido em áudio no frontend (FFMPEG) antes do upload.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 import { corsHeaders, jsonResponse, enqueueJob, runInBackground, JobError } from "../_shared/ai-job-runner.ts";
 
 const FUNCTION_VERSION = "2026-04-28-async-transcription";
@@ -63,12 +64,11 @@ serve(async (req) => {
       const isVideo = mimeType.startsWith("video/");
       const mediaType = isVideo ? "vídeo" : "áudio";
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: `Você é um transcritor profissional. Transcreva o ${mediaType} enviado de forma precisa e completa em português brasileiro.\nRegras:\n- Transcreva EXATAMENTE o que é falado\n- Mantenha a linguagem original\n- NÃO adicione comentários ou timestamps\n- Retorne APENAS o texto transcrito` }] },
+      let geminiResult: Awaited<ReturnType<typeof callGeminiNative>>;
+      try {
+        geminiResult = await callGeminiNative({
+          apiKey: GOOGLE_GEMINI_API_KEY,
+          systemInstruction: `Você é um transcritor profissional. Transcreva o ${mediaType} enviado de forma precisa e completa em português brasileiro.\nRegras:\n- Transcreva EXATAMENTE o que é falado\n- Mantenha a linguagem original\n- NÃO adicione comentários ou timestamps\n- Retorne APENAS o texto transcrito`,
           contents: [{
             role: "user",
             parts: [
@@ -76,20 +76,28 @@ serve(async (req) => {
               { text: `Transcreva este ${mediaType} completamente. Retorne apenas o texto falado.` },
             ],
           }],
-          generationConfig: { maxOutputTokens: 8192 },
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) throw new JobError("Limite de requisições atingido na IA. Tente em 1-2 minutos.");
-        if (response.status === 402) throw new JobError("Créditos da IA esgotados.");
-        const errorText = await response.text();
-        console.error(`[start-transcription-job] gemini error job ${jobId}`, response.status, errorText);
-        throw new JobError(`Falha na transcrição (Gemini ${response.status}). Tente novamente.`);
+          tag: "transcription",
+          model: "gemini-2.5-flash",
+          midModel: "gemini-2.5-flash-lite",
+          fallbackModel: "gemini-2.5-pro",
+          maxOutputTokens: 8192,
+          timeoutMs: 60000,
+          midTimeoutMs: 45000,
+          fallbackTimeoutMs: 75000,
+          primaryAttempts: 2,
+          midAttempts: 2,
+          fallbackAttempts: 1,
+        });
+      } catch (e) {
+        if (e instanceof GeminiError) {
+          if (e.status === 429) throw new JobError("Limite de requisições atingido na IA. Tente em 1-2 minutos.", e);
+          if (e.status === 402) throw new JobError("Créditos da IA esgotados.", e);
+          throw new JobError("Falha temporária na transcrição. Tente novamente.", e);
+        }
+        throw e;
       }
 
-      const data = await response.json();
-      const transcription = (data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+      const transcription = (geminiResult.text || "").trim();
       if (!transcription) throw new JobError("Não foi possível transcrever o conteúdo.");
 
       // Contabiliza uso
@@ -102,8 +110,8 @@ serve(async (req) => {
         console.warn(`[start-transcription-job] usage update failed job ${jobId}`, e);
       }
 
-      console.log(`[start-transcription-job] job ${jobId} success ${transcription.length} chars`);
-      return { transcription };
+      console.log(`[start-transcription-job] job ${jobId} success ${transcription.length} chars`, { model: geminiResult.modelUsed, attempts: geminiResult.attempts });
+      return { transcription, __meta: { attempts: geminiResult.attempts, modelUsed: geminiResult.modelUsed } };
     });
 
     return jsonResponse({ jobId });
