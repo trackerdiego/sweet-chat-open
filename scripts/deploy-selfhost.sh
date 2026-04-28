@@ -45,6 +45,7 @@ PRIVATE_FNS=(
   transcribe-media
   admin-dashboard
   create-asaas-subscription
+  award-task-coins
 )
 
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
