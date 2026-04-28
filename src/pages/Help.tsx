@@ -138,14 +138,31 @@ export default function Help() {
 
               {/* Como usar */}
               <section>
-                <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
-                  <Tag size={14} className="text-primary" /> Como vira desconto
+                <h3 className="font-semibold text-foreground mb-2 flex items-center gap-2">
+                  <Tag size={14} className="text-primary" /> Como vira benefício
                 </h3>
-                <p>
-                  Você não precisa fazer nada. No vencimento da sua mensalidade, o sistema aplica
-                  automaticamente o desconto correspondente ao seu saldo de coins + créditos de
-                  indicação. Após o desconto, o saldo é zerado e volta a acumular.
+                <p className="mb-2">
+                  Você não precisa fazer nada — o sistema aplica automaticamente. O que você ganha
+                  depende do seu plano:
                 </p>
+                <ul className="space-y-2 text-xs">
+                  <li className="bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
+                    <p className="text-foreground font-medium mb-0.5">📅 Plano mensal</p>
+                    <p>
+                      Seus coins viram <strong className="text-foreground">desconto direto na próxima fatura</strong>.
+                      O saldo é debitado e volta a acumular.
+                    </p>
+                  </li>
+                  <li className="bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
+                    <p className="text-foreground font-medium mb-0.5">📆 Plano anual</p>
+                    <p>
+                      Seus coins viram <strong className="text-foreground">dias extras de plano</strong>,
+                      somados ao fim da sua assinatura. A cada{' '}
+                      <strong className="text-foreground">2.475 coins acumulados</strong> você ganha
+                      <strong className="text-foreground"> +30 dias grátis</strong> automaticamente.
+                    </p>
+                  </li>
+                </ul>
               </section>
 
               {/* Limites */}
@@ -153,12 +170,17 @@ export default function Help() {
                 <h3 className="font-semibold text-foreground mb-2">Regras importantes</h3>
                 <ul className="space-y-1.5 list-disc list-inside text-xs">
                   <li>
-                    Desconto máximo é o valor cheio do plano (R$ 47 mensal ou R$ 297 anual).
+                    <strong className="text-foreground">Mensal:</strong> desconto máximo de 50% do
+                    valor do plano (até R$ 23,50/mês).
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Anual:</strong> até +6 meses extras por
+                    ciclo de 12 meses (também 50% do plano).
                   </li>
                   <li>Coins não expiram enquanto sua assinatura estiver ativa.</li>
                   <li>
-                    Se o pagamento falhar, o desconto é revertido e seus coins voltam para a
-                    carteira.
+                    Se o pagamento falhar, o desconto ou extensão é revertido e seus coins voltam
+                    para a carteira.
                   </li>
                   <li>Coins são pessoais e não podem ser transferidos entre contas.</li>
                 </ul>
@@ -170,7 +192,7 @@ export default function Help() {
                 <div className="space-y-3 text-xs">
                   <div>
                     <p className="text-foreground font-medium">Posso sacar coins em dinheiro?</p>
-                    <p>Não. Coins funcionam apenas como desconto na assinatura.</p>
+                    <p>Não. Coins funcionam apenas como desconto ou extensão da assinatura.</p>
                   </div>
                   <div>
                     <p className="text-foreground font-medium">Perco meus coins se cancelar?</p>
@@ -180,8 +202,19 @@ export default function Help() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-foreground font-medium">Quanto tempo até virar desconto?</p>
-                    <p>O desconto é aplicado automaticamente na sua próxima cobrança mensal.</p>
+                    <p className="text-foreground font-medium">
+                      Quanto tempo até virar benefício? (mensal)
+                    </p>
+                    <p>Aplicado automaticamente na sua próxima cobrança mensal.</p>
+                  </div>
+                  <div>
+                    <p className="text-foreground font-medium">
+                      Quanto tempo até virar benefício? (anual)
+                    </p>
+                    <p>
+                      Sempre que você bater 2.475 coins acumulados, +30 dias são adicionados ao fim
+                      da sua assinatura. O restante do saldo segue acumulando.
+                    </p>
                   </div>
                   <div>
                     <p className="text-foreground font-medium">Onde vejo meu saldo?</p>
@@ -189,6 +222,7 @@ export default function Help() {
                   </div>
                 </div>
               </section>
+
 
               <Button
                 variant="outline"
