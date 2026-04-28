@@ -310,6 +310,50 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
     return { userId: ctx.userId };
   }
 
+  // ===== PAYMENT_CREATED (Asaas gerou nova cobrança — popular next_invoice) =====
+  if (event === "PAYMENT_CREATED") {
+    const ctx = resolvePaymentContext();
+    let userId = ctx.userId;
+    if (!userId && ctx.asaasSubId && apiKey) {
+      const sub = await fetchSubscription(ctx.asaasSubId, apiKey);
+      userId = sub?.externalReference ?? null;
+    }
+    if (!userId) {
+      console.warn("PAYMENT_CREATED sem userId — pulando");
+      return { userId: null };
+    }
+    if (!ctx.paymentId) {
+      console.warn("PAYMENT_CREATED sem paymentId — pulando");
+      return { userId };
+    }
+
+    // Busca QR Pix se for Pix ou Undefined (cliente pode escolher Pix)
+    let pixQr: { encodedImage: string; payload: string } | null = null;
+    const isPixOrUndefined = !ctx.billingType || ctx.billingType === "PIX" || ctx.billingType === "UNDEFINED";
+    if (isPixOrUndefined && apiKey) {
+      pixQr = await fetchPixQrCode(ctx.paymentId, apiKey);
+    }
+
+    const invoice = {
+      asaas_payment_id: ctx.paymentId,
+      asaas_subscription_id: ctx.asaasSubId ?? null,
+      value: Number(ctx.value ?? 0),
+      original_value: Number(ctx.value ?? 0),
+      due_date: ctx.nextDueDate ?? null,
+      billing_type: ctx.billingType ?? "UNDEFINED",
+      pix_qr_code: pixQr?.encodedImage ?? null,
+      pix_copy_paste: pixQr?.payload ?? null,
+      payment_url: ctx.invoiceUrl ?? `https://www.asaas.com/i/${ctx.paymentId}`,
+      discount_applied: { coins_used: 0, credits_used_brl: 0, discount_brl: 0 },
+      notifications_sent: { d3: false, d1: false, d0: false },
+      is_paid: false,
+      updated_at: new Date().toISOString(),
+    };
+    await setNextInvoice(admin, userId, invoice);
+    console.log(`PAYMENT_CREATED: next_invoice salvo para user ${userId}, paymentId ${ctx.paymentId}`);
+    return { userId };
+  }
+
   // ===== PAYMENT_CONFIRMED / PAYMENT_RECEIVED =====
   if (["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"].includes(event)) {
     let ctx = resolvePaymentContext();
@@ -344,6 +388,9 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
     await processReferralPayment(admin, userId);
     if (apiKey) await revertSubscriptionValueIfDiscounted(admin, userId, ctx.asaasSubId, apiKey);
 
+    // Limpa fatura pendente: ela foi paga
+    await clearNextInvoice(admin, userId);
+
     console.log("Premium activated successfully for:", userId);
     return { userId };
   }
@@ -358,6 +405,10 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
     }
     if (userId) {
       console.log(`Deactivating premium for user (${event}):`, userId);
+      // PAYMENT_OVERDUE: mantém next_invoice (cliente ainda pode pagar). Outros: limpa.
+      if (event !== "PAYMENT_OVERDUE") {
+        await clearNextInvoice(admin, userId);
+      }
       await admin.from("user_usage").update({ is_premium: false }).eq("user_id", userId);
       await syncSubscriptionState(admin, {
         userId,
@@ -369,8 +420,6 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
     }
     return { userId };
   }
-
-  // ===== SUBSCRIPTION_DELETED / INACTIVE =====
   if (["SUBSCRIPTION_DELETED", "SUBSCRIPTION_INACTIVE"].includes(event)) {
     const ctx = resolveSubscriptionContext();
     if (ctx.userId) {
