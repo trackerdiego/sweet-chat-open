@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 
 interface DailyGuideProps { strategy: DayStrategy; weeklyTheme?: string; onAiContent?: (content: AiGuideContent) => void; primaryNiche?: string; contentStyle?: string; }
 
@@ -32,7 +33,7 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
       const { data, error } = await supabase.functions.invoke('start-daily-guide-job', {
         body: { pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, weeklyTheme: weeklyTheme || '', dayTitle: strategy.title, day: strategy.day, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' },
       });
-      if (error) throw error;
+      if (error) throw await createEdgeFunctionError(error, 'Falha ao iniciar geração do guia diário.');
       const apiErr = (data as { error?: string })?.error;
       if (apiErr) throw new Error(apiErr);
       const jobId = (data as { jobId?: string })?.jobId;
@@ -52,7 +53,7 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
         const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
         url.searchParams.set('jobId', jobId);
         const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${session.access_token}`, apikey } });
-        if (!res.ok) continue;
+        if (!res.ok) throw new Error(await getResponseErrorMessage(res));
         const json = await res.json();
         const job = json?.job;
         if (!job) continue;

@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 
 export type AiJobType = 'tools' | 'script' | 'daily_guide' | 'transcription';
 export type AiJobStatus = 'idle' | 'starting' | 'processing' | 'done' | 'failed';
@@ -71,12 +72,12 @@ export function useAiJob<TResult = unknown>(jobType: AiJobType) {
       const res = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${session.access_token}`, apikey },
       });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error(await getResponseErrorMessage(res));
       const json = await res.json();
       return (json?.job ?? null) as JobRecord | null;
     } catch (e) {
       console.warn('[useAiJob] poll failed', e);
-      return null;
+      throw e;
     }
   }, []);
 
@@ -91,7 +92,15 @@ export function useAiJob<TResult = unknown>(jobType: AiJobType) {
         setError('A geração demorou mais que o esperado. Tente novamente.');
         return;
       }
-      const job = await pollOnce(id);
+      let job: JobRecord | null = null;
+      try {
+        job = await pollOnce(id);
+      } catch (e) {
+        stopPolling();
+        setStatus('failed');
+        setError(e instanceof Error ? e.message : 'Erro ao consultar status da geração.');
+        return;
+      }
       if (!job) return;
       if (job.status === 'processing' || job.status === 'pending') {
         setStatus('processing');
@@ -117,15 +126,7 @@ export function useAiJob<TResult = unknown>(jobType: AiJobType) {
     try {
       const { data, error: invokeErr } = await supabase.functions.invoke(FUNCTION_BY_TYPE[jobType], { body: payload });
       if (invokeErr) {
-        // Mapeia erros de invoke a uma mensagem amigável
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ctx = (invokeErr as any)?.context;
-        let backendMsg = '';
-        try {
-          if (typeof ctx?.body === 'string') backendMsg = (JSON.parse(ctx.body) as { error?: string })?.error || '';
-          else if (ctx?.body && typeof ctx.body === 'object') backendMsg = (ctx.body as { error?: string }).error || '';
-        } catch { /* ignore */ }
-        throw new Error(backendMsg || invokeErr.message || 'Falha ao iniciar geração');
+        throw await createEdgeFunctionError(invokeErr, 'Falha ao iniciar geração');
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const id = (data as any)?.jobId as string | undefined;

@@ -33,6 +33,11 @@ PRIVATE_FNS=(
   generate-script
   generate-tools-content
   generate-daily-guide
+  start-tools-job
+  start-script-job
+  start-daily-guide-job
+  start-transcription-job
+  get-ai-job-status
   generate-audience-profile
   generate-personalized-matrix
   start-onboarding-run
@@ -45,6 +50,11 @@ PRIVATE_FNS=(
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
 
 VALIDATE_FNS=(
+  start-tools-job
+  start-script-job
+  start-daily-guide-job
+  start-transcription-job
+  get-ai-job-status
   start-onboarding-run
   get-onboarding-run-status
   generate-audience-profile
@@ -55,24 +65,39 @@ SELFHOST_BASE_URL="${SELFHOST_BASE_URL:-https://api.influlab.pro}"
 
 WANT_SECRETS=false
 FORCE_DOCKER=false
+REQUESTED_FNS=()
 for arg in "$@"; do
   case "$arg" in
     --secrets) WANT_SECRETS=true ;;
     --force-docker) FORCE_DOCKER=true ;;
+    *) REQUESTED_FNS+=("$arg") ;;
   esac
 done
+
+deploy_list() {
+  if [[ "${#REQUESTED_FNS[@]}" -gt 0 ]]; then
+    printf '%s\n' "${REQUESTED_FNS[@]}"
+  else
+    printf '%s\n' "${ALL_FNS[@]}"
+  fi
+}
 
 validate_deployed() {
   echo ""
   echo "🔎 Validando functions publicadas em $SELFHOST_BASE_URL ..."
   local fail=0
   for fn in "${VALIDATE_FNS[@]}"; do
-    local hdr
-    hdr=$(curl -sI -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null | grep -i 'x-influlab-function-version' || true)
-    if [[ -n "$hdr" ]]; then
-      echo "  ✅ $fn  →  ${hdr%$'\r'}"
+    local tmp status body cors
+    tmp=$(mktemp)
+    status=$(curl -sS -o "$tmp" -w '%{http_code}' -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null || echo "000")
+    body=$(cat "$tmp" 2>/dev/null || true)
+    rm -f "$tmp"
+    cors=$(curl -sI -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null | grep -i '^access-control-allow-origin:' || true)
+    if [[ "$status" =~ ^2 ]] && [[ -n "$cors" ]] && [[ "$body" != *"InvalidWorkerCreation"* ]]; then
+      echo "  ✅ $fn  →  HTTP $status + CORS ok"
     else
-      echo "  ❌ $fn  →  sem x-influlab-function-version (NÃO publicada ou versão antiga)"
+      echo "  ❌ $fn  →  HTTP $status (NÃO publicada, sem CORS ou boot quebrado)"
+      [[ -n "$body" ]] && echo "     body: ${body:0:180}"
       fail=1
     fi
   done
@@ -140,7 +165,8 @@ deploy_docker_fallback() {
   fi
 
   echo ""
-  echo "📦 Sincronizando ${#ALL_FNS[@]} functions para $VOL ..."
+  mapfile -t DEPLOY_FNS < <(deploy_list)
+  echo "📦 Sincronizando ${#DEPLOY_FNS[@]} functions para $VOL ..."
   local SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/supabase/functions"
   if [[ ! -d "$SRC_DIR" ]]; then
     echo "❌ Não encontrei $SRC_DIR"
@@ -153,7 +179,7 @@ deploy_docker_fallback() {
     cp -a "$SRC_DIR/_shared/." "$VOL/_shared/"
     echo "  → _shared"
   fi
-  for fn in "${ALL_FNS[@]}"; do
+  for fn in "${DEPLOY_FNS[@]}"; do
     if [[ -d "$SRC_DIR/$fn" ]]; then
       mkdir -p "$VOL/$fn"
       cp -a "$SRC_DIR/$fn/." "$VOL/$fn/"
@@ -224,17 +250,16 @@ deploy_cli() {
   fi
 
   echo ""
-  echo "🚀 Deployando ${#PUBLIC_FNS[@]} functions públicas ..."
-  for fn in "${PUBLIC_FNS[@]}"; do
-    echo "  → $fn (--no-verify-jwt)"
-    supabase functions deploy "$fn" --no-verify-jwt
-  done
-
-  echo ""
-  echo "🚀 Deployando ${#PRIVATE_FNS[@]} functions privadas ..."
-  for fn in "${PRIVATE_FNS[@]}"; do
-    echo "  → $fn"
-    supabase functions deploy "$fn"
+  mapfile -t DEPLOY_FNS < <(deploy_list)
+  echo "🚀 Deployando ${#DEPLOY_FNS[@]} functions ..."
+  for fn in "${DEPLOY_FNS[@]}"; do
+    if printf '%s\n' "${PUBLIC_FNS[@]}" | grep -qx "$fn"; then
+      echo "  → $fn (--no-verify-jwt)"
+      supabase functions deploy "$fn" --no-verify-jwt
+    else
+      echo "  → $fn"
+      supabase functions deploy "$fn"
+    fi
   done
 
   validate_deployed

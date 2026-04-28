@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useUserUsage } from '@/hooks/useUserUsage';
 import { CheckoutModal } from '@/components/CheckoutModal';
+import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 
 interface ScriptGeneratorProps {
   strategy: DayStrategy;
@@ -41,7 +42,7 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
     const { data, error } = await supabase.functions.invoke('start-script-job', {
       body: { day: strategy.day, title: strategy.title, pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, viralHook: strategy.viralHook, storytellingBody: strategy.storytellingBody, subtleConversion: strategy.subtleConversion, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' },
     });
-    if (error) throw error;
+    if (error) throw await createEdgeFunctionError(error, 'Falha ao iniciar geração do script.');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const apiErr = (data as any)?.error as string | undefined;
     if (apiErr) throw new Error(apiErr);
@@ -62,7 +63,7 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
       const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
       url.searchParams.set('jobId', jobId);
       const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${session.access_token}`, apikey } });
-      if (!res.ok) continue;
+      if (!res.ok) throw new Error(await getResponseErrorMessage(res));
       const json = await res.json();
       const job = json?.job;
       if (!job) continue;
