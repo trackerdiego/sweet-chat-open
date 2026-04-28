@@ -140,11 +140,21 @@ export function Navigation() {
             </NavLink>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground">
+            <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground relative">
               <Settings size={20} />
               <span>Config</span>
+              {wallet.coins_balance > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center shadow-md shadow-primary/30">
+                  {wallet.coins_balance > 999 ? '999+' : wallet.coins_balance}
+                </span>
+              )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" sideOffset={8} className="mb-2">
+              <DropdownMenuItem disabled className="gap-2 opacity-100 cursor-default">
+                <Coins size={16} className="text-primary" />
+                <span className="font-semibold">{wallet.coins_balance}</span>
+                <span className="text-xs text-muted-foreground">coins</span>
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleNotificationToggle}
                 disabled={isLoading}
