@@ -86,8 +86,10 @@ serve(async (req) => {
           try {
             return await callGeminiNative({
               apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptA, schema: schemaA,
-              tag: `daily-guide-A-try${attempt}`, maxOutputTokens: 1800, timeoutMs: 60000,
-              primaryAttempts: 2, fallbackAttempts: 2,
+              tag: `daily-guide-A-try${attempt}`, maxOutputTokens: 1800,
+              model: "gemini-2.5-flash", midModel: "gemini-2.5-flash-lite", fallbackModel: "gemini-2.5-pro",
+              timeoutMs: 45000, midTimeoutMs: 35000, fallbackTimeoutMs: 60000,
+              primaryAttempts: 3, midAttempts: 2, fallbackAttempts: 1,
             });
           } catch (e) {
             lastErr = e;
@@ -100,26 +102,31 @@ serve(async (req) => {
       };
 
       const startedAt = Date.now();
-      const [resA, resB] = await Promise.allSettled([
-        callAWithRetry(),
-        new Promise((r) => setTimeout(r, 800)).then(() =>
-          callGeminiNative({ apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B", maxOutputTokens: 2200, timeoutMs: 60000 })
-        ),
-      ]);
-
-      if (resA.status === "rejected") {
-        const e = resA.reason;
+      let resA: Awaited<ReturnType<typeof callGeminiNative>>;
+      try {
+        resA = await callAWithRetry();
+      } catch (e) {
         if (e instanceof GeminiError) {
           if (e.status === 429) throw new JobError("Muitas requisições à IA. Aguarde alguns segundos.");
           if (e.status === 402) throw new JobError("Créditos da IA esgotados. Avise o administrador.");
-          throw new JobError("O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida.");
+          if (e.status === 502) throw new JobError("A IA respondeu em formato inválido. Tente novamente — sua cota não foi consumida.", e);
+          throw new JobError("O serviço de IA está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida.", e);
         }
         throw new JobError("Erro ao gerar guia diário. Tente novamente.");
       }
 
-      const partA = resA.value.json as Record<string, unknown>;
-      const taskExamples: Record<string, unknown> = resB.status === "fulfilled" ? (resB.value.json as Record<string, unknown>) : {};
-      if (resB.status === "rejected") console.warn(`[start-daily-guide-job] job ${jobId} call B falhou — sem taskExamples`, resB.reason);
+      const resB = await callGeminiNative({
+        apiKey: GOOGLE_GEMINI_API_KEY, systemInstruction: baseSystem, prompt: promptB, schema: schemaB, tag: "daily-guide-B",
+        model: "gemini-2.5-flash", midModel: "gemini-2.5-flash-lite", fallbackModel: "gemini-2.5-pro",
+        maxOutputTokens: 2200, timeoutMs: 45000, midTimeoutMs: 35000, fallbackTimeoutMs: 60000,
+        primaryAttempts: 2, midAttempts: 2, fallbackAttempts: 1,
+      }).catch((e) => {
+        console.warn(`[start-daily-guide-job] job ${jobId} call B falhou — sem taskExamples`, e);
+        return null;
+      });
+
+      const partA = resA.json as Record<string, unknown>;
+      const taskExamples: Record<string, unknown> = resB ? (resB.json as Record<string, unknown>) : {};
 
       const content = { ...partA, taskExamples };
 
@@ -132,8 +139,10 @@ serve(async (req) => {
         console.warn(`[start-daily-guide-job] usage update failed for job ${jobId}`, e);
       }
 
-      console.log(`[start-daily-guide-job] job ${jobId} success`, { day, totalMs: Date.now() - startedAt });
-      return content;
+      const attempts = resA.attempts + (resB?.attempts ?? 0);
+      const modelUsed = resB ? `${resA.modelUsed}+${resB.modelUsed}` : resA.modelUsed;
+      console.log(`[start-daily-guide-job] job ${jobId} success`, { day, totalMs: Date.now() - startedAt, attempts, modelUsed });
+      return { ...content, __meta: { attempts, modelUsed } };
     });
 
     return jsonResponse({ jobId });
