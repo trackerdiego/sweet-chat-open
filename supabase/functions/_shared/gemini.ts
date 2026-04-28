@@ -239,7 +239,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
           }
           // 4xx não-retriable (auth, schema inválido, etc.) — propaga imediatamente
           logEvent("hard-fail", { tag: opts.tag, model, attempt: i + 1, status: res.status, latencyMs: latency });
-          throw new GeminiError(res.status, text.slice(0, 500));
+          throw new GeminiError(res.status, text.slice(0, 500), totalAttempts, model);
         }
 
         // 200 OK — checa finishReason
@@ -306,7 +306,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   if (!success) {
     const detail = lastError ? `${lastError.status}: ${lastError.detail}` : "no upstream response";
     logEvent("all-tiers-failed", { tag: opts.tag, totalAttempts, latencyMs, lastError });
-    throw new GeminiError(lastError?.status || 503, `All Gemini tiers failed (${totalAttempts} attempts): ${detail}`);
+    throw new GeminiError(lastError?.status || 503, `All Gemini tiers failed (${totalAttempts} attempts): ${detail}`, totalAttempts, usedModel);
   }
 
   const { text } = success;
@@ -314,24 +314,32 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   try {
     envelope = JSON.parse(text);
   } catch {
-    throw new GeminiError(502, "Gemini retornou body não-JSON");
+    throw new GeminiError(502, "Gemini retornou body não-JSON", totalAttempts, usedModel);
   }
-  const partText = (envelope as Record<string, unknown> | null)
-    ?.["candidates"] as unknown;
-  const firstCandidate = Array.isArray(partText) ? partText[0] : undefined;
-  const extractedText = firstCandidate?.content?.parts?.[0]?.text;
+  const extractedText = extractTextFromEnvelope(envelope);
 
   if (typeof extractedText !== "string") {
     console.error(`[${opts.tag}] unexpected envelope`, JSON.stringify(envelope).slice(0, 600));
-    throw new GeminiError(502, "Gemini retornou envelope sem text");
+    throw new GeminiError(502, "Gemini retornou envelope sem text", totalAttempts, usedModel);
   }
 
   if (opts.schema) {
     try {
       return { json: parseLooseJson(extractedText), modelUsed: usedModel, latencyMs, attempts: totalAttempts };
     } catch (e) {
-      console.error(`[${opts.tag}] failed to parse JSON`, { sample: extractedText.slice(0, 400), err: String(e) });
-      throw new GeminiError(502, "Gemini retornou JSON inválido");
+      console.warn(`[${opts.tag}] failed to parse JSON; trying repair`, { sample: extractedText.slice(0, 400), err: String(e) });
+      const repaired = await repairJsonWithGemini({
+        apiKey: opts.apiKey,
+        rawText: extractedText,
+        schema: opts.schema,
+        tag: opts.tag,
+        remainingMs: Math.max(5000, globalDeadline - Date.now()),
+      });
+      if (repaired) {
+        totalAttempts++;
+        return { json: repaired, modelUsed: `${usedModel}+json-repair`, latencyMs: Date.now() - startedAt, attempts: totalAttempts };
+      }
+      throw new GeminiError(502, "A IA respondeu em formato JSON inválido", totalAttempts, usedModel);
     }
   }
   return { text: extractedText, modelUsed: usedModel, latencyMs, attempts: totalAttempts };
