@@ -1,136 +1,113 @@
-Entendo totalmente a frustração. E sua leitura faz sentido: o chat parece “mágico” porque ele usa um caminho muito mais leve e estável; as outras tools estão fazendo chamadas mais pesadas, estruturadas em JSON, algumas em paralelo e muitas começando pelo `gemini-2.5-pro`, que é justamente o modelo mais sujeito a congestionamento/overload.
+## Problema
 
-## Causa provável
+Depois que migramos `script`, `tools` e `daily-guide` para o padrão de jobs assíncronos, o painel admin **parou de mostrar incremento** em `script_generations`, `tool_generations` e os totais derivados.
 
-Hoje existem dois perfis bem diferentes:
+## Causa
 
-```text
-Chat IA
-- streaming
-- gemini-2.5-flash
-- resposta em texto livre
-- prompt menor
-- 1 chamada simples
+Antes da migração, o frontend (`ScriptGenerator`, `Tools`, `DailyGuide`) chamava `incrementUsage(...)` no React após o sucesso da geração — isso atualizava `user_usage` e o painel admin lia esses números.
 
-Tools / Scripts / Guia / Onboarding
-- generateContent estruturado
-- muitas usam gemini-2.5-pro primeiro
-- responseSchema / JSON obrigatório
-- prompts longos
-- algumas fazem 2 chamadas paralelas
-- falhas de JSON ou overload viram erro final
-```
+Na refatoração para jobs assíncronos:
 
-Então não é “Supabase auto-hospedado é incapaz”. É que no self-hosted nós estamos chamando o Google direto, sem a camada de resiliência/balanceamento que existe no ambiente Lovable Cloud/AI Gateway. O chat funciona porque, por acaso, já está no perfil mais seguro: `flash + streaming + texto`.
+- O servidor (`start-script-job`, `start-tools-job`, `start-daily-guide-job`) agora faz o `update` em `user_usage` dentro do worker em background, e também grava em `usage_logs`.
+- O frontend deixou de chamar `incrementUsage` para script, tool e daily-guide (continua chamando só pra `transcriptions` e `chat`).
 
-## Plano de correção definitivo
-
-### 1. Mudar a estratégia padrão das tools para “flash-first”
-
-Para ferramentas de uso diário, script, guia e transcrição, usar:
+Resultado:
 
 ```text
-gemini-2.5-flash → gemini-2.5-flash-lite → gemini-2.5-pro somente se necessário
+Frontend ──invoke──► start-*-job ──202 jobId──► return
+                               │
+                               └─► waitUntil(worker)
+                                     ├─ update user_usage  ← falha silenciosa em alguns casos
+                                     ├─ insert usage_logs
+                                     └─ update ai_jobs status=done
 ```
 
-Em vez de começar pelo `pro`.
+Quando o worker em background falha parcialmente (Gemini erra DEPOIS, ou o `waitUntil` é cortado pela infra self-hosted), o `ai_jobs` chega a `failed`/`done`, mas o `update user_usage` pode:
 
-Motivo: essas funções não precisam do `pro` na maioria dos casos. O `flash` é exatamente o que já está funcionando bem no chat e tende a ser mais estável/rápido.
+1. Acontecer antes do erro (caso `done`) — funciona,
+2. Não acontecer (caso `failed`) — esperado, mas o frontend também não conta mais nada,
+3. Acontecer mas o cache do React (`useUserUsage`) não recarregar — o painel admin lê do banco direto, então isso não afeta o admin, apenas o UI do criador.
 
-### 2. Reservar `gemini-2.5-pro` só para tarefas realmente profundas
+Mas o ponto principal é: **o cache local de `useUserUsage` no frontend não é atualizado** depois do job assíncrono terminar com sucesso. O painel admin (que lê do banco via `admin-dashboard`) **deveria** ver o incremento — e provavelmente vê quando o worker conclui.
 
-Manter ou usar `pro` apenas onde ele faz diferença real:
+Precisamos verificar duas coisas:
 
-- análise visceral/onboarding profundo
-- matriz estratégica completa
-- raciocínios longos e complexos
+1. Os updates de `user_usage` no worker estão chegando ao banco self-hosted em produção?
+2. O cache do hook `useUserUsage` no frontend precisa recarregar após o job, para o usuário ver o contador atualizado.
 
-Para geração de hooks, scripts, guias e transcrição, priorizar estabilidade.
+## Plano
 
-### 3. Padronizar todas as funções no helper resiliente
+### 1. Garantir incremento no servidor + refresh no cliente
 
-Hoje `start-transcription-job` ainda chama o endpoint Gemini direto, fora do helper `_shared/gemini.ts`.
+Para cada job de IA bem-sucedido:
 
-Vou colocar transcrição também no mesmo padrão resiliente:
+- **Servidor (já implementado)**: continuar fazendo `update user_usage` + `insert usage_logs` dentro do worker. Adicionar `console.log` dedicado ("usage incremented for script/tools/daily-guide") para conseguirmos ver nos logs do Docker se o update chegou a rodar.
+- **Cliente**: depois do job retornar `done`, chamar uma função `refreshUsage()` no hook `useUserUsage` que re-busca a row de `user_usage` do banco — em vez de incrementar local. Assim o número mostrado pro usuário fica em sincronia com o banco/admin sem dupla contagem.
 
-- timeout controlado
-- retry
-- fallback de modelo
-- logs estruturados
-- `attempts` / `model_used` quando possível
+### 2. Adicionar `refreshUsage` em `useUserUsage`
 
-### 4. Corrigir observabilidade de falhas
+No `src/hooks/useUserUsage.ts`:
 
-A tabela já tem `attempts` e `model_used`, mas os jobs que falham ainda aparecem com `NULL` porque o metadata só é salvo no sucesso.
+- Extrair a lógica de fetch atual para uma função `refreshUsage` exposta junto com `incrementUsage`.
+- `incrementUsage` continua existindo (usado por `transcriptions` e chat), mas script/tools/daily-guide passam a chamar `refreshUsage()` após sucesso do job.
 
-Vou ajustar para persistir, também em falhas:
+### 3. Atualizar componentes que usam jobs
 
-- quantas tentativas foram feitas
-- último modelo tentado
-- status HTTP/erro upstream resumido
+- `src/components/ScriptGenerator.tsx`: após `runScriptJob()` resolver, chamar `await refreshUsage()`.
+- `src/pages/Tools.tsx` (`handleGenerate`): após `runAiJob('start-tools-job', ...)`, chamar `await refreshUsage()`.
+- `src/components/DailyGuide.tsx`: após o job terminar, chamar `await refreshUsage()`.
+- Para `transcriptions`, manter `await incrementUsage('transcriptions')` OU trocar também por `refreshUsage()` já que o worker do `start-transcription-job` também faz update server-side (preferência: `refreshUsage()` para evitar dupla contagem).
 
-Assim a tela SQL deixa claro se falhou no `pro`, no `flash`, no fallback, ou se foi erro de JSON/schema.
+### 4. Validar pelo painel admin
 
-### 5. Reduzir falhas por JSON inválido
+Após deploy, gerar 1 script, 1 tool, 1 daily-guide e 1 transcrição com o usuário de teste e conferir no `/admin`:
 
-Adicionar uma camada de recuperação quando o Gemini retorna texto quase-JSON:
+- contadores `script_generations`, `tool_generations`, `transcriptions` aumentam,
+- `usage_logs` registra cada feature,
+- `ai_jobs` mostra o job correspondente em `done`.
 
-- parser mais tolerante
-- se JSON estruturado vier inválido, fazer uma tentativa curta de “repair JSON” no `flash-lite`
-- se ainda falhar, retornar mensagem específica: “IA respondeu em formato inválido”, não “Google instável”
+### 5. Diagnóstico SQL pós-deploy (rodar no Studio self-hosted)
 
-Isso evita misturar overload real com erro de formatação.
+```sql
+-- Conferir se updates de user_usage estão acompanhando os jobs done
+SELECT
+  j.id, j.job_type, j.status, j.completed_at,
+  u.script_generations, u.tool_generations, u.transcriptions,
+  u.last_script_date, u.last_tool_date, u.last_transcription_date
+FROM ai_jobs j
+LEFT JOIN user_usage u ON u.user_id = j.user_id
+ORDER BY j.created_at DESC
+LIMIT 20;
 
-### 6. Evitar chamadas paralelas desnecessárias no guia diário
-
-O guia diário hoje pode fazer duas chamadas ao Gemini quase juntas. Em self-hosted isso aumenta chance de 429/503.
-
-Vou serializar ou escalonar melhor:
-
-```text
-Parte A obrigatória → Parte B opcional com fallback local se falhar
+-- Logs por dia
+SELECT feature, COUNT(*), MAX(created_at)
+FROM usage_logs
+WHERE created_at > now() - interval '7 days'
+GROUP BY feature;
 ```
 
-Ou seja: se exemplos extras falharem, o guia principal ainda entrega conteúdo em vez de abortar a experiência inteira.
+## Arquivos a alterar
 
-### 7. Melhorar a mensagem para o usuário final
+- `src/hooks/useUserUsage.ts` — expor `refreshUsage`
+- `src/components/ScriptGenerator.tsx` — chamar `refreshUsage` após sucesso
+- `src/pages/Tools.tsx` — chamar `refreshUsage` após sucesso (tools + transcrição)
+- `src/components/DailyGuide.tsx` — chamar `refreshUsage` após sucesso
+- (opcional) `supabase/functions/start-*-job/index.ts` — adicionar `console.log` claro do passo "usage incremented" pra facilitar debug no Docker
 
-Trocar a mensagem genérica “Google instável” por mensagens mais úteis:
+## Deploy depois
 
-- overload temporário real
-- resposta inválida da IA
-- limite/rate limit
-- timeout
-- falha parcial com conteúdo recuperado
+Frontend (Vercel) sai automático no push pra `main`.
 
-Sem mascarar erro, mas também sem desanimar com uma mensagem única para tudo.
-
-## Arquivos que serão ajustados
-
-- `supabase/functions/_shared/gemini.ts`
-- `supabase/functions/_shared/ai-job-runner.ts`
-- `supabase/functions/start-script-job/index.ts`
-- `supabase/functions/start-tools-job/index.ts`
-- `supabase/functions/start-daily-guide-job/index.ts`
-- `supabase/functions/start-transcription-job/index.ts`
-- possivelmente funções legadas `generate-*` ainda usadas em algum fluxo
-
-## Deploy necessário depois
-
-Como o backend é Supabase self-hosted, depois da alteração será necessário subir as functions na VPS:
+Edge functions (só se mexermos nos logs do servidor):
 
 ```bash
 cd /root/app && git pull origin main
-./scripts/deploy-selfhost.sh start-script-job start-tools-job start-daily-guide-job start-transcription-job get-ai-job-status
+./scripts/deploy-selfhost.sh start-script-job start-tools-job start-daily-guide-job start-transcription-job
 ```
-
-E, se mexermos no helper compartilhado, redeployar todas as functions que importam `_shared/gemini.ts`.
 
 ## Resultado esperado
 
-- Chat continua funcionando como hoje.
-- Tools deixam de depender primeiro do modelo mais instável.
-- Falhas por overload reduzem bastante.
-- Quando falhar, o diagnóstico fica claro no banco/logs.
-- Guia diário e tools passam a degradar melhor em vez de simplesmente morrer.
-- O comportamento fica muito mais parecido com a robustez percebida no Lovable Cloud.
+- Painel admin volta a refletir as gerações corretamente.
+- O contador no UI do criador também atualiza após cada geração assíncrona.
+- Sem dupla contagem (cliente não incrementa por conta própria).
+- Logs do Docker mostram explicitamente quando o `user_usage` é atualizado, facilitando debug futuro.

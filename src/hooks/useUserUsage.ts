@@ -33,31 +33,43 @@ export function useUserUsage() {
   const [usage, setUsage] = useState<UserUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchOrCreate = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
+
+    const { data, error } = await (supabase.from as any)('user_usage')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) { console.error('useUserUsage fetch error:', error); setLoading(false); return; }
+
+    if (data) {
+      setUsage(data as UserUsage);
+    } else {
+      const { data: inserted, error: insertErr } = await (supabase.from as any)('user_usage')
+        .insert({ user_id: user.id })
+        .select()
+        .single();
+      if (!insertErr && inserted) setUsage(inserted as UserUsage);
+    }
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    const fetchOrCreate = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
-
-      const { data, error } = await (supabase.from as any)('user_usage')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (error) { console.error('useUserUsage fetch error:', error); setLoading(false); return; }
-
-      if (data) {
-        setUsage(data as UserUsage);
-      } else {
-        const { data: inserted, error: insertErr } = await (supabase.from as any)('user_usage')
-          .insert({ user_id: user.id })
-          .select()
-          .single();
-        if (!insertErr && inserted) setUsage(inserted as UserUsage);
-      }
-      setLoading(false);
-    };
-
     fetchOrCreate();
+  }, [fetchOrCreate]);
+
+  // Re-busca user_usage do banco. Usar após jobs assíncronos (script/tools/daily-guide/transcrição)
+  // que incrementam server-side — evita dupla contagem e mantém UI sincronizada com admin.
+  const refreshUsage = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await (supabase.from as any)('user_usage')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (data) setUsage(data as UserUsage);
   }, []);
 
   const isPremium = usage?.is_premium ?? false;
@@ -121,6 +133,7 @@ export function useUserUsage() {
     remainingTranscriptions,
     remainingChat,
     incrementUsage,
+    refreshUsage,
     freeLimits: FREE_LIMITS,
   };
 }

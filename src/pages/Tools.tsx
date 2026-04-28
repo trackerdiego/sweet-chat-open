@@ -224,7 +224,7 @@ async function runAiJob<T = unknown>(functionName: string, payload: Record<strin
 
 const Tools = () => {
   const { profile } = useUserProfile();
-  const { canUseTool, canTranscribe, remainingTools, remainingTranscriptions, incrementUsage, isPremium } = useUserUsage();
+  const { canUseTool, canTranscribe, remainingTools, remainingTranscriptions, incrementUsage, refreshUsage, isPremium } = useUserUsage();
   const [selectedTool, setSelectedTool] = useState<ToolConfig | null>(null);
   const [userInput, setUserInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -281,7 +281,8 @@ const Tools = () => {
       if (transcribeResult?.transcription) {
         setUserInput(prev => prev ? `${prev}\n\n${transcribeResult.transcription}` : transcribeResult.transcription!);
         toast.success('Transcrição concluída! ✨');
-        await incrementUsage('transcriptions');
+        // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+        await refreshUsage();
       }
     } catch (err) {
       console.error('Transcription error:', err);
@@ -308,6 +309,8 @@ const Tools = () => {
       });
       setResult(data);
       toast.success('Conteúdo gerado! ✨');
+      // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+      await refreshUsage();
     } catch (err) {
       console.error('Tool generation error:', err);
       const msg = err instanceof Error ? err.message : 'Erro ao gerar.';

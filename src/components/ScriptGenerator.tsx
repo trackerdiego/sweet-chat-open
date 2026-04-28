@@ -30,7 +30,7 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showingAI, setShowingAI] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const { canUseScript, remainingScripts, incrementUsage, isPremium } = useUserUsage();
+  const { canUseScript, remainingScripts, incrementUsage, refreshUsage, isPremium } = useUserUsage();
 
   const activeScript: ScriptContent = showingAI && aiScript ? aiScript : strategy;
   const fullScript = `🎬 HOOK (0-3s):\n${activeScript.viralHook}\n\n📖 CORPO:\n${activeScript.storytellingBody}\n\n🎯 CTA:\n${activeScript.subtleConversion}`;
@@ -79,6 +79,8 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
     try {
       const data = await runScriptJob();
       setAiScript(data); setShowingAI(true);
+      // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+      await refreshUsage();
     } catch (e) {
       console.error('[ScriptGenerator] generate error:', e);
       const msg = e instanceof Error ? e.message : 'Tente novamente em alguns segundos.';
