@@ -11,6 +11,8 @@ import Matrix from "./pages/Matrix";
 import Script from "./pages/Script";
 import Tasks from "./pages/Tasks";
 import Tools from "./pages/Tools";
+import Wallet from "./pages/Wallet";
+import Referral from "./pages/Referral";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import ResetPassword from "./pages/ResetPassword";
@@ -64,6 +66,8 @@ function AppRoutes() {
         <Route path="/script" element={<Script />} />
         <Route path="/tarefas" element={<Tasks />} />
         <Route path="/ferramentas" element={<Tools />} />
+        <Route path="/carteira" element={<Wallet />} />
+        <Route path="/indique" element={<Referral />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
