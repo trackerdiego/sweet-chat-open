@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { getDailySchedule } from '@/data/dailySchedule';
 import { DayStrategy, strategies as fallbackStrategies } from '@/data/strategies';
 import { useUserProgress } from './useUserProgress';
+import { useWallet } from './useWallet';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export interface DailyTaskState {
   morningInsight: boolean;
