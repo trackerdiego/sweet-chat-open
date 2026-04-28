@@ -33,6 +33,11 @@ PRIVATE_FNS=(
   generate-script
   generate-tools-content
   generate-daily-guide
+  start-tools-job
+  start-script-job
+  start-daily-guide-job
+  start-transcription-job
+  get-ai-job-status
   generate-audience-profile
   generate-personalized-matrix
   start-onboarding-run
@@ -45,6 +50,11 @@ PRIVATE_FNS=(
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
 
 VALIDATE_FNS=(
+  start-tools-job
+  start-script-job
+  start-daily-guide-job
+  start-transcription-job
+  get-ai-job-status
   start-onboarding-run
   get-onboarding-run-status
   generate-audience-profile
@@ -55,12 +65,22 @@ SELFHOST_BASE_URL="${SELFHOST_BASE_URL:-https://api.influlab.pro}"
 
 WANT_SECRETS=false
 FORCE_DOCKER=false
+REQUESTED_FNS=()
 for arg in "$@"; do
   case "$arg" in
     --secrets) WANT_SECRETS=true ;;
     --force-docker) FORCE_DOCKER=true ;;
+    *) REQUESTED_FNS+=("$arg") ;;
   esac
 done
+
+deploy_list() {
+  if [[ "${#REQUESTED_FNS[@]}" -gt 0 ]]; then
+    printf '%s\n' "${REQUESTED_FNS[@]}"
+  else
+    printf '%s\n' "${ALL_FNS[@]}"
+  fi
+}
 
 validate_deployed() {
   echo ""
