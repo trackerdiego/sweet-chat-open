@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useSubscription } from '@/hooks/useSubscription';
 
 interface UserUsage {
   script_generations: number;
@@ -30,6 +31,7 @@ function getCountForToday(count: number, lastDate: string | null, today: string)
 }
 
 export function useUserUsage() {
+  const { hasAccess, isActive } = useSubscription();
   const [usage, setUsage] = useState<UserUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -72,7 +74,8 @@ export function useUserUsage() {
     if (data) setUsage(data as UserUsage);
   }, []);
 
-  const isPremium = usage?.is_premium ?? false;
+  // Modelo Fase 3: assinante ativo = ilimitado. Trial respeita limites diários. Sem acesso = sem limite (paywall já bloqueia).
+  const isPremium = isActive || (usage?.is_premium ?? false);
   const today = getTodayDate();
 
   const scriptCountToday = getCountForToday(usage?.script_generations ?? 0, usage?.last_script_date ?? null, today);
@@ -85,9 +88,10 @@ export function useUserUsage() {
   const canTranscribe = isPremium || transcriptionCountToday < FREE_LIMITS.transcriptions;
   const canUseChat = isPremium || chatCountToday < FREE_LIMITS.chat_messages;
 
-  const canAccessDay = useCallback((day: number) => {
-    return isPremium || day <= FREE_LIMITS.free_days;
-  }, [isPremium]);
+  const canAccessDay = useCallback((_day: number) => {
+    // Fase 3: trial e ativos veem todos os 30 dias. Sem acesso é tratado pelo AccessGuard.
+    return hasAccess;
+  }, [hasAccess]);
 
   const remainingScripts = isPremium ? Infinity : Math.max(0, FREE_LIMITS.script_generations - scriptCountToday);
   const remainingTools = isPremium ? Infinity : Math.max(0, FREE_LIMITS.tool_generations - toolCountToday);

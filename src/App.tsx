@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
+import { TrialBanner } from "@/components/TrialBanner";
+import { AccessGuard } from "@/components/AccessGuard";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import Index from "./pages/Index";
 import Matrix from "./pages/Matrix";
@@ -57,20 +59,23 @@ function AppRoutes() {
   return (
     <>
       <InstallBanner />
+      <TrialBanner />
       <Navigation />
-      <Routes>
-        <Route path="/" element={<Index />} />
-        <Route path="/auth" element={<Navigate to="/" replace />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/matriz" element={<Matrix />} />
-        <Route path="/script" element={<Script />} />
-        <Route path="/tarefas" element={<Tasks />} />
-        <Route path="/ferramentas" element={<Tools />} />
-        <Route path="/carteira" element={<Wallet />} />
-        <Route path="/indique" element={<Referral />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <AccessGuard>
+        <Routes>
+          <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<Navigate to="/" replace />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/matriz" element={<Matrix />} />
+          <Route path="/script" element={<Script />} />
+          <Route path="/tarefas" element={<Tasks />} />
+          <Route path="/ferramentas" element={<Tools />} />
+          <Route path="/carteira" element={<Wallet />} />
+          <Route path="/indique" element={<Referral />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </AccessGuard>
     </>
   );
 }
