@@ -110,8 +110,8 @@ serve(async (req) => {
         console.warn(`[start-script-job] usage update failed for job ${jobId}`, e);
       }
 
-      console.log(`[start-script-job] job ${jobId} success`, { day, model: geminiResult.modelUsed, latencyMs: geminiResult.latencyMs });
-      return script;
+      console.log(`[start-script-job] job ${jobId} success`, { day, model: geminiResult.modelUsed, latencyMs: geminiResult.latencyMs, attempts: geminiResult.attempts });
+      return { ...script, __meta: { attempts: geminiResult.attempts, modelUsed: geminiResult.modelUsed } };
     });
 
     return jsonResponse({ jobId });

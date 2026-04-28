@@ -11,14 +11,59 @@
 //     tag: "matrix-week-1",
 //   });
 
-const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRIABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const ALLOWED_MODELS = new Set([
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
 ]);
 
+// Retriable substrings encontrados em error envelopes 200-OK do Gemini
+// (sim, ele às vezes retorna 200 com erro no body)
+const RETRIABLE_BODY_HINTS = [
+  "UNAVAILABLE",
+  "overloaded",
+  "RESOURCE_EXHAUSTED",
+  "deadline",
+  "503",
+  "try again later",
+  "model is currently overloaded",
+];
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Backoff exponencial com jitter. attempt começa em 0.
+function backoffMs(attempt: number, retryAfterSec?: number): number {
+  if (retryAfterSec && retryAfterSec > 0) {
+    // Respeita Retry-After do Gemini, capado em 15s
+    return Math.min(retryAfterSec * 1000, 15000);
+  }
+  // 2s, 5s, 10s, 15s (cap) — cada um com ±25% jitter
+  const base = [2000, 5000, 10000, 15000][Math.min(attempt, 3)];
+  const jitter = base * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(500, Math.round(base + jitter));
+}
+
+function parseRetryAfter(res: Response): number | undefined {
+  const h = res.headers.get("retry-after");
+  if (!h) return undefined;
+  const n = parseInt(h, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function bodyLooksRetriable(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return RETRIABLE_BODY_HINTS.some((h) => lower.includes(h.toLowerCase()));
+}
+
+function logEvent(tag: string, fields: Record<string, unknown>) {
+  try {
+    console.log(`[gemini] ${tag} ${JSON.stringify(fields)}`);
+  } catch {
+    console.log(`[gemini] ${tag}`, fields);
+  }
+}
 
 // JSON Schema → Gemini OpenAPI subset.
 // Gemini não aceita additionalProperties, $schema, etc. e exige type em UPPERCASE em alguns campos.
@@ -51,23 +96,28 @@ export type GeminiOptions = {
   systemInstruction?: string;
   prompt: string;
   schema?: object; // se presente, força JSON estruturado via responseSchema
-  model?: string; // default gemini-2.5-flash
-  fallbackModel?: string; // default gemini-2.5-flash-lite (NÃO pro)
-  timeoutMs?: number; // default 35000 (primary)
-  fallbackTimeoutMs?: number; // default 30000
+  // Cascata de modelos: tenta primary → mid → fallback. Cada nível com seus attempts.
+  model?: string; // default gemini-2.5-pro
+  midModel?: string; // default gemini-2.5-flash
+  fallbackModel?: string; // default gemini-2.5-flash-lite
+  timeoutMs?: number; // timeout por chamada do primary (default 35s)
+  midTimeoutMs?: number; // default 30s
+  fallbackTimeoutMs?: number; // default 25s
+  globalDeadlineMs?: number; // teto total da função (default 90s)
   maxOutputTokens?: number; // default 8192
   temperature?: number;
-  primaryAttempts?: number; // default 1 — pro/flash são instáveis, não vale insistir
-  fallbackAttempts?: number; // default 2
+  primaryAttempts?: number; // default 2
+  midAttempts?: number; // default 2
+  fallbackAttempts?: number; // default 3
   tag: string;
 };
 
 export type GeminiResult = {
-  // Se schema foi passado: JSON parseado já pronto. Se não: texto puro.
   json?: unknown;
   text?: string;
   modelUsed: string;
   latencyMs: number;
+  attempts: number; // total de chamadas HTTP feitas (todos os modelos)
 };
 
 export class GeminiError extends Error {
@@ -98,15 +148,14 @@ async function callOnce(
 }
 
 export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResult> {
-  const model = opts.model ?? "gemini-2.5-flash";
+  const primary = opts.model ?? "gemini-2.5-pro";
+  const mid = opts.midModel ?? "gemini-2.5-flash";
   const fallback = opts.fallbackModel ?? "gemini-2.5-flash-lite";
-  const primaryTimeoutMs = opts.timeoutMs ?? 35000;
-  const fallbackTimeoutMs = opts.fallbackTimeoutMs ?? 30000;
-  const primaryAttempts = Math.max(1, opts.primaryAttempts ?? 1);
-  const fallbackAttempts = Math.max(1, opts.fallbackAttempts ?? 2);
 
-  if (!ALLOWED_MODELS.has(model) || !ALLOWED_MODELS.has(fallback)) {
-    console.error(`[${opts.tag}] BOOT GUARD: modelo não permitido`, { model, fallback });
+  for (const m of [primary, mid, fallback]) {
+    if (!ALLOWED_MODELS.has(m)) {
+      console.error(`[${opts.tag}] BOOT GUARD: modelo não permitido`, { model: m });
+    }
   }
 
   const generationConfig: Record<string, unknown> = {
@@ -126,81 +175,153 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
     body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
   }
 
-  // Sleeps curtos: gateway externo corta em ~120s, não dá pra desperdiçar.
-  const delays = [1500, 3000, 4000];
-  // Sentinela pra abortar tudo em caso de timeout (pula direto pro fallback).
-  const tryModel = async (
-    m: string,
+  const startedAt = Date.now();
+  const globalDeadline = startedAt + (opts.globalDeadlineMs ?? 90000);
+  let totalAttempts = 0;
+  let lastError: { status: number; detail: string } | null = null;
+
+  // Tenta um modelo com N attempts. Pula etapas se passar do globalDeadline.
+  const tryTier = async (
+    model: string,
     attempts: number,
-    timeoutMs: number,
-  ): Promise<{ res: Response; text: string } | "TIMEOUT" | null> => {
+    perCallTimeoutMs: number,
+  ): Promise<{ res: Response; text: string } | "EXHAUSTED" | "DEADLINE"> => {
     for (let i = 0; i < attempts; i++) {
+      if (Date.now() >= globalDeadline) return "DEADLINE";
+      totalAttempts++;
       const t0 = Date.now();
+
+      // Garante que o timeout da chamada não estoura o globalDeadline
+      const remainingBudget = globalDeadline - Date.now();
+      const callTimeout = Math.max(5000, Math.min(perCallTimeoutMs, remainingBudget));
+
+      let isAbort = false;
       try {
-        const res = await callOnce(m, body, opts.apiKey, timeoutMs);
+        const res = await callOnce(model, body, opts.apiKey, callTimeout);
+        const latency = Date.now() - t0;
+
+        // 5xx/429 → retriable
         if (RETRIABLE_STATUSES.has(res.status)) {
-          console.warn(`[${opts.tag}] ${res.status} on ${m} attempt ${i + 1}/${attempts} (${Date.now() - t0}ms)`);
-          try { await res.text(); } catch { /* ignore */ }
-        } else {
-          const text = await res.text();
-          try {
-            const parsed = JSON.parse(text);
-            const fr = parsed?.candidates?.[0]?.finishReason as string | undefined;
-            if (fr && fr !== "STOP" && fr !== "MAX_TOKENS") {
-              console.warn(`[${opts.tag}] bad finishReason=${fr} on ${m} attempt ${i + 1}/${attempts}`);
-              if (i < attempts - 1) { await sleep(delays[i] ?? 2000); continue; }
-            }
-          } catch { /* not JSON envelope, deixa passar */ }
-          return { res, text };
+          const retryAfter = parseRetryAfter(res);
+          let bodyText = "";
+          try { bodyText = await res.text(); } catch { /* ignore */ }
+          lastError = { status: res.status, detail: bodyText.slice(0, 300) };
+          logEvent("retry-status", { tag: opts.tag, model, attempt: i + 1, attempts, status: res.status, latencyMs: latency, retryAfter });
+          if (i < attempts - 1 && Date.now() < globalDeadline) {
+            await sleep(backoffMs(i, retryAfter));
+          }
+          continue;
         }
+
+        // 200 mas pode ter erro no envelope ou finishReason ruim
+        const text = await res.text();
+
+        // Body com sinal de overload mesmo em 200 (acontece com Gemini)
+        if (!res.ok) {
+          lastError = { status: res.status, detail: text.slice(0, 300) };
+          if (bodyLooksRetriable(text)) {
+            logEvent("retry-body", { tag: opts.tag, model, attempt: i + 1, attempts, status: res.status, latencyMs: latency });
+            if (i < attempts - 1 && Date.now() < globalDeadline) await sleep(backoffMs(i));
+            continue;
+          }
+          // 4xx não-retriable (auth, schema inválido, etc.) — propaga imediatamente
+          logEvent("hard-fail", { tag: opts.tag, model, attempt: i + 1, status: res.status, latencyMs: latency });
+          throw new GeminiError(res.status, text.slice(0, 500));
+        }
+
+        // 200 OK — checa finishReason
+        try {
+          const parsed = JSON.parse(text);
+          const fr = parsed?.candidates?.[0]?.finishReason as string | undefined;
+          if (fr && fr !== "STOP" && fr !== "MAX_TOKENS") {
+            lastError = { status: 200, detail: `finishReason=${fr}` };
+            logEvent("bad-finish", { tag: opts.tag, model, attempt: i + 1, attempts, finishReason: fr, latencyMs: latency });
+            if (i < attempts - 1 && Date.now() < globalDeadline) {
+              await sleep(backoffMs(i));
+              continue;
+            }
+            // último attempt do tier com finishReason ruim → cai pro próximo tier
+            return "EXHAUSTED";
+          }
+        } catch {
+          // não é JSON envelope; se schema foi pedido vai falhar depois, deixa passar
+        }
+
+        logEvent("ok", { tag: opts.tag, model, attempt: i + 1, latencyMs: latency });
+        return { res, text };
       } catch (e) {
-        const isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
-        console.warn(`[${opts.tag}] ${isAbort ? "timeout" : "network error"} on ${m} attempt ${i + 1}/${attempts}`, e instanceof Error ? e.message : e);
-        // Em timeout no primary, pula direto pro fallback — não vale gastar mais tempo.
-        if (isAbort) return "TIMEOUT";
-        if (i === attempts - 1) throw e;
+        isAbort = e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError");
+        const latency = Date.now() - t0;
+        if (e instanceof GeminiError) throw e; // hard-fail propagado acima
+        const msg = e instanceof Error ? e.message : String(e);
+        lastError = { status: isAbort ? 504 : 0, detail: msg.slice(0, 300) };
+        logEvent(isAbort ? "timeout" : "net-error", { tag: opts.tag, model, attempt: i + 1, attempts, latencyMs: latency, msg });
+        if (i < attempts - 1 && Date.now() < globalDeadline) {
+          await sleep(backoffMs(i));
+        }
       }
-      if (i < attempts - 1) await sleep(delays[i] ?? 2000);
     }
-    return null;
+    return "EXHAUSTED";
   };
 
-  const startedAt = Date.now();
-  let used = model;
-  let result = await tryModel(model, primaryAttempts, primaryTimeoutMs);
-  if (!result || result === "TIMEOUT") {
-    console.warn(`[${opts.tag}] primary ${model} ${result === "TIMEOUT" ? "timed out" : "exhausted"}, falling back to ${fallback}`);
-    used = fallback;
-    const fb = await tryModel(fallback, fallbackAttempts, fallbackTimeoutMs);
-    result = fb && fb !== "TIMEOUT" ? fb : null;
+  // Cascata: primary → mid → fallback
+  const tiers: Array<{ model: string; attempts: number; timeout: number }> = [
+    { model: primary, attempts: Math.max(1, opts.primaryAttempts ?? 2), timeout: opts.timeoutMs ?? 35000 },
+    { model: mid, attempts: Math.max(1, opts.midAttempts ?? 2), timeout: opts.midTimeoutMs ?? 30000 },
+    { model: fallback, attempts: Math.max(1, opts.fallbackAttempts ?? 3), timeout: opts.fallbackTimeoutMs ?? 25000 },
+  ];
+
+  let usedModel = primary;
+  let success: { res: Response; text: string } | null = null;
+
+  for (const tier of tiers) {
+    if (Date.now() >= globalDeadline) {
+      logEvent("deadline-skip", { tag: opts.tag, skipping: tier.model });
+      continue;
+    }
+    usedModel = tier.model;
+    const r = await tryTier(tier.model, tier.attempts, tier.timeout);
+    if (r !== "EXHAUSTED" && r !== "DEADLINE") {
+      success = r;
+      break;
+    }
+    logEvent("tier-fail", { tag: opts.tag, model: tier.model, reason: r });
   }
+
   const latencyMs = Date.now() - startedAt;
 
-  if (!result) {
-    throw new GeminiError(503, "All Gemini attempts failed (primary + fallback)");
+  if (!success) {
+    const detail = lastError ? `${lastError.status}: ${lastError.detail}` : "no upstream response";
+    logEvent("all-tiers-failed", { tag: opts.tag, totalAttempts, latencyMs, lastError });
+    throw new GeminiError(lastError?.status || 503, `All Gemini tiers failed (${totalAttempts} attempts): ${detail}`);
   }
 
-  const { res, text } = result;
-  if (!res.ok) {
-    throw new GeminiError(res.status, text.slice(0, 500));
+  const { text } = success;
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(text);
+  } catch {
+    throw new GeminiError(502, "Gemini retornou body não-JSON");
   }
+  const partText = (envelope as Record<string, unknown> | null)
+    ?.["candidates"] as unknown;
+  const firstCandidate = Array.isArray(partText) ? partText[0] : undefined;
+  const extractedText = firstCandidate?.content?.parts?.[0]?.text;
 
-  const envelope = JSON.parse(text);
-  const partText = envelope?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof partText !== "string") {
+  if (typeof extractedText !== "string") {
     console.error(`[${opts.tag}] unexpected envelope`, JSON.stringify(envelope).slice(0, 600));
     throw new GeminiError(502, "Gemini retornou envelope sem text");
   }
 
   if (opts.schema) {
     try {
-      return { json: parseLooseJson(partText), modelUsed: used, latencyMs };
+      return { json: parseLooseJson(extractedText), modelUsed: usedModel, latencyMs, attempts: totalAttempts };
     } catch (e) {
-      console.error(`[${opts.tag}] failed to parse JSON`, { sample: partText.slice(0, 400), err: String(e) });
+      console.error(`[${opts.tag}] failed to parse JSON`, { sample: extractedText.slice(0, 400), err: String(e) });
       throw new GeminiError(502, "Gemini retornou JSON inválido");
     }
   }
-  return { text: partText, modelUsed: used, latencyMs };
+  return { text: extractedText, modelUsed: usedModel, latencyMs, attempts: totalAttempts };
 }
 
 // Streaming nativo (para ai-chat). Devolve Response com SSE compatível.

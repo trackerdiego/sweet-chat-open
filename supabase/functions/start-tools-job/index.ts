@@ -121,8 +121,8 @@ serve(async (req) => {
         console.warn(`[start-tools-job] usage update failed for job ${jobId}`, e);
       }
 
-      console.log(`[start-tools-job] job ${jobId} success`, { toolType, model: geminiResult.modelUsed, latencyMs: geminiResult.latencyMs });
-      return out;
+      console.log(`[start-tools-job] job ${jobId} success`, { toolType, model: geminiResult.modelUsed, latencyMs: geminiResult.latencyMs, attempts: geminiResult.attempts });
+      return { ...out, __meta: { attempts: geminiResult.attempts, modelUsed: geminiResult.modelUsed } };
     });
 
     return jsonResponse({ jobId });

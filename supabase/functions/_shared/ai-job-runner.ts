@@ -118,16 +118,34 @@ export function runInBackground(
 
       const result = await worker();
 
+      // Extrai metadados (__meta) se o worker incluir, sem poluir o payload final
+      let cleanResult: Record<string, unknown> = (result ?? {}) as Record<string, unknown>;
+      let attempts: number | null = null;
+      let modelUsed: string | null = null;
+      if (cleanResult && typeof cleanResult === "object" && "__meta" in cleanResult) {
+        const meta = (cleanResult as Record<string, unknown>)["__meta"] as
+          | { attempts?: number; modelUsed?: string }
+          | undefined;
+        attempts = typeof meta?.attempts === "number" ? meta.attempts : null;
+        modelUsed = typeof meta?.modelUsed === "string" ? meta.modelUsed : null;
+        const rest = { ...cleanResult };
+        delete (rest as Record<string, unknown>)["__meta"];
+        cleanResult = rest;
+      }
+
       await admin
         .from("ai_jobs")
         .update({
           status: "done",
-          result: (result ?? {}) as Record<string, unknown>,
+          result: cleanResult,
           completed_at: new Date().toISOString(),
+          // Colunas opcionais — funcionam após ALTER TABLE no self-hosted
+          ...(attempts !== null ? { attempts } : {}),
+          ...(modelUsed !== null ? { model_used: modelUsed } : {}),
         })
         .eq("id", jobId);
 
-      console.log(`[ai-job-runner] job ${jobId} done`);
+      console.log(`[ai-job-runner] job ${jobId} done`, { attempts, modelUsed });
     } catch (e) {
       const userMessage = e instanceof JobError
         ? e.userMessage
