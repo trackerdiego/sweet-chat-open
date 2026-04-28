@@ -82,6 +82,40 @@ async function syncSubscriptionState(admin: any, userId: string, status: string,
   await admin.from("subscription_state").upsert(patch, { onConflict: "user_id" });
 }
 
+// Após PAYMENT_RECEIVED, se aplicamos um desconto (monthly_redemption) na fatura,
+// restaura o `value` da subscription Asaas pro preço cheio do plano. Caso contrário,
+// o valor com desconto persistiria nas próximas faturas.
+async function revertSubscriptionValueIfDiscounted(admin: any, userId: string, asaasSubId: string | undefined, apiKey: string) {
+  if (!asaasSubId) return;
+  const { data: red } = await admin
+    .from("monthly_redemptions")
+    .select("id, period_month, discount_brl_total, applied_at")
+    .eq("user_id", userId)
+    .eq("asaas_subscription_id", asaasSubId)
+    .order("applied_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!red) return;
+
+  // Inferir preço cheio: lê plan e usa tabela fixa (mesmos valores do create-asaas-subscription)
+  const { data: ss } = await admin
+    .from("subscription_state")
+    .select("plan")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const fullPrice = ss?.plan === "annual" ? 397 : 47;
+
+  try {
+    const r = await fetch(`${ASAAS_BASE}/subscriptions/${asaasSubId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", access_token: apiKey },
+      body: JSON.stringify({ value: fullPrice, updatePendingPayments: false }),
+    });
+    if (!r.ok) console.error("revert subscription value failed:", await r.text());
+    else console.log(`reverted subscription ${asaasSubId} value to ${fullPrice}`);
+  } catch (e) { console.error("revert error:", e); }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -132,6 +166,7 @@ serve(async (req) => {
 
       await syncSubscriptionState(admin, userId, "active", asaasSubId, apiKey);
       await processReferralPayment(admin, userId);
+      if (apiKey) await revertSubscriptionValueIfDiscounted(admin, userId, asaasSubId, apiKey);
 
       console.log("Premium activated successfully for:", userId);
     }
