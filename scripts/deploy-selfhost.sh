@@ -46,6 +46,7 @@ PRIVATE_FNS=(
   admin-dashboard
   create-asaas-subscription
   award-task-coins
+  register-referral
 )
 
 ALL_FNS=("${PUBLIC_FNS[@]}" "${PRIVATE_FNS[@]}")
