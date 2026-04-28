@@ -85,7 +85,7 @@ serve(async (req) => {
       headers: { "Content-Type": "application/json", access_token: ASAAS_API_KEY },
       body: JSON.stringify({
         customer: customerId, billingType: "UNDEFINED",
-        value: plan === "yearly" ? 397.0 : 47.0, nextDueDate: dueDateStr,
+        value: plan === "yearly" ? 297.0 : 47.0, nextDueDate: dueDateStr,
         cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
         description: plan === "yearly" ? "InfluLab Pro - Assinatura Anual" : "InfluLab Pro - Assinatura Mensal",
         externalReference: userId,
