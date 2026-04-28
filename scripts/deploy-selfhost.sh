@@ -87,12 +87,17 @@ validate_deployed() {
   echo "🔎 Validando functions publicadas em $SELFHOST_BASE_URL ..."
   local fail=0
   for fn in "${VALIDATE_FNS[@]}"; do
-    local hdr
-    hdr=$(curl -sI -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null | grep -i 'x-influlab-function-version' || true)
-    if [[ -n "$hdr" ]]; then
-      echo "  ✅ $fn  →  ${hdr%$'\r'}"
+    local tmp status body cors
+    tmp=$(mktemp)
+    status=$(curl -sS -o "$tmp" -w '%{http_code}' -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null || echo "000")
+    body=$(cat "$tmp" 2>/dev/null || true)
+    rm -f "$tmp"
+    cors=$(curl -sI -X OPTIONS "$SELFHOST_BASE_URL/functions/v1/$fn" 2>/dev/null | grep -i '^access-control-allow-origin:' || true)
+    if [[ "$status" =~ ^2 ]] && [[ -n "$cors" ]] && [[ "$body" != *"InvalidWorkerCreation"* ]]; then
+      echo "  ✅ $fn  →  HTTP $status + CORS ok"
     else
-      echo "  ❌ $fn  →  sem x-influlab-function-version (NÃO publicada ou versão antiga)"
+      echo "  ❌ $fn  →  HTTP $status (NÃO publicada, sem CORS ou boot quebrado)"
+      [[ -n "$body" ]] && echo "     body: ${body:0:180}"
       fail=1
     fi
   done
