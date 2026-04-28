@@ -32,7 +32,7 @@ serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const { data, error } = await admin.from("ai_jobs")
-      .select("id, job_type, status, result, error_message, created_at, started_at, completed_at")
+      .select("id, job_type, status, result, error_message, attempts, model_used, created_at, started_at, completed_at")
       .eq("id", jobId)
       .eq("user_id", user.id)
       .maybeSingle();
