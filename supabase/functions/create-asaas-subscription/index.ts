@@ -97,6 +97,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: subscriptionData.errors?.[0]?.description || "Erro ao criar assinatura" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Espelha em subscription_state (status permanece o atual; só vira 'active' via webhook)
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      await admin.from("subscription_state").upsert({
+        user_id: userId,
+        asaas_subscription_id: subscriptionData.id,
+        asaas_customer_id: customerId,
+        plan: plan === "yearly" ? "yearly" : "monthly",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+    } catch (e) {
+      console.warn("subscription_state upsert failed:", e);
+    }
+
     const invoiceUrl = subscriptionData.paymentLink || `https://www.asaas.com/c/${subscriptionData.id}`;
 
     return new Response(JSON.stringify({ subscriptionId: subscriptionData.id, paymentUrl: invoiceUrl }), {
