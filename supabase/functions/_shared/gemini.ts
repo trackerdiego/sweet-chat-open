@@ -94,7 +94,8 @@ function parseLooseJson(raw: string): unknown {
 export type GeminiOptions = {
   apiKey: string;
   systemInstruction?: string;
-  prompt: string;
+  prompt?: string;
+  contents?: Array<{ role?: string; parts: Array<Record<string, unknown>> }>;
   schema?: object; // se presente, força JSON estruturado via responseSchema
   // Cascata de modelos: tenta primary → mid → fallback. Cada nível com seus attempts.
   model?: string; // default gemini-2.5-pro
@@ -121,9 +122,21 @@ export type GeminiResult = {
 };
 
 export class GeminiError extends Error {
-  constructor(public status: number, public detail: string) {
+  constructor(
+    public status: number,
+    public detail: string,
+    public attempts?: number,
+    public modelUsed?: string,
+  ) {
     super(`Gemini ${status}: ${detail}`);
   }
+}
+
+function extractTextFromEnvelope(envelope: unknown): string | null {
+  const candidates = (envelope as Record<string, unknown> | null)?.["candidates"];
+  const firstCandidate = Array.isArray(candidates) ? candidates[0] : undefined;
+  const extractedText = firstCandidate?.content?.parts?.[0]?.text;
+  return typeof extractedText === "string" ? extractedText : null;
 }
 
 async function callOnce(
@@ -168,7 +181,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
   }
 
   const body: Record<string, unknown> = {
-    contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
+    contents: opts.contents ?? [{ role: "user", parts: [{ text: opts.prompt ?? "" }] }],
     generationConfig,
   };
   if (opts.systemInstruction) {
