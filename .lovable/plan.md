@@ -1,84 +1,43 @@
-## Diagnóstico
+## Validação end-to-end do padrão AI Jobs
 
-O erro que apareceu na tela não é mais timeout da IA. Agora o problema é que o frontend já está chamando as novas funções assíncronas (`start-*-job` e `get-ai-job-status`), mas elas não estão disponíveis/registradas corretamente no backend self-hosted.
+Infra confirmada via headers (`x-influlab-function-version: ai-jobs-2026-04-28` em todas as 5 funções, Kong latency 1-7ms). Falta provar que o ciclo completo funciona.
 
-Teste direto no `https://api.influlab.pro/functions/v1/...` mostrou:
+### Passos
 
-```text
-start-tools-job              -> HTTP 500
-start-script-job             -> HTTP 500
-start-daily-guide-job        -> HTTP 500
-start-transcription-job      -> HTTP 500
-get-ai-job-status            -> HTTP 500
+1. **Disparar job real via curl autenticado**
+   - Chamar `start-tools-job` com payload mínimo (ex: `{ tool: "headline", input: "teste" }`) usando o JWT do usuário logado.
+   - Confirmar resposta `{ jobId, status: "pending" }` em <2s.
 
-corpo do erro:
-InvalidWorkerCreation: worker boot error: failed to bootstrap runtime: could not find an appropriate entrypoint
-```
+2. **Verificar inserção no banco**
+   - `SELECT id, job_type, status, started_at FROM ai_jobs ORDER BY created_at DESC LIMIT 5;`
+   - Confirmar que o job apareceu como `pending` e migrou pra `processing`.
 
-As funções antigas ainda respondem `200` no `OPTIONS`, então o stack está vivo. O problema é deploy/registro das funções novas no self-hosted.
+3. **Acompanhar worker em background**
+   - Ler logs de `start-tools-job` pra ver o `EdgeRuntime.waitUntil` rodar e chamar Gemini.
+   - Confirmar transição `processing → done` (ou `failed` com erro claro).
 
-Causa provável encontrada no código: `scripts/deploy-selfhost.sh` ainda lista somente as funções antigas. Ele não inclui as 5 novas funções assíncronas em `PRIVATE_FNS`, nem em `VALIDATE_FNS`. Então, ao rodar o deploy padrão na VPS, o script não copia/publica as novas pastas para o volume do Supabase Functions e também não valida se elas entraram no ar.
+4. **Validar polling**
+   - Chamar `get-ai-job-status?jobId=...` repetidas vezes.
+   - Confirmar que retorna `{ status: "done", result: {...} }` quando o worker termina.
 
-## Plano de correção
+5. **Teste de stress de tempo (opcional)**
+   - Disparar `start-script-job` (Gemini mais pesado) e medir tempo total até `done`.
+   - Confirmar que o frontend nunca recebe timeout do Kong, mesmo se o worker levar 90s+.
 
-1. Atualizar o script de deploy self-hosted
-   - Adicionar em `PRIVATE_FNS`:
-     - `start-tools-job`
-     - `start-script-job`
-     - `start-daily-guide-job`
-     - `start-transcription-job`
-     - `get-ai-job-status`
-   - Adicionar essas 5 também em `VALIDATE_FNS` para o deploy falhar se alguma não estiver publicada.
+6. **Teste no frontend real**
+   - Pedir pro usuário rodar uma ferramenta na UI (Tools / ScriptGenerator / DailyGuide).
+   - Conferir console/network: deve ter 1 POST <2s + N GETs de polling, sem 5xx.
 
-2. Melhorar a validação pós-deploy
-   - Hoje a validação procura header `x-influlab-function-version`, mas as novas funções não retornam esse header.
-   - Ajustar para validar pelo `OPTIONS` retornando `2xx` com CORS, ou adicionar header de versão nas respostas das novas funções e validar por ele.
-   - Preferência: adicionar `x-influlab-function-version` via `jsonResponse`/CORS das novas funções para diagnóstico ficar claro.
+### Critério de sucesso
 
-3. Corrigir UX de erro no frontend
-   - O SDK mostra mensagem genérica: `Edge Function returned a non-2xx status code`.
-   - Ajustar os handlers das chamadas assíncronas para extrair o corpo real do erro quando disponível.
-   - Assim, se voltar a falhar, o toast mostra algo útil como “função não publicada”/“não autorizado”/“job não encontrado”, não um erro genérico.
+- Nenhum 502/503/504 no fluxo
+- `ai_jobs` com status final `done`
+- Frontend recebe resultado via polling sem erro
 
-4. Entregar comando exato para VPS
-   - Como o backend é self-hosted, após o patch você deve rodar na VPS:
+### O que vou usar
 
-```bash
-cd /root/app && git pull origin main
-./scripts/deploy-selfhost.sh --force-docker
-```
+- `supabase--curl_edge_functions` (com auth do user logado) pra disparar e pollar
+- `supabase--read_query` pra inspecionar `ai_jobs`
+- `supabase--edge_function_logs` pra ver o worker rodando
 
-   - Se quiser deploy pontual imediatamente:
-
-```bash
-cd /root/app && git pull origin main
-./scripts/deploy-selfhost.sh --force-docker
-```
-
-   O script atualizado vai copiar também as 5 funções novas e reiniciar o container `functions`.
-
-5. Validação final
-   - Testar via `curl`:
-
-```bash
-for fn in start-tools-job start-script-job start-daily-guide-job start-transcription-job get-ai-job-status; do
-  echo "== $fn =="
-  curl -sS -i -X OPTIONS "https://api.influlab.pro/functions/v1/$fn" | head -n 12
-done
-```
-
-   - Resultado esperado: `HTTP/2 200` ou resposta CORS válida, não `InvalidWorkerCreation`.
-   - Depois testar uma chamada real no app: scripts, tools e transcrição devem iniciar job e ficar em processamento até concluir.
-
-## Resultado esperado
-
-Depois do deploy correto, as chamadas de IA não vão mais morrer antes de iniciar. O fluxo fica:
-
-```text
-Frontend -> start-*-job -> responde jobId rápido
-Frontend -> get-ai-job-status a cada 2s
-Worker em background -> chama IA -> salva resultado em ai_jobs
-Frontend -> recebe done/failed com mensagem real
-```
-
-Isso corrige o erro atual de `Edge Function returned a non-2xx status code` causado por função assíncrona não publicada no self-hosted.
+Sem mudanças de código nesse passo — só validação. Se algum passo falhar, abro plano de fix específico.
