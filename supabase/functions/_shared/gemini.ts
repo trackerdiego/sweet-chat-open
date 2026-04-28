@@ -366,6 +366,8 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
       return { json: parseLooseJson(extractedText), modelUsed: usedModel, latencyMs, attempts: totalAttempts };
     } catch (e) {
       console.warn(`[${opts.tag}] failed to parse JSON; trying repair`, { sample: extractedText.slice(0, 400), err: String(e) });
+      const canRepair = globalDeadline - Date.now() >= 5000;
+      if (canRepair) totalAttempts++;
       const repaired = await repairJsonWithGemini({
         apiKey: opts.apiKey,
         rawText: extractedText,
@@ -374,7 +376,6 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
         remainingMs: Math.max(5000, globalDeadline - Date.now()),
       });
       if (repaired) {
-        totalAttempts++;
         return { json: repaired, modelUsed: `${usedModel}+json-repair`, latencyMs: Date.now() - startedAt, attempts: totalAttempts };
       }
       throw new GeminiError(502, "A IA respondeu em formato JSON inválido", totalAttempts, usedModel);
