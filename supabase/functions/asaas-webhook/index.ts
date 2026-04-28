@@ -41,6 +41,37 @@ async function fetchSubscription(asaasSubId: string, apiKey: string) {
   }
 }
 
+async function fetchPixQrCode(paymentId: string, apiKey: string): Promise<{ encodedImage: string; payload: string } | null> {
+  try {
+    const res = await fetch(`${ASAAS_BASE}/payments/${paymentId}/pixQrCode`, {
+      headers: { access_token: apiKey },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      encodedImage: data.encodedImage ?? "", // base64 PNG sem prefixo
+      payload: data.payload ?? "",            // copia-e-cola
+    };
+  } catch (e) {
+    console.error("fetchPixQrCode error:", e);
+    return null;
+  }
+}
+
+async function clearNextInvoice(admin: any, userId: string) {
+  await admin
+    .from("subscription_state")
+    .update({ next_invoice: null, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+}
+
+async function setNextInvoice(admin: any, userId: string, invoice: Record<string, unknown>) {
+  await admin
+    .from("subscription_state")
+    .update({ next_invoice: invoice, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+}
+
 // ---------- Audit log (idempotência) ----------
 async function logWebhookEvent(admin: any, body: any, userId: string | null) {
   const eventId: string | undefined = body?.id;
