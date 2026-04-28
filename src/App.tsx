@@ -61,6 +61,7 @@ function AppRoutes() {
 
   return (
     <>
+      <PixDueBanner />
       <InstallBanner />
       <TrialBanner />
       <Navigation />
@@ -75,6 +76,7 @@ function AppRoutes() {
           <Route path="/ferramentas" element={<Tools />} />
           <Route path="/carteira" element={<Wallet />} />
           <Route path="/indique" element={<Referral />} />
+          <Route path="/renovar" element={<Renew />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/ajuda" element={<Help />} />
           <Route path="*" element={<NotFound />} />
