@@ -105,15 +105,15 @@ export function Navigation() {
       <motion.nav
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border px-2 py-2 pb-[env(safe-area-inset-bottom)] md:top-0 md:bottom-auto md:border-t-0 md:border-b md:pb-2 md:pt-[env(safe-area-inset-top)]"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border px-1 py-2 pb-[env(safe-area-inset-bottom)] overflow-hidden md:top-0 md:bottom-auto md:border-t-0 md:border-b md:px-2 md:pb-2 md:pt-[env(safe-area-inset-top)]"
       >
-        <div className="flex justify-around items-center max-w-lg mx-auto">
+        <div className="flex justify-between items-center gap-0.5 w-full md:max-w-lg md:mx-auto md:gap-1 md:justify-around">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground gold-gradient shadow-md shadow-primary/20'
                     : 'text-muted-foreground hover:text-foreground'
@@ -121,14 +121,14 @@ export function Navigation() {
               }
             >
               <Icon size={20} />
-              <span>{label}</span>
+              <span className="truncate max-w-full">{label}</span>
             </NavLink>
           ))}
           {isAdmin && (
             <NavLink
               to="/admin"
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground gold-gradient shadow-md shadow-primary/20'
                     : 'text-muted-foreground hover:text-foreground'
@@ -136,13 +136,13 @@ export function Navigation() {
               }
             >
               <ShieldCheck size={20} />
-              <span>Admin</span>
+              <span className="truncate max-w-full">Admin</span>
             </NavLink>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground relative">
+            <DropdownMenuTrigger className="flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground relative md:flex-initial md:px-4">
               <Settings size={20} />
-              <span>Config</span>
+              <span className="truncate max-w-full">Config</span>
               {wallet.coins_balance > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center shadow-md shadow-primary/30">
                   {wallet.coins_balance > 999 ? '999+' : wallet.coins_balance}

@@ -1,68 +1,29 @@
 ## Problema
 
-O usuário admin (`agentevendeagente@gmail.com`) está com onboarding completo, premium ativo e matriz de 30 itens no banco — mas ao logar foi jogado pro onboarding.
+Na navbar inferior mobile (`src/components/Navigation.tsx`), em telas portrait estreitas (≤414px), o item "Config" (engrenagem) é cortado/empurrado para fora. Só aparece em landscape porque há largura suficiente.
 
-A causa é a **trava de integridade** no `useUserProfile.ts` (`fetchProfile`, ~linhas 110-130): se o `select` em `user_strategies` falhar silenciosamente (401 transitório, race com session, RLS hiccup) e retornar `data=null`, o código trata como "matriz inválida" e **escreve `onboarding_completed=false` no banco**, mandando o usuário pro onboarding mesmo com tudo certo.
+## Causa
 
-A trava foi criada pra cobrir um bug antigo (perfil completo sem matriz), mas hoje está agressiva demais: confunde "query falhou" com "matriz não existe".
+Cada item usa `px-4` (16px laterais) + `gap` implícito do `justify-around`. Com 5 itens fixos + Config (+ Admin quando logado como admin) o conteúdo excede a largura do viewport mobile, e como não há `overflow` controlado nem padding responsivo, o último elemento é cortado.
 
-## Mudanças (apenas em `src/hooks/useUserProfile.ts`)
+## Solução
 
-### 1. Trava não-destrutiva
+Em `src/components/Navigation.tsx`, ajustar o container e os itens para garantir que TODOS caibam em qualquer largura mobile:
 
-Reescrever o bloco de validação pra distinguir os 3 casos:
+1. **Container interno** (linha 110): trocar `max-w-lg mx-auto` por `w-full` e adicionar `gap-1` para distribuição uniforme. Manter `justify-around` ou trocar por `justify-between`.
 
-- **erro na query** → não fazer nada, apenas `console.warn`. Confia no banco.
-- **query OK, `strategies` é array com <28 itens** → reset `onboarding_completed=false` (caso real e legítimo).
-- **query OK, `data=null`** (sem row em `user_strategies`) → reset (igual ao comportamento atual nesse caso específico, mas só quando temos certeza que a query rodou).
+2. **Padding dos itens** (linhas 116, 131, 143): trocar `px-4 py-2` por `px-2 py-2 sm:px-4` — padding lateral menor no mobile, normal a partir de `sm:`. Adicionar `flex-1 min-w-0` para que cada item ocupe fração igual e nunca estoure.
 
-Trocar a linha de destructuring atual por algo como:
+3. **Label** (`<span>Config</span>` etc): adicionar `truncate` no span para evitar overflow caso algum label seja longo.
 
-```ts
-const { data: strat, error: stratErr } = await supabase
-  .from('user_strategies').select('strategies').eq('user_id', userId).maybeSingle();
+4. **Wrapper `<motion.nav>`**: adicionar `overflow-hidden` como salvaguarda.
 
-if (stratErr) {
-  console.warn('[useUserProfile] strategies check skipped (query error):', stratErr);
-} else {
-  const arr = strat?.strategies;
-  const explicitlyMissing = strat === null;
-  const arrayTooShort = Array.isArray(arr) && arr.length < 28;
-  if (explicitlyMissing || arrayTooShort) {
-    // reset onboarding_completed
-  }
-}
-```
+Resultado: 5 itens (ou 6 com admin) cabem confortavelmente em qualquer largura mobile (≥320px), preservando o layout md: atual no desktop.
 
-### 2. Whitelist do admin
+## Arquivo afetado
 
-Adicionar guard antes de toda a trava:
+- `src/components/Navigation.tsx` — alterações apenas de classes Tailwind, sem mudança de lógica.
 
-```ts
-const ADMIN_EMAIL = 'agentevendeagente@gmail.com';
-const isAdmin = session?.user?.email === ADMIN_EMAIL;
+## Deploy
 
-if (profileData.onboarding_completed && !isAdmin) {
-  // ... trava de integridade roda só pra não-admin
-}
-```
-
-Justificativa: você loga em vários devices/abas pra testar e não pode ser kickado pro onboarding por nenhuma checagem heurística.
-
-### 3. Pós-mudança
-
-- Single-session polling **fica como está** (você pediu).
-- Como `agentevendeagente` já está com `onboarding_completed=true` no banco hoje, não precisa de SQL — só o deploy do frontend.
-
-## Detalhes técnicos
-
-**Arquivo único alterado:** `src/hooks/useUserProfile.ts`
-**Backend:** nada. Sem migration, sem edge function, sem mudança no Asaas.
-**Deploy:** Vercel pega automático do GitHub. **Sem comandos na VPS.**
-**Risco:** baixo. Mudança torna a trava mais permissiva (menos resets), o que reduz o risco de falso-positivo. O reset legítimo (perfil completo + matriz realmente <28) continua funcionando.
-
-## Checklist pós-deploy
-
-1. Logar com `agentevendeagente@gmail.com` → deve ir direto pro `/` (dashboard), nunca mais pro `/onboarding`.
-2. Logar com qualquer outro user que tenha matriz válida → idem, vai pro dashboard.
-3. (Opcional) Criar conta nova de teste → continua passando pelo onboarding normalmente (a trava só atua quando `onboarding_completed=true`).
+Frontend-only (Vercel auto-deploy do GitHub). Sem comandos VPS.
