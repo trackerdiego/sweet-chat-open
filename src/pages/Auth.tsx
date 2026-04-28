@@ -80,6 +80,17 @@ const Auth = () => {
           },
         });
         if (error) throw error;
+
+        // Registra indicação se houver código pendente. Best-effort, não bloqueia signup.
+        if (refCode && data.session) {
+          try {
+            await supabase.functions.invoke('register-referral', { body: { code: refCode } });
+          } catch (e) {
+            console.warn('register-referral failed', e);
+          }
+          localStorage.removeItem(REF_STORAGE_KEY);
+        }
+
         if (data.session) {
           toast.success('Conta criada com sucesso! 🎉');
         } else {
