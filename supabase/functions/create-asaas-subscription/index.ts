@@ -104,7 +104,7 @@ serve(async (req) => {
         user_id: userId,
         asaas_subscription_id: subscriptionData.id,
         asaas_customer_id: customerId,
-        plan: plan === "yearly" ? "yearly" : "monthly",
+        plan: plan === "yearly" ? "annual" : "monthly",
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" });
     } catch (e) {
