@@ -533,6 +533,7 @@ export default function Landing() {
           </Card>
         </div>
       </Section>
+      </div>
 
       {/* ─── FAQ ─── */}
       <Section className="py-20 px-4 bg-background">
