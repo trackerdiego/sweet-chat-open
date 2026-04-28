@@ -150,7 +150,12 @@ const faqs = [
   {
     question: "Posso cancelar quando quiser?",
     answer:
-      "Sim, sem multa e sem burocracia. Você pode cancelar sua assinatura a qualquer momento direto no app.",
+      "Sim, sem multa e sem burocracia. Você pode cancelar sua assinatura a qualquer momento direto no app e mantém acesso até o fim do período já pago.",
+  },
+  {
+    question: "Qual a diferença entre o plano mensal e o anual?",
+    answer:
+      "O plano mensal custa R$47/mês. O anual custa R$297 à vista — equivalente a R$24,75/mês, uma economia de R$267 por ano (47% off). Mesmas funcionalidades, mesmo acesso ilimitado.",
   },
    {
      question: "Em quanto tempo vejo resultados?",
@@ -190,7 +195,7 @@ export default function Landing() {
               onClick={() => navigate("/auth")}
               className="bg-primary hover:bg-primary/90"
             >
-              Começar grátis
+              Assinar agora
             </Button>
           </div>
         </div>
@@ -241,11 +246,11 @@ export default function Landing() {
                   onClick={() => navigate("/auth")}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
                 >
-                  Começar grátis — 7 dias
+                  Assinar agora
                   <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
                 <span className="text-xs text-white/40 self-center">
-                  Sem cartão de crédito • Cancele quando quiser
+                  Cancele quando quiser • Suporte humano
                 </span>
               </div>
             </motion.div>
@@ -453,10 +458,18 @@ export default function Landing() {
           <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
             <CardContent className="p-8 text-center">
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-4 border border-primary/20">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-3 border border-primary/20">
                 <Crown className="h-3.5 w-3.5" />
                 Acesso completo
               </span>
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-primary-foreground px-2.5 py-1 rounded-full">
+                  Mais escolhido
+                </span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/90">
+                  Economia de R$267/ano
+                </span>
+              </div>
               <h3 className="font-serif text-2xl font-bold mb-1 text-white">
                 InfluLab Pro
               </h3>
@@ -467,12 +480,17 @@ export default function Landing() {
                 <div className="flex items-baseline justify-center gap-1">
                   <span className="text-sm text-white/50">R$</span>
                   <span className="text-5xl font-bold tracking-tight text-white">
-                    33
+                    24,75
                   </span>
                   <span className="text-white/50 text-sm">/mês</span>
                 </div>
-                <p className="text-xs text-white/40">no plano anual de R$397 <span className="text-primary font-medium">• Economize 30%</span></p>
-                <p className="text-xs text-white/30">ou R$47/mês no plano mensal</p>
+                <p className="text-xs text-white/60">
+                  no plano anual de <span className="font-semibold text-white">R$297</span> à vista
+                  <span className="text-primary font-medium"> • economize 47%</span>
+                </p>
+                <p className="text-xs text-white/40">
+                  <span className="line-through text-white/30">R$47/mês</span> no plano mensal avulso
+                </p>
               </div>
 
               <ul className="text-left space-y-2.5 mb-8">
@@ -488,11 +506,11 @@ export default function Landing() {
                 onClick={() => navigate("/auth")}
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
               >
-                Testar 7 dias grátis
+                Assinar plano anual
                 <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
               <p className="text-xs text-white/40 mt-3">
-                Comece grátis, assine quando quiser
+                Acesso imediato • Cancele a qualquer momento
               </p>
             </CardContent>
           </Card>
@@ -545,7 +563,7 @@ export default function Landing() {
             onClick={() => navigate("/auth")}
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
           >
-            Começar meu teste grátis
+            Assinar agora
             <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
         </div>

@@ -21,11 +21,11 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const headline = isPastDueOrCanceled
     ? 'Sua assinatura está pendente'
     : isExpired
-      ? 'Seu trial gratuito acabou'
-      : 'Acesso bloqueado';
+      ? 'Seu período de avaliação acabou'
+      : 'Assine para desbloquear o app';
   const sub = isPastDueOrCanceled
     ? 'Regularize o pagamento para voltar a usar todos os recursos.'
-    : 'Para continuar criando, escolha um plano abaixo. Em segundos você está de volta.';
+    : 'Escolha um plano abaixo pra desbloquear o app. Em segundos você está dentro.';
 
   return (
     <>

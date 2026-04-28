@@ -43,7 +43,7 @@ type Plan = "monthly" | "yearly";
 
 const plans = {
   monthly: { label: "Mensal", price: 47, cycle: "MONTHLY" as const, perMonth: 47, description: "R$47/mês" },
-  yearly: { label: "Anual", price: 397, cycle: "YEARLY" as const, perMonth: 33, description: "R$397/ano (≈ R$33/mês)" },
+  yearly: { label: "Anual", price: 297, cycle: "YEARLY" as const, perMonth: 24.75, description: "R$297/ano (≈ R$24,75/mês)" },
 };
 
 export function CheckoutModal({ open, onOpenChange }: CheckoutModalProps) {
@@ -149,14 +149,16 @@ export function CheckoutModal({ open, onOpenChange }: CheckoutModalProps) {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
             <div className="grid grid-cols-2 gap-3">
-              {(["monthly", "yearly"] as Plan[]).map((plan) => {
+              {(["yearly", "monthly"] as Plan[]).map((plan) => {
                 const p = plans[plan]; const selected = selectedPlan === plan;
                 return (
                   <button key={plan} type="button" onClick={() => setSelectedPlan(plan)} disabled={loading}
                     className={`relative rounded-xl border-2 p-4 text-left transition-all ${selected ? "border-primary bg-primary/5 shadow-md" : "border-border hover:border-primary/40"}`}>
-                    {plan === "yearly" && <span className="absolute -top-2.5 right-3 text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Economize 30%</span>}
+                    {plan === "yearly" && <span className="absolute -top-2.5 right-3 text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Economize 47%</span>}
                     <p className="text-sm font-semibold">{p.label}</p>
                     <p className="text-xl font-bold mt-1">R${p.price}<span className="text-xs font-normal text-muted-foreground">/{plan === "yearly" ? "ano" : "mês"}</span></p>
+                    {plan === "yearly" && <p className="text-[11px] text-primary font-medium mt-0.5">≈ R$24,75/mês</p>}
+                    {plan === "monthly" && <p className="text-[11px] text-muted-foreground mt-0.5">cobrado mensalmente</p>}
                   </button>
                 );
               })}
