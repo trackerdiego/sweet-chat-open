@@ -21,7 +21,9 @@ import ResetPassword from "./pages/ResetPassword";
 import Landing from "./pages/Landing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
+import Renew from "./pages/Renew";
 import NotFound from "./pages/NotFound";
+import { PixDueBanner } from "./components/PixDueBanner";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +61,7 @@ function AppRoutes() {
 
   return (
     <>
+      <PixDueBanner />
       <InstallBanner />
       <TrialBanner />
       <Navigation />
@@ -73,6 +76,7 @@ function AppRoutes() {
           <Route path="/ferramentas" element={<Tools />} />
           <Route path="/carteira" element={<Wallet />} />
           <Route path="/indique" element={<Referral />} />
+          <Route path="/renovar" element={<Renew />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/ajuda" element={<Help />} />
           <Route path="*" element={<NotFound />} />
