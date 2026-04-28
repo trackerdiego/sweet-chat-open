@@ -1,92 +1,142 @@
-## Fase 1 — Fundação: Schema + Coins por Tarefa
 
-Objetivo: criar toda a base de dados (carteira, coins, indicações, assinatura/trial) e fazer o usuário começar a ganhar **+10 coins por tarefa concluída** já visível na UI. Sem mexer ainda em paywall ou indicações (isso é Fase 2/3).
+## Fase 2 — Carteira, Indicações e Sincronização de Assinatura
 
----
-
-### 1. SQL único pro Studio self-hosted
-
-Vou entregar **um bloco SQL** pra você colar no SQL Editor do `api.influlab.pro`. Cria 6 tabelas + RLS + índices + função SECURITY DEFINER pra creditar coins atomicamente.
-
-**Tabelas:**
-- `subscription_state` — `user_id`, `status` (`trial`|`active`|`past_due`|`canceled`), `trial_ends_at`, `current_period_end`, `asaas_subscription_id`, `plan` (`monthly`|`annual`)
-- `user_wallet` — `user_id`, `coins_balance`, `referral_credits_brl`, `lifetime_coins_earned`
-- `coin_transactions` — `user_id`, `amount`, `type` (`task_complete`|`streak_bonus`|`redeem_discount`|`adjust`), `reference_id`, `metadata`, `created_at`
-- `referral_codes` — `user_id`, `code` (slug único), `created_at`
-- `referrals` — `referrer_id`, `referred_user_id`, `referred_code`, `status` (`pending`|`paid`|`expired`), `first_payment_at`, `credit_awarded_brl`
-- `monthly_redemptions` — `user_id`, `period_month` (YYYY-MM), `coins_used`, `credits_used_brl`, `discount_brl_total`, `applied_at` — garante 1 aplicação/mês
-
-**Função:**
-- `award_task_coins(p_user_id uuid, p_day int, p_task_id text, p_amount int)` — insere em `coin_transactions` + atualiza `user_wallet.coins_balance`/`lifetime`. Idempotente por `(user_id, reference_id)` pra evitar dupla contagem se a tarefa for desmarcada/remarcada.
-
-**Migração de dados:**
-- Pra cada usuário existente em `user_usage`:
-  - Se `is_premium = true` → `subscription_state.status = 'active'`, sem `trial_ends_at`.
-  - Se `is_premium = false` → `subscription_state.status = 'trial'`, `trial_ends_at = now() + 7 days`.
-- Cria `user_wallet` zerado pra todos.
-- Gera `referral_codes` único pra todos (slug curto baseado em nanoid/substring do uuid).
-
-**RLS:** usuário lê só o próprio (`auth.uid() = user_id`). Service role faz tudo. Writes em wallet/transactions só via service role (edge function) — frontend nunca escreve direto.
+Objetivo: deixar o sistema de coins/indicações **visível e funcional ponta a ponta**, e fazer o `subscription_state` ser a fonte da verdade real (não só `user_usage.is_premium`). Ainda **sem paywall** e **sem desconto automático no Asaas** (isso fica pra Fase 3).
 
 ---
 
-### 2. Edge Function nova: `award-task-coins`
+### 1. Páginas novas
 
-Padrão simples (não precisa de async job — operação rápida, <500ms):
-- Recebe `{ day: number, taskId: string }`.
-- Chama RPC `award_task_coins` com `reference_id = "day-{day}-task-{taskId}"`.
-- Detecta streak: lê `user_progress.streak`; se múltiplo de 7, credita +50 bônus com `reference_id = "streak-{streak}"`.
-- Retorna `{ coinsAwarded, newBalance, streakBonus }`.
+#### `/carteira` (`src/pages/Wallet.tsx`)
+- Cabeçalho com saldo grande: `🪙 {coins_balance}` + sub-linha "≈ R$ X,XX em desconto" (1 coin = R$ 0,01, taxa de conversão definida em constante `COIN_TO_BRL = 0.01`).
+- Card "Créditos de indicação": `R$ {referral_credits_brl}` separado dos coins (caminho diferente — vem de indicação paga).
+- Lifetime: "Total ganho desde sempre: {lifetime_coins_earned} coins".
+- Lista das últimas 20 `coin_transactions` (já vem do `useWallet`): ícone por tipo, label PT-BR (`task_complete` → "Tarefa concluída", `streak_bonus` → "Bônus de streak 7 dias", `referral_bonus` → "Indicação paga", `redeem_discount` → "Desconto aplicado"), data relativa ("há 2h"), valor (+/-).
+- Banner suave no topo: "Use seus coins pra ganhar desconto na mensalidade — Em breve" (não funcional na Fase 2, só sinalização).
+- Link/CTA "Indique amigos →" que vai pra `/indique`.
 
-Deploy via `./scripts/deploy-selfhost.sh award-task-coins` (vou entregar o comando pronto no fim).
+#### `/indique` (`src/pages/Referral.tsx`)
+- Card grande com o código do usuário (lido de `referral_codes`): `INFLU-XYZ123`.
+- Link compartilhável pré-formado: `https://app.influlab.pro/auth?ref=XYZ123`.
+- Botão "Copiar link" (clipboard API + toast).
+- Botões de share nativos (WhatsApp, Telegram) usando `window.open` com mensagens prontas.
+- Explicação curta: "Quando seu indicado pagar a 1ª mensalidade, você ganha **R$ 10 em créditos** (creditados automaticamente aqui)."
+- Lista de indicações do usuário (via `referrals` onde `referrer_id = auth.uid()`): nome mascarado (`Maria S.` — cruzar com `user_profiles.display_name`), status (`pending` → "Aguardando 1º pagamento", `paid` → "✅ Pagou — você ganhou R$ 10", `expired` → "Expirou").
+- Contador no topo: "X indicações pagas · R$ Y ganhos".
 
----
+#### Rotas em `App.tsx`
+- Adicionar `/carteira` → `<Wallet/>` e `/indique` → `<Referral/>` (ambas autenticadas).
 
-### 3. Frontend: `useWallet` hook + integração no TaskChecklist
-
-**Novo hook** `src/hooks/useWallet.ts`:
-- Lê `user_wallet` do usuário (saldo de coins + créditos R$).
-- Lê últimas 20 `coin_transactions` pra histórico.
-- Expõe `refreshWallet()` pra chamar após premiar.
-
-**Mudança em `TaskChecklist.tsx`:**
-- Quando o usuário marca uma tarefa como concluída, depois do update local em `user_progress`, chama `supabase.functions.invoke('award-task-coins', { body: { day, taskId } })`.
-- Se sucesso: toast "+10 coins" (ou "+60 coins" se houve bônus de streak).
-- Chama `refreshWallet()`.
-- Tratamento de erro silencioso (não bloqueia a UX da tarefa — coins são bônus).
-
-**Indicador visual leve no header** (`Navigation.tsx` ou onde fica o `StreakCounter`):
-- Pequeno badge `🪙 {coinsBalance}` clicável que por enquanto não navega pra lugar nenhum (rota `/carteira` chega na Fase 2). Apenas mostra que o sistema tá vivo.
+#### Hook `useReferrals` novo
+- Lê `referral_codes` (próprio) e `referrals where referrer_id = uid` com join opcional pra display_name.
+- Expõe `code`, `referrals[]`, `paidCount`, `totalEarnedBrl`.
 
 ---
 
-### 4. O que NÃO entra nesta fase (pra deixar claro)
+### 2. Captura de `?ref=` no signup (`src/pages/Auth.tsx`)
 
-- ❌ Paywall global / bloqueio de acesso após trial
-- ❌ Página `/carteira` e `/indique`
-- ❌ Captura de `?ref=` no signup
-- ❌ Cron de aplicação de desconto mensal no Asaas
-- ❌ Webhook tratando indicação paga
-- ❌ Remoção de `useUserUsage` / `FREE_LIMITS`
+Mudança mínima e segura:
+- Ao montar `Auth`, ler `?ref=` da URL e salvar em `localStorage.setItem('pending_ref', code)` (TTL implícito: dura até o signup).
+- No `handleSubmit` do **signup** (não do login), depois do `signUp` retornar com sucesso (com ou sem session), chamar nova edge function `register-referral` com `{ code }` no body. Ela valida o código, cria a row em `referrals` (status `pending`), e limpa o localStorage.
+- Se o código for inválido, ignora silenciosamente (não bloqueia signup — referral é bônus).
+- Mostra um banner pequeno acima do form: "🎁 Você foi convidado por @{nome do referrer}" quando `?ref=` está presente e válido (resolve via SELECT em `referral_codes` join `user_profiles`).
 
-Tudo isso entra nas Fases 2 e 3. A Fase 1 é deliberadamente **invisível e não-destrutiva**: usuário continua usando o app exatamente como antes, mas começa a acumular coins silenciosamente. Se algo der errado, é trivial reverter (drop das tabelas + remover hook).
-
----
-
-### 5. Entregáveis ao final da Fase 1
-
-1. Bloco SQL único pra rodar no Studio self-hosted (com instruções).
-2. Edge function `award-task-coins` no repo + comando de deploy pra VPS.
-3. `useWallet` hook + integração no `TaskChecklist` + badge no header.
-4. `src/integrations/supabase/types.ts` regenerado (via migration interna do Lovable).
-5. Bloco copia-e-cola pra VPS no fim da resposta de implementação.
+#### Edge function `register-referral`
+- Pequena, síncrona (<300ms).
+- Body: `{ code: string }`.
+- Valida JWT do usuário recém-cadastrado.
+- SELECT em `referral_codes` por `code` → pega `referrer_id`.
+- Guarda contra auto-indicação (`referrer_id !== user.id`).
+- Guarda contra duplicata (constraint `unique(referred_user_id)` — vou pedir SQL extra, ver seção 5).
+- INSERT em `referrals` com `status='pending'`, `referred_code=code`.
+- Retorna `{ ok: true }`.
 
 ---
 
-### Riscos / pontos de atenção
+### 3. Sincronização `subscription_state` no fluxo de pagamento
 
-- **Idempotência das coins**: se usuário desmarcar e remarcar uma tarefa, NÃO ganha coin de novo (proteção via `unique(user_id, reference_id)` em `coin_transactions`).
-- **Streak bônus**: só dispara quando o streak *fica* múltiplo de 7 (não toda vez que o usuário marca uma tarefa com streak já em 7).
-- **Migração de premium atual**: usuários já pagantes precisam ter `subscription_state.status = 'active'` corretamente — vou pedir confirmação rodando um SELECT de validação no SQL antes do COMMIT mental.
+O webhook hoje só mexe em `user_usage.is_premium`. Vamos espelhar tudo em `subscription_state` E processar indicação no 1º pagamento.
 
-Aprova pra eu começar?
+#### `create-asaas-subscription/index.ts`
+- Após criar a assinatura no Asaas, **upsert** em `subscription_state`:
+  - `status` permanece `trial` (só vira `active` quando o webhook confirma pagamento).
+  - `asaas_subscription_id` = `subscriptionData.id`.
+  - `asaas_customer_id` = `customerId`.
+  - `plan` = `'monthly' | 'yearly'`.
+
+#### `asaas-webhook/index.ts` — em `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`:
+1. Mantém o update em `user_usage.is_premium = true` (compatibilidade — `useUserUsage` ainda é usado em vários lugares).
+2. Upsert em `subscription_state`: `status='active'`, `current_period_end = nextDueDate da subscription` (busca via API Asaas — já tá fazendo fetch do sub quando precisa).
+3. **Processamento de indicação (idempotente):**
+   - SELECT em `referrals` onde `referred_user_id = userId AND status = 'pending'`.
+   - Se achou: UPDATE pra `status='paid'`, `first_payment_at=now()`, `credit_awarded_brl=10`.
+   - Credita R$ 10 no wallet do referrer: UPDATE `user_wallet SET referral_credits_brl = referral_credits_brl + 10` onde `user_id = referrer_id`.
+   - Loga em `coin_transactions` do referrer (type=`referral_bonus`, amount=`0` — coins não, é credit BRL — com `metadata: {credit_brl: 10, referral_id}` e `reference_id='referral-{referral_id}'` pra idempotência).
+   - Idempotente: a query `WHERE status='pending'` garante que só corre uma vez (no 2º payment_confirmed o status já é `paid`).
+
+#### Eventos de falha (`PAYMENT_OVERDUE`, etc.):
+- Mantém `user_usage.is_premium=false`.
+- Upsert `subscription_state.status='past_due'` (ou `canceled` em SUBSCRIPTION_DELETED).
+
+---
+
+### 4. Indicador na navegação
+
+- Adicionar item no DropdownMenu de Config: "🎁 Indicar amigos" → navega pra `/indique`.
+- Adicionar item: "💰 Carteira" → navega pra `/carteira` (substitui o item disabled atual que só mostra coins).
+- Manter o badge de coins no trigger do dropdown (já existe).
+
+---
+
+### 5. SQL adicional pro Studio self-hosted
+
+Bloco SQL pequeno pra rodar no api.influlab.pro:
+
+```sql
+-- Garante 1 indicação por usuário (não pode ter sido indicado por 2 pessoas)
+ALTER TABLE public.referrals
+  ADD CONSTRAINT referrals_referred_user_unique UNIQUE (referred_user_id);
+
+-- Idempotência da credit log de indicação
+ALTER TABLE public.coin_transactions
+  ADD CONSTRAINT coin_tx_user_ref_unique UNIQUE (user_id, reference_id);
+-- (talvez já exista da Fase 1 — IF NOT EXISTS via DO block pra ser safe)
+```
+
+A constraint de `coin_transactions` provavelmente já foi criada na Fase 1 (a função `award_task_coins` usa `ON CONFLICT (user_id, reference_id)`); o SQL vai ser entregue com `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$` pra não quebrar.
+
+---
+
+### 6. O que NÃO entra nesta fase
+
+- ❌ Paywall global / bloqueio após trial expirar
+- ❌ Aplicação automática de desconto na fatura Asaas (PATCH no `value` da subscription)
+- ❌ Cron mensal de redenção
+- ❌ Remoção do `useUserUsage`/`FREE_LIMITS` (mantido pra retrocompatibilidade)
+- ❌ Notificação push avisando "indicação pagou" (entra na Fase 3 se fizer sentido)
+
+---
+
+### 7. Entregáveis ao final da Fase 2
+
+1. `src/pages/Wallet.tsx` + `src/pages/Referral.tsx` + rotas no App.tsx
+2. `src/hooks/useReferrals.ts`
+3. Edge function nova `register-referral`
+4. `asaas-webhook/index.ts` atualizado (sub-state sync + processa indicação paga)
+5. `create-asaas-subscription/index.ts` atualizado (upsert sub-state)
+6. `src/pages/Auth.tsx` com captura de `?ref=` + banner de convite
+7. Navigation com links pra Carteira/Indique
+8. Bloco SQL pro Studio + comando bash de deploy pra VPS
+
+---
+
+### Riscos / atenção
+
+- **Idempotência da indicação**: garantida por `WHERE status='pending'` no UPDATE + `unique(user_id, reference_id)` em `coin_transactions`. Mesmo se o webhook duplicar, o UPDATE não acha row pra atualizar na 2ª vez.
+- **Auto-indicação**: bloqueada na edge function `register-referral` (`referrer_id !== user.id`).
+- **Código inválido**: signup nunca falha por causa de ref ruim — log + ignore.
+- **Backfill**: usuários atuais não têm indicação registrada — tudo bem, sistema começa a contar dos novos signups.
+- **Premium atual virando active no sub-state**: já foi feito na Fase 1 via migration. Novos pagamentos atualizam normal.
+- **`subscription_state` vs `user_usage.is_premium`**: ambos vão coexistir. Frontend de paywall (Fase 3) lerá `subscription_state`. Hooks atuais (`useUserUsage`) continuam vendo `is_premium`.
+
+Aprova pra eu começar a implementar?
