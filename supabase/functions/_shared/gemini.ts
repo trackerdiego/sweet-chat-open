@@ -11,14 +11,59 @@
 //     tag: "matrix-week-1",
 //   });
 
-const RETRIABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRIABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const ALLOWED_MODELS = new Set([
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
 ]);
 
+// Retriable substrings encontrados em error envelopes 200-OK do Gemini
+// (sim, ele às vezes retorna 200 com erro no body)
+const RETRIABLE_BODY_HINTS = [
+  "UNAVAILABLE",
+  "overloaded",
+  "RESOURCE_EXHAUSTED",
+  "deadline",
+  "503",
+  "try again later",
+  "model is currently overloaded",
+];
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Backoff exponencial com jitter. attempt começa em 0.
+function backoffMs(attempt: number, retryAfterSec?: number): number {
+  if (retryAfterSec && retryAfterSec > 0) {
+    // Respeita Retry-After do Gemini, capado em 15s
+    return Math.min(retryAfterSec * 1000, 15000);
+  }
+  // 2s, 5s, 10s, 15s (cap) — cada um com ±25% jitter
+  const base = [2000, 5000, 10000, 15000][Math.min(attempt, 3)];
+  const jitter = base * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(500, Math.round(base + jitter));
+}
+
+function parseRetryAfter(res: Response): number | undefined {
+  const h = res.headers.get("retry-after");
+  if (!h) return undefined;
+  const n = parseInt(h, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function bodyLooksRetriable(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return RETRIABLE_BODY_HINTS.some((h) => lower.includes(h.toLowerCase()));
+}
+
+function logEvent(tag: string, fields: Record<string, unknown>) {
+  try {
+    console.log(`[gemini] ${tag} ${JSON.stringify(fields)}`);
+  } catch {
+    console.log(`[gemini] ${tag}`, fields);
+  }
+}
 
 // JSON Schema → Gemini OpenAPI subset.
 // Gemini não aceita additionalProperties, $schema, etc. e exige type em UPPERCASE em alguns campos.
