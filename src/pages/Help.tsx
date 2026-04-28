@@ -21,7 +21,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 
-const SUPPORT_EMAIL = 'agentevendeagente@gmail.com';
+const SUPPORT_EMAIL = 'suporte@influlab.pro';
 
 export default function Help() {
   const navigate = useNavigate();
