@@ -1,113 +1,229 @@
-## Problema
+# Plano: Influ Coins + Indicação + Trial de 7 dias
 
-Depois que migramos `script`, `tools` e `daily-guide` para o padrão de jobs assíncronos, o painel admin **parou de mostrar incremento** em `script_generations`, `tool_generations` e os totais derivados.
+## Decisões aprovadas
+- **Trial:** 7 dias pra todos (free atuais ganham 7 dias a partir do deploy; novos signups ganham 7 dias)
+- **Desconto:** automático via Asaas API (PATCH na subscription antes do vencimento)
+- **Indicação:** crédito liberado no `PAYMENT_CONFIRMED` da 1ª fatura do indicado
 
-## Causa
+---
 
-Antes da migração, o frontend (`ScriptGenerator`, `Tools`, `DailyGuide`) chamava `incrementUsage(...)` no React após o sucesso da geração — isso atualizava `user_usage` e o painel admin lia esses números.
+## 1. Schema do banco (SQL pra rodar no Studio self-hosted)
 
-Na refatoração para jobs assíncronos:
-
-- O servidor (`start-script-job`, `start-tools-job`, `start-daily-guide-job`) agora faz o `update` em `user_usage` dentro do worker em background, e também grava em `usage_logs`.
-- O frontend deixou de chamar `incrementUsage` para script, tool e daily-guide (continua chamando só pra `transcriptions` e `chat`).
-
-Resultado:
-
+### `user_wallet` — saldo de coins e créditos
 ```text
-Frontend ──invoke──► start-*-job ──202 jobId──► return
-                               │
-                               └─► waitUntil(worker)
-                                     ├─ update user_usage  ← falha silenciosa em alguns casos
-                                     ├─ insert usage_logs
-                                     └─ update ai_jobs status=done
+user_id (PK, FK auth.users)
+coins_balance int default 0          -- coins não convertidos
+credits_balance_cents int default 0  -- créditos R$ de indicação (em centavos)
+total_coins_earned int default 0     -- métrica vitalícia
+total_credits_earned_cents int default 0
+updated_at timestamptz
 ```
 
-Quando o worker em background falha parcialmente (Gemini erra DEPOIS, ou o `waitUntil` é cortado pela infra self-hosted), o `ai_jobs` chega a `failed`/`done`, mas o `update user_usage` pode:
-
-1. Acontecer antes do erro (caso `done`) — funciona,
-2. Não acontecer (caso `failed`) — esperado, mas o frontend também não conta mais nada,
-3. Acontecer mas o cache do React (`useUserUsage`) não recarregar — o painel admin lê do banco direto, então isso não afeta o admin, apenas o UI do criador.
-
-Mas o ponto principal é: **o cache local de `useUserUsage` no frontend não é atualizado** depois do job assíncrono terminar com sucesso. O painel admin (que lê do banco via `admin-dashboard`) **deveria** ver o incremento — e provavelmente vê quando o worker conclui.
-
-Precisamos verificar duas coisas:
-
-1. Os updates de `user_usage` no worker estão chegando ao banco self-hosted em produção?
-2. O cache do hook `useUserUsage` no frontend precisa recarregar após o job, para o usuário ver o contador atualizado.
-
-## Plano
-
-### 1. Garantir incremento no servidor + refresh no cliente
-
-Para cada job de IA bem-sucedido:
-
-- **Servidor (já implementado)**: continuar fazendo `update user_usage` + `insert usage_logs` dentro do worker. Adicionar `console.log` dedicado ("usage incremented for script/tools/daily-guide") para conseguirmos ver nos logs do Docker se o update chegou a rodar.
-- **Cliente**: depois do job retornar `done`, chamar uma função `refreshUsage()` no hook `useUserUsage` que re-busca a row de `user_usage` do banco — em vez de incrementar local. Assim o número mostrado pro usuário fica em sincronia com o banco/admin sem dupla contagem.
-
-### 2. Adicionar `refreshUsage` em `useUserUsage`
-
-No `src/hooks/useUserUsage.ts`:
-
-- Extrair a lógica de fetch atual para uma função `refreshUsage` exposta junto com `incrementUsage`.
-- `incrementUsage` continua existindo (usado por `transcriptions` e chat), mas script/tools/daily-guide passam a chamar `refreshUsage()` após sucesso do job.
-
-### 3. Atualizar componentes que usam jobs
-
-- `src/components/ScriptGenerator.tsx`: após `runScriptJob()` resolver, chamar `await refreshUsage()`.
-- `src/pages/Tools.tsx` (`handleGenerate`): após `runAiJob('start-tools-job', ...)`, chamar `await refreshUsage()`.
-- `src/components/DailyGuide.tsx`: após o job terminar, chamar `await refreshUsage()`.
-- Para `transcriptions`, manter `await incrementUsage('transcriptions')` OU trocar também por `refreshUsage()` já que o worker do `start-transcription-job` também faz update server-side (preferência: `refreshUsage()` para evitar dupla contagem).
-
-### 4. Validar pelo painel admin
-
-Após deploy, gerar 1 script, 1 tool, 1 daily-guide e 1 transcrição com o usuário de teste e conferir no `/admin`:
-
-- contadores `script_generations`, `tool_generations`, `transcriptions` aumentam,
-- `usage_logs` registra cada feature,
-- `ai_jobs` mostra o job correspondente em `done`.
-
-### 5. Diagnóstico SQL pós-deploy (rodar no Studio self-hosted)
-
-```sql
--- Conferir se updates de user_usage estão acompanhando os jobs done
-SELECT
-  j.id, j.job_type, j.status, j.completed_at,
-  u.script_generations, u.tool_generations, u.transcriptions,
-  u.last_script_date, u.last_tool_date, u.last_transcription_date
-FROM ai_jobs j
-LEFT JOIN user_usage u ON u.user_id = j.user_id
-ORDER BY j.created_at DESC
-LIMIT 20;
-
--- Logs por dia
-SELECT feature, COUNT(*), MAX(created_at)
-FROM usage_logs
-WHERE created_at > now() - interval '7 days'
-GROUP BY feature;
+### `coin_transactions` — log de tudo
+```text
+id, user_id, amount (pos/neg), type, reference_id, description, created_at
+type: 'task_complete' | 'streak_bonus' | 'monthly_redeem' | 'admin_adjust'
 ```
 
-## Arquivos a alterar
-
-- `src/hooks/useUserUsage.ts` — expor `refreshUsage`
-- `src/components/ScriptGenerator.tsx` — chamar `refreshUsage` após sucesso
-- `src/pages/Tools.tsx` — chamar `refreshUsage` após sucesso (tools + transcrição)
-- `src/components/DailyGuide.tsx` — chamar `refreshUsage` após sucesso
-- (opcional) `supabase/functions/start-*-job/index.ts` — adicionar `console.log` claro do passo "usage incremented" pra facilitar debug no Docker
-
-## Deploy depois
-
-Frontend (Vercel) sai automático no push pra `main`.
-
-Edge functions (só se mexermos nos logs do servidor):
-
-```bash
-cd /root/app && git pull origin main
-./scripts/deploy-selfhost.sh start-script-job start-tools-job start-daily-guide-job start-transcription-job
+### `referral_codes` — código único por user
+```text
+user_id (PK), code text unique (slug ex: 'joao-x7k2'), created_at
 ```
 
-## Resultado esperado
+### `referrals` — rastreio de quem indicou quem
+```text
+id, referrer_user_id, referred_user_id (unique),
+status: 'pending' | 'paid' | 'reversed',
+referrer_credit_cents int default 1500,  -- R$15
+referred_discount_pct int default 15,
+signup_at, first_payment_at, credited_at
+```
 
-- Painel admin volta a refletir as gerações corretamente.
-- O contador no UI do criador também atualiza após cada geração assíncrona.
-- Sem dupla contagem (cliente não incrementa por conta própria).
-- Logs do Docker mostram explicitamente quando o `user_usage` é atualizado, facilitando debug futuro.
+### `subscription_state` — fonte da verdade do plano
+```text
+user_id (PK), status: 'trial' | 'active' | 'past_due' | 'canceled',
+trial_ends_at timestamptz,
+asaas_subscription_id, asaas_customer_id,
+plan: 'monthly' | 'yearly',
+next_due_date date, current_period_end timestamptz,
+discount_applied_cents int default 0,  -- desconto na próxima fatura
+discount_applied_for_due_date date     -- evita aplicar 2x
+```
+
+### `monthly_redemptions` — histórico de desconto aplicado
+```text
+id, user_id, asaas_payment_id, due_date,
+coins_used int, credits_used_cents int,
+discount_total_cents int, applied_at
+```
+
+**Trigger no signup** (novo `handle_new_user`): cria `user_wallet`, `referral_codes` (gerar slug do display_name + 4 chars random), `subscription_state` com `trial_ends_at = now() + 7 days`.
+
+**Migration de dados existentes:** popular `user_wallet`, `referral_codes`, `subscription_state` pra todos os users já cadastrados. Free atuais → `trial_ends_at = now() + 7 days`. Premium atuais → `status = 'active'` puxando do `user_usage.is_premium`.
+
+---
+
+## 2. Edge functions novas
+
+### `award-task-coins` (chamada pelo frontend ao concluir tarefa)
+- Input: `{ day, taskIndex }`
+- Valida que tarefa não foi premiada antes (lê `user_progress.tasks_completed`)
+- Insere `+10` em `coin_transactions`, atualiza `user_wallet`
+- Se completou 7 dias seguidos de streak → `+50` bonus
+
+### `apply-monthly-discount` (cron diário às 6h)
+- Roda `pg_cron` chamando essa function
+- Busca `subscription_state` onde `next_due_date = today + 2` e `discount_applied_for_due_date != next_due_date`
+- Calcula: `coins_balance / 100 * 100` (em centavos, max 50% do plano) + `credits_balance_cents` (até zerar a fatura)
+- Chama `PATCH /subscriptions/{id}` no Asaas com novo `value` reduzido
+- Insere em `monthly_redemptions`, zera coins/créditos usados em `user_wallet`, marca `discount_applied_for_due_date`
+
+### `get-referral-info` (chamada pelo frontend na tela "Indique e ganhe")
+- Retorna: `{ code, link, total_referrals, paid_referrals, pending_credits_cents, available_credits_cents }`
+
+### Modificar `asaas-webhook`
+- No `PAYMENT_CONFIRMED`: se for 1ª fatura paga do user E existe `referrals` com `referred_user_id = user` e `status = 'pending'`:
+  - marca `status = 'paid'`, `credited_at = now()`
+  - credita `referrer_credit_cents` em `user_wallet.credits_balance_cents` do indicador
+  - registra em `coin_transactions` (type `referral_paid`)
+- No `PAYMENT_REFUNDED` ou `SUBSCRIPTION_CANCELLED` da 1ª fatura: marca referral como `reversed`, debita do indicador (se ainda não usou)
+
+### Modificar `create-asaas-subscription`
+- Aceitar `referralCode` opcional no body
+- Se válido: cria registro em `referrals` com `status='pending'` E aplica `discount: { value: plano*0.15, dueDateLimitDays: 0 }` na 1ª fatura via Asaas
+
+### Cron `pg_cron`
+```text
+- apply-monthly-discount: diário 06:00
+- expire-trials: diário 03:00 (atualiza subscription_state pra 'past_due' onde trial_ends_at < now())
+```
+
+---
+
+## 3. Frontend
+
+### Hook novo `useSubscription()`
+Substitui `useUserUsage` pra checagem de acesso. Retorna:
+```text
+{ status, isActive, isTrial, trialDaysLeft, plan, blocked }
+```
+`blocked = true` quando `status` é `past_due`/`canceled` e trial expirou.
+
+### Hook novo `useWallet()`
+Retorna `{ coinsBalance, creditsBalanceCents, transactions[] }` + função `refresh()`.
+
+### Componente `<PaywallGate>`
+Wrapper que envolve toda a área autenticada. Se `blocked` → renderiza tela cheia com:
+- "Seu trial acabou. Continue acessando o InfluLab Pro"
+- 2 cards (mensal/anual com badge "Economize 30%")
+- Botão abre `<CheckoutModal>`
+- Sem opção de fechar/skip
+
+### Tela `/indique` (nova rota)
+- Card grande com link `app.influlab.pro/?ref=CODE` + botão copiar
+- Botão "Compartilhar" usando Web Share API
+- Mensagens prontas pra WhatsApp/Instagram (textarea editável)
+- Estatísticas: "X amigos assinaram • R$Y de crédito disponível"
+- Lista das últimas indicações com status (pendente/paga)
+- Card explicativo: "Ganhe R$15 a cada amigo que assinar. Eles ganham 15% off."
+
+### Tela `/carteira` (nova rota) ou drawer
+- Saldo de coins + equivalente em R$
+- Saldo de créditos
+- "Próximo desconto: R$X aplicado em DD/MM"
+- Histórico de transações
+
+### Modificar `<TaskChecklist>`
+- Ao marcar tarefa: chama `award-task-coins`, mostra toast "+10 coins" com animação
+- Indicador de coins ganhos hoje no topo
+
+### Modificar `<Navigation>`
+- Novo item "Indique e ganhe" com badge se tem créditos pendentes
+- Mostrar saldo de coins no header (clicável → /carteira)
+
+### Modificar `Auth.tsx` (signup)
+- Ler `?ref=CODE` da URL → salvar em `localStorage` antes do signup
+- Após signup bem-sucedido: enviar `referralCode` na criação do subscription
+- Mostrar banner "Você foi indicado por @joao — ganhe 15% off na 1ª mensalidade"
+
+### Modificar `CheckoutModal`
+- Atualizar valor anual (R$397 já está, manter)
+- Mostrar parcelamento "12x R$33 com juros no cartão" como info
+- Se tem `referralCode` no localStorage → exibir desconto aplicado
+
+### Remover lógica freemium
+- `useUserUsage`: deprecar `canUseScript/canUseTool/canTranscribe/canUseChat/canAccessDay/FREE_LIMITS`
+- Em todas as telas que usam essas flags: trocar por `useSubscription().isActive`
+- Componente `<PremiumGate>`: simplificar pra só checar `isActive`
+- `<Rifometro>` de tarefas: remover indicador de "X de 3 hoje"
+
+---
+
+## 4. Admin panel
+- Nova aba "Economia": top 10 indicadores, total coins emitidos no mês, total descontos aplicados
+- Drawer do user: mostrar saldo wallet, indicações, histórico de redenções
+
+---
+
+## 5. Detalhes técnicos importantes
+
+### Geração de código de indicação
+```text
+slug(display_name).slice(0,8) + '-' + random(4chars)
+ex: "joao-x7k2", "maria-9hbn"
+```
+Garantir unicidade via UNIQUE constraint + retry.
+
+### Anti-fraude básico
+- 1 indicação por email único (UNIQUE em `referrals.referred_user_id`)
+- Self-referral bloqueado (check `referrer_user_id != referred_user_id`)
+- Crédito só libera após `PAYMENT_CONFIRMED`, não em `PAYMENT_CREATED`
+
+### Cron de desconto — fórmula
+```text
+plan_value_cents = 4700 (mensal) ou 39700 (anual)
+max_discount_cents = plan_value_cents * 0.5
+coins_value_cents = floor(coins_balance / 100) * 100
+discount = min(coins_value_cents + credits_balance_cents, max_discount_cents)
+new_value_cents = plan_value_cents - discount
+```
+
+### Self-hosted deploy
+- SQL completo entregue como bloco copia-e-cola pro Studio
+- Edge functions deployadas via `./scripts/deploy-selfhost.sh`
+- pg_cron precisa estar habilitado no self-hosted (verificar)
+
+---
+
+## 6. Ordem de implementação
+
+1. SQL: criar tabelas + trigger + migration de dados existentes
+2. Edge function `award-task-coins` + integração no `<TaskChecklist>`
+3. Hook `useSubscription` + `<PaywallGate>` + remoção freemium
+4. Tela `/carteira` + hook `useWallet`
+5. `referral_codes` + tela `/indique` + edge `get-referral-info`
+6. Captura `?ref=` no signup + modificação `create-asaas-subscription`
+7. Webhook Asaas: lógica de crédito de indicação
+8. Cron `apply-monthly-discount` + função
+9. Cron `expire-trials`
+10. Admin panel: aba Economia
+11. QA completo + bloco SQL/deploy final
+
+---
+
+## O que NÃO está no escopo (pra próxima fase)
+- Gastar coins em outras coisas (templates premium, análise extra, etc.)
+- Níveis de embaixador (R$15 → R$25 → R$50 conforme volume)
+- Gamificação de medalhas/badges visuais
+- Notificação push de "amigo seu acabou de assinar!"
+- Dashboard público de ranking de indicadores
+
+---
+
+## Estimativa
+- ~14 arquivos editados/criados no frontend
+- 5 edge functions novas + 2 modificadas
+- 1 bloco SQL grande (6 tabelas + trigger + migration + 2 cron jobs)
+- Bloco final de deploy VPS
+
+Aprova esse plano pra eu começar a implementar?
