@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target } from "lucide-react";
+import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target, RefreshCw } from "lucide-react";
 
 interface UserData {
   user_id: string;
@@ -82,33 +82,44 @@ const audienceSizeMap: Record<string, string> = {
 export default function Admin() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError("Acesso negado");
-        setLoading(false);
-        return;
-      }
-
-      const { data: dashboardData, error: functionError } = await supabase.functions.invoke("admin-dashboard", {
-        method: "GET",
-      });
-
-      if (functionError || !dashboardData) {
-        setError("Acesso negado");
-        setLoading(false);
-        return;
-      }
-
-      setData(dashboardData as DashboardData);
+  const fetchData = async (isAutoRefresh = false) => {
+    if (!isAutoRefresh) setRefreshing(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError("Acesso negado");
       setLoading(false);
-    };
+      setRefreshing(false);
+      return;
+    }
 
+    const { data: dashboardData, error: functionError } = await supabase.functions.invoke("admin-dashboard", {
+      method: "GET",
+    });
+
+    if (functionError || !dashboardData) {
+      if (!isAutoRefresh) setError("Acesso negado");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    setData(dashboardData as DashboardData);
+    setLastRefresh(new Date());
+    setLoading(false);
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
     fetchData();
+    // Auto-refresh a cada 30s pra manter contadores atualizados sem reload manual
+    const interval = setInterval(() => fetchData(true), 30000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (error) return <Navigate to="/" replace />;
@@ -121,7 +132,24 @@ export default function Admin() {
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8 pb-24">
-      <h1 className="text-2xl font-bold mb-6">Painel Administrativo</h1>
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold">Painel Administrativo</h1>
+        <div className="flex items-center gap-3">
+          {lastRefresh && (
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              Atualizado às {lastRefresh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <button
+            onClick={() => fetchData()}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border border-border hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            Atualizar
+          </button>
+        </div>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
