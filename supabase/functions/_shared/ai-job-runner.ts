@@ -14,6 +14,7 @@ export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "X-Influlab-Function-Version": "ai-jobs-2026-04-28",
 };
 
 export function jsonResponse(body: unknown, status = 200): Response {
