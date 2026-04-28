@@ -6,7 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target, RefreshCw } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Users, Crown, MessageSquare, Wrench, FileText, CheckCircle2, Clock, Brain, Target, RefreshCw, Activity } from "lucide-react";
+import LaunchHealthDashboard from "@/components/admin/LaunchHealthDashboard";
 
 interface UserData {
   user_id: string;
@@ -150,107 +152,121 @@ export default function Admin() {
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Usuários</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.totalUsers}</div>
-            <p className="text-xs text-muted-foreground">{metrics.freeUsers} free · {metrics.premiumUsers} premium</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Scripts</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{metrics.totalScripts}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Ferramentas IA</CardTitle>
-            <Wrench className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{metrics.totalTools}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Chat IA</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{metrics.totalChat}</div></CardContent>
-        </Card>
-      </div>
+      <Tabs defaultValue="users" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" />Usuários</TabsTrigger>
+          <TabsTrigger value="health"><Activity className="h-4 w-4 mr-2" />Launch Health</TabsTrigger>
+        </TabsList>
 
-      <Card className="mb-8">
-        <CardHeader><CardTitle className="text-lg">Usuários</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Nicho</TableHead>
-                <TableHead>Onboarding</TableHead>
-                <TableHead>Plano</TableHead>
-                <TableHead className="text-center">Scripts</TableHead>
-                <TableHead className="text-center">Tools</TableHead>
-                <TableHead className="text-center">Chat</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.user_id} className="cursor-pointer hover:bg-muted/80" onClick={() => setSelectedUser(u)}>
-                  <TableCell className="font-medium">{u.display_name}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
-                  <TableCell>{u.primary_niche}</TableCell>
-                  <TableCell>
-                    {u.description_status === 'ok' ? (
-                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
-                    ) : (
-                      <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {u.is_premium ? (
-                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><Crown className="h-3 w-3 mr-1" /> Premium</Badge>
-                    ) : (<Badge variant="secondary">Free</Badge>)}
-                  </TableCell>
-                  <TableCell className="text-center">{u.script_generations}</TableCell>
-                  <TableCell className="text-center">{u.tool_generations}</TableCell>
-                  <TableCell className="text-center">{u.chat_messages}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        <TabsContent value="users">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Total Usuários</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{metrics.totalUsers}</div>
+                <p className="text-xs text-muted-foreground">{metrics.freeUsers} free · {metrics.premiumUsers} premium</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Scripts</CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent><div className="text-2xl font-bold">{metrics.totalScripts}</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Ferramentas IA</CardTitle>
+                <Wrench className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent><div className="text-2xl font-bold">{metrics.totalTools}</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Chat IA</CardTitle>
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent><div className="text-2xl font-bold">{metrics.totalChat}</div></CardContent>
+            </Card>
+          </div>
 
-      <Card>
-        <CardHeader><CardTitle className="text-lg">Logs Recentes</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Usuário</TableHead>
-                <TableHead>Funcionalidade</TableHead>
-                <TableHead>Data/Hora</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentLogs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell>{userMap[log.user_id] || log.user_id.slice(0, 8)}</TableCell>
-                  <TableCell><Badge variant="outline">{log.feature}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{new Date(log.created_at).toLocaleString("pt-BR")}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+          <Card className="mb-8">
+            <CardHeader><CardTitle className="text-lg">Usuários</CardTitle></CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Nicho</TableHead>
+                    <TableHead>Onboarding</TableHead>
+                    <TableHead>Plano</TableHead>
+                    <TableHead className="text-center">Scripts</TableHead>
+                    <TableHead className="text-center">Tools</TableHead>
+                    <TableHead className="text-center">Chat</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow key={u.user_id} className="cursor-pointer hover:bg-muted/80" onClick={() => setSelectedUser(u)}>
+                      <TableCell className="font-medium">{u.display_name}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{u.email}</TableCell>
+                      <TableCell>{u.primary_niche}</TableCell>
+                      <TableCell>
+                        {u.description_status === 'ok' ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"><CheckCircle2 className="h-3 w-3 mr-1" />Descrição OK</Badge>
+                        ) : (
+                          <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {u.is_premium ? (
+                          <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30"><Crown className="h-3 w-3 mr-1" /> Premium</Badge>
+                        ) : (<Badge variant="secondary">Free</Badge>)}
+                      </TableCell>
+                      <TableCell className="text-center">{u.script_generations}</TableCell>
+                      <TableCell className="text-center">{u.tool_generations}</TableCell>
+                      <TableCell className="text-center">{u.chat_messages}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-lg">Logs Recentes</CardTitle></CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuário</TableHead>
+                    <TableHead>Funcionalidade</TableHead>
+                    <TableHead>Data/Hora</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell>{userMap[log.user_id] || log.user_id.slice(0, 8)}</TableCell>
+                      <TableCell><Badge variant="outline">{log.feature}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{new Date(log.created_at).toLocaleString("pt-BR")}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="health">
+          <LaunchHealthDashboard />
+        </TabsContent>
+      </Tabs>
+
 
       {/* User Detail Sheet */}
       <Sheet open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
