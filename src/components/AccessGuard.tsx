@@ -46,10 +46,10 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
           </div>
 
           <Button
-            onClick={() => setCheckoutOpen(true)}
+            onClick={() => isPastDueOrCanceled ? navigate('/renovar') : setCheckoutOpen(true)}
             className="w-full gold-gradient text-primary-foreground gap-2 h-11"
           >
-            <Crown size={18} /> Assinar agora
+            <Crown size={18} /> {isPastDueOrCanceled ? 'Pagar fatura pendente' : 'Assinar agora'}
           </Button>
 
           <Button variant="outline" onClick={() => navigate('/indique')} className="w-full gap-2">
