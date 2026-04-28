@@ -1,56 +1,68 @@
-## Objetivo
+## Problema
 
-Fazer os botões **"Assinar agora"** da landing rolarem até a seção de planos (em vez de ir direto pro `/auth`), e adicionar uma opção **mensal discreta** dentro do card de planos atual — mantendo o anual em destaque.
+O usuário admin (`agentevendeagente@gmail.com`) está com onboarding completo, premium ativo e matriz de 30 itens no banco — mas ao logar foi jogado pro onboarding.
 
-## Mudanças em `src/pages/Landing.tsx`
+A causa é a **trava de integridade** no `useUserProfile.ts` (`fetchProfile`, ~linhas 110-130): se o `select` em `user_strategies` falhar silenciosamente (401 transitório, race com session, RLS hiccup) e retornar `data=null`, o código trata como "matriz inválida" e **escreve `onboarding_completed=false` no banco**, mandando o usuário pro onboarding mesmo com tudo certo.
 
-### 1. Adicionar `id="planos"` na seção de pricing
-Linha 456 — adicionar âncora na `<Section>` do pricing pra permitir scroll programático.
+A trava foi criada pra cobrir um bug antigo (perfil completo sem matriz), mas hoje está agressiva demais: confunde "query falhou" com "matriz não existe".
 
-### 2. Criar handler de scroll
-Função simples no topo do componente:
+## Mudanças (apenas em `src/hooks/useUserProfile.ts`)
+
+### 1. Trava não-destrutiva
+
+Reescrever o bloco de validação pra distinguir os 3 casos:
+
+- **erro na query** → não fazer nada, apenas `console.warn`. Confia no banco.
+- **query OK, `strategies` é array com <28 itens** → reset `onboarding_completed=false` (caso real e legítimo).
+- **query OK, `data=null`** (sem row em `user_strategies`) → reset (igual ao comportamento atual nesse caso específico, mas só quando temos certeza que a query rodou).
+
+Trocar a linha de destructuring atual por algo como:
+
 ```ts
-const scrollToPlanos = () => {
-  document.getElementById("planos")?.scrollIntoView({ behavior: "smooth", block: "start" });
-};
+const { data: strat, error: stratErr } = await supabase
+  .from('user_strategies').select('strategies').eq('user_id', userId).maybeSingle();
+
+if (stratErr) {
+  console.warn('[useUserProfile] strategies check skipped (query error):', stratErr);
+} else {
+  const arr = strat?.strategies;
+  const explicitlyMissing = strat === null;
+  const arrayTooShort = Array.isArray(arr) && arr.length < 28;
+  if (explicitlyMissing || arrayTooShort) {
+    // reset onboarding_completed
+  }
+}
 ```
 
-### 3. Trocar `onClick` dos 3 botões "Assinar agora" pra rolar até planos
-- **Nav** (linha 195): `onClick={scrollToPlanos}`
-- **Hero** (linha 246): `onClick={scrollToPlanos}`
-- **CTA Final** (linha 563): `onClick={scrollToPlanos}`
+### 2. Whitelist do admin
 
-O botão **dentro do card de planos** ("Assinar plano anual", linha 506) continua indo pra `/auth` — esse é o ponto de conversão real.
+Adicionar guard antes de toda a trava:
 
-### 4. Adicionar opção "Mensal" discreta no card de planos
-Após o botão principal "Assinar plano anual" (linha 511), inserir um divisor sutil + link discreto pro mensal:
+```ts
+const ADMIN_EMAIL = 'agentevendeagente@gmail.com';
+const isAdmin = session?.user?.email === ADMIN_EMAIL;
 
-```
-─── ou ───
-Prefere mensal? Assine por R$47/mês  →
+if (profileData.onboarding_completed && !isAdmin) {
+  // ... trava de integridade roda só pra não-admin
+}
 ```
 
-Ambos os links/botões levam pra `/auth`. O `CheckoutModal` já tem toggle Mensal/Anual interno, então não precisa passar parâmetro — o usuário escolhe no checkout. (Opcional: passar `?plan=monthly` via query string e ler no `CheckoutModal` pra pré-selecionar mensal — confirmo se você quiser esse refinamento.)
+Justificativa: você loga em vários devices/abas pra testar e não pode ser kickado pro onboarding por nenhuma checagem heurística.
 
-Visual proposto pra parte discreta:
-- Texto pequeno (`text-xs` ou `text-sm`), cor `text-white/50`
-- Botão `variant="ghost"` ou `variant="link"` em vez de primary
-- Centralizado, sem destaque competindo com o anual
+### 3. Pós-mudança
 
-## Comportamento final
+- Single-session polling **fica como está** (você pediu).
+- Como `agentevendeagente` já está com `onboarding_completed=true` no banco hoje, não precisa de SQL — só o deploy do frontend.
 
-| Botão | Antes | Depois |
-|---|---|---|
-| Nav "Assinar agora" | → `/auth` | → rola até planos |
-| Hero "Assinar agora" | → `/auth` | → rola até planos |
-| CTA final "Assinar agora" | → `/auth` | → rola até planos |
-| Card "Assinar plano anual" | → `/auth` | → `/auth` (igual) |
-| **NOVO** "Prefere mensal? R$47/mês" | — | → `/auth` |
+## Detalhes técnicos
 
-## Fora de escopo
-- Mudanças no `CheckoutModal` (já tem ambos os planos).
-- Edge functions / backend (preço anual já está R$297).
-- Não toca em `mem://` — já está alinhado.
+**Arquivo único alterado:** `src/hooks/useUserProfile.ts`
+**Backend:** nada. Sem migration, sem edge function, sem mudança no Asaas.
+**Deploy:** Vercel pega automático do GitHub. **Sem comandos na VPS.**
+**Risco:** baixo. Mudança torna a trava mais permissiva (menos resets), o que reduz o risco de falso-positivo. O reset legítimo (perfil completo + matriz realmente <28) continua funcionando.
 
-## Deploy
-Mudança puramente frontend → push pro GitHub → Vercel auto-deploya. Sem ação na VPS.
+## Checklist pós-deploy
+
+1. Logar com `agentevendeagente@gmail.com` → deve ir direto pro `/` (dashboard), nunca mais pro `/onboarding`.
+2. Logar com qualquer outro user que tenha matriz válida → idem, vai pro dashboard.
+3. (Opcional) Criar conta nova de teste → continua passando pelo onboarding normalmente (a trava só atua quando `onboarding_completed=true`).

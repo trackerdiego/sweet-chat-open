@@ -112,22 +112,35 @@ export function useUserProfile() {
         let profileData = data as UserProfile;
 
         // Trava de integridade: se onboarding_completed=true mas não existe
-        // matriz personalizada válida (>= 28 itens), corrige o flag para false
-        // e força o usuário de volta ao onboarding. Evita estado inconsistente
-        // que prendia o usuário no dashboard sem dados personalizados.
-        if (profileData.onboarding_completed) {
-          const { data: strat } = await (supabase.from as any)('user_strategies')
+        // matriz personalizada (row ausente OU array < 28 itens), corrige o flag.
+        // IMPORTANTE: só reseta quando a query rodou COM SUCESSO. Se houve erro
+        // (401 transitório, race com session, RLS hiccup), confia no banco e
+        // segue em frente — caso contrário usuários legítimos eram jogados
+        // pro onboarding sem motivo.
+        // Admin (agentevendeagente@gmail.com) é whitelistado: testa em vários
+        // devices/abas e nunca pode ser kickado por essa heurística.
+        const ADMIN_EMAIL = 'agentevendeagente@gmail.com';
+        const isAdmin = session?.user?.email === ADMIN_EMAIL;
+
+        if (profileData.onboarding_completed && !isAdmin) {
+          const { data: strat, error: stratErr } = await (supabase.from as any)('user_strategies')
             .select('strategies')
             .eq('user_id', userId)
             .maybeSingle();
-          const arr = strat?.strategies;
-          const hasValidMatrix = Array.isArray(arr) && arr.length >= 28;
-          if (!hasValidMatrix) {
-            console.warn('[useUserProfile] onboarding_completed=true sem matriz válida — corrigindo para false');
-            await (supabase.from as any)('user_profiles')
-              .update({ onboarding_completed: false })
-              .eq('user_id', userId);
-            profileData = { ...profileData, onboarding_completed: false };
+
+          if (stratErr) {
+            console.warn('[useUserProfile] strategies check skipped (query error):', stratErr);
+          } else {
+            const arr = strat?.strategies;
+            const explicitlyMissing = strat === null;
+            const arrayTooShort = Array.isArray(arr) && arr.length < 28;
+            if (explicitlyMissing || arrayTooShort) {
+              console.warn('[useUserProfile] onboarding_completed=true sem matriz válida — corrigindo para false');
+              await (supabase.from as any)('user_profiles')
+                .update({ onboarding_completed: false })
+                .eq('user_id', userId);
+              profileData = { ...profileData, onboarding_completed: false };
+            }
           }
         }
 
