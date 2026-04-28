@@ -1,9 +1,10 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserUsage } from '@/hooks/useUserUsage';
+import { useWallet } from '@/hooks/useWallet';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
 import {
@@ -38,6 +39,7 @@ export function Navigation() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isPremium } = useUserUsage();
+  const { wallet } = useWallet();
   const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
