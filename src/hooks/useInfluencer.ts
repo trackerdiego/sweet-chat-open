@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { getDailySchedule } from '@/data/dailySchedule';
 import { DayStrategy, strategies as fallbackStrategies } from '@/data/strategies';
 import { useUserProgress } from './useUserProgress';
+import { useWallet } from './useWallet';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export interface DailyTaskState {
   morningInsight: boolean;
@@ -52,6 +55,7 @@ function migrateTasks(raw: any): DailyTaskState {
 export function useInfluencer(strategies?: DayStrategy[]) {
   const strats = strategies || fallbackStrategies;
   const { progress, loading, updateProgress, resetProgress: resetDB } = useUserProgress();
+  const { optimisticAdd, refreshWallet } = useWallet();
 
   const state = {
     currentDay: progress.current_day,
@@ -89,6 +93,10 @@ export function useInfluencer(strategies?: DayStrategy[]) {
   }, [todayTasks, schedule]);
 
   const completeTask = (task: TaskKey) => {
+    let didComplete = false;
+    let dayForReward = 0;
+    let subIndexForReward: number | null = null;
+
     updateProgress(prev => {
       const current = migrateTasks(prev.tasks_completed[prev.current_day]);
       let updated: DailyTaskState;
@@ -96,10 +104,14 @@ export function useInfluencer(strategies?: DayStrategy[]) {
       if (task === 'valueStories') {
         if (current.valueStories >= 5) return prev;
         updated = { ...current, valueStories: current.valueStories + 1 };
+        subIndexForReward = current.valueStories; // 0..4 — torna o reference_id único por story
       } else {
         if (current[task]) return prev;
         updated = { ...current, [task]: true };
       }
+
+      didComplete = true;
+      dayForReward = prev.current_day;
 
       const points = taskPoints[task];
 
@@ -109,6 +121,32 @@ export function useInfluencer(strategies?: DayStrategy[]) {
         influence_points: prev.influence_points + points,
       };
     });
+
+    // Premia coins via edge function (idempotente server-side).
+    // Falha silenciosa: coins são bônus, não devem bloquear a UX da tarefa.
+    if (didComplete) {
+      (async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('award-task-coins', {
+            body: { day: dayForReward, taskId: task, subTaskIndex: subIndexForReward },
+          });
+          if (error || !data) return;
+          const awarded = Number(data.coinsAwarded ?? 0);
+          const streakBonus = Number(data.streakBonus ?? 0);
+          if (awarded > 0) optimisticAdd(awarded);
+          if (streakBonus > 0) {
+            optimisticAdd(streakBonus);
+            toast.success(`🔥 Bônus de streak: +${streakBonus} coins!`, { duration: 4000 });
+          } else if (awarded > 0) {
+            toast.success(`+${awarded} coins 🪙`, { duration: 2000 });
+          }
+          // Re-sincroniza com servidor pra capturar qualquer drift
+          refreshWallet();
+        } catch (e) {
+          console.warn('[useInfluencer] award coins falhou (ignorado)', e);
+        }
+      })();
+    }
   };
 
   const resetProgress = () => resetDB();

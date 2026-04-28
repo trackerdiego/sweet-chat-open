@@ -83,6 +83,36 @@ export type Database = {
         }
         Relationships: []
       }
+      coin_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          metadata: Json | null
+          reference_id: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          reference_id?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          reference_id?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -170,6 +200,39 @@ export type Database = {
         }
         Relationships: []
       }
+      monthly_redemptions: {
+        Row: {
+          applied_at: string
+          asaas_subscription_id: string | null
+          coins_used: number
+          credits_used_brl: number
+          discount_brl_total: number
+          id: string
+          period_month: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string
+          asaas_subscription_id?: string | null
+          coins_used?: number
+          credits_used_brl?: number
+          discount_brl_total?: number
+          id?: string
+          period_month: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string
+          asaas_subscription_id?: string | null
+          coins_used?: number
+          credits_used_brl?: number
+          discount_brl_total?: number
+          id?: string
+          period_month?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       onboarding_runs: {
         Row: {
           completed_at: string | null
@@ -232,6 +295,102 @@ export type Database = {
           endpoint?: string
           id?: string
           p256dh?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      referral_codes: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          created_at: string
+          credit_awarded_brl: number | null
+          first_payment_at: string | null
+          id: string
+          referred_code: string
+          referred_user_id: string
+          referrer_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          credit_awarded_brl?: number | null
+          first_payment_at?: string | null
+          id?: string
+          referred_code: string
+          referred_user_id: string
+          referrer_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          credit_awarded_brl?: number | null
+          first_payment_at?: string | null
+          id?: string
+          referred_code?: string
+          referred_user_id?: string
+          referrer_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      subscription_state: {
+        Row: {
+          asaas_customer_id: string | null
+          asaas_subscription_id: string | null
+          created_at: string
+          current_period_end: string | null
+          id: string
+          plan: string | null
+          status: string
+          trial_ends_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          plan?: string | null
+          status?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          plan?: string | null
+          status?: string
+          trial_ends_at?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -422,11 +581,54 @@ export type Database = {
         }
         Relationships: []
       }
+      user_wallet: {
+        Row: {
+          coins_balance: number
+          created_at: string
+          id: string
+          lifetime_coins_earned: number
+          referral_credits_brl: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          coins_balance?: number
+          created_at?: string
+          id?: string
+          lifetime_coins_earned?: number
+          referral_credits_brl?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          coins_balance?: number
+          created_at?: string
+          id?: string
+          lifetime_coins_earned?: number
+          referral_credits_brl?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      award_task_coins: {
+        Args: {
+          p_amount: number
+          p_metadata?: Json
+          p_reference_id: string
+          p_type?: string
+          p_user_id: string
+        }
+        Returns: {
+          awarded: number
+          new_balance: number
+        }[]
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
