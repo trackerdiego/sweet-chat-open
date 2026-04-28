@@ -1,77 +1,136 @@
-## Fix definitivo: blindar chamadas ao Gemini contra 503/overloaded
+Entendo totalmente a frustração. E sua leitura faz sentido: o chat parece “mágico” porque ele usa um caminho muito mais leve e estável; as outras tools estão fazendo chamadas mais pesadas, estruturadas em JSON, algumas em paralelo e muitas começando pelo `gemini-2.5-pro`, que é justamente o modelo mais sujeito a congestionamento/overload.
 
-**Causa raiz confirmada:** logs mostram `GeminiError` em 22.3s no job `7bba8fc9...`. A retry policy atual em `_shared/gemini.ts` é frágil pra picos do `generativelanguage.googleapis.com`:
-- `primaryAttempts: 1` (desiste na 1ª falha)
-- `fallbackAttempts: 2` com delays de 1.5s/3s
-- Sem jitter, sem cascata multi-modelo, sem leitura do `Retry-After`
+## Causa provável
 
-Como o app é self-hosted, não temos o AI Gateway da Lovable que faz retry/balancing automático. Precisamos replicar essa robustez no cliente.
+Hoje existem dois perfis bem diferentes:
 
-### Mudanças (sem mock, sem paliativo)
+```text
+Chat IA
+- streaming
+- gemini-2.5-flash
+- resposta em texto livre
+- prompt menor
+- 1 chamada simples
 
-#### 1. `supabase/functions/_shared/gemini.ts` — retry industrial
-
-**Cascata de modelos (3 níveis em vez de 2):**
-```
-gemini-2.5-pro  →  gemini-2.5-flash  →  gemini-2.5-flash-lite
-```
-Cada nível com seus próprios attempts. Se o `pro` tá congestionado, o `flash` quase nunca tá ao mesmo tempo, e o `flash-lite` é a rede de segurança.
-
-**Defaults novos:**
-- `primaryAttempts: 2` (era 1) — picos do `pro` costumam durar <10s
-- `mid` (`gemini-2.5-flash`): 2 attempts
-- `fallbackAttempts: 3` (era 2) — `flash-lite` raramente falha 3x seguidas
-- Delays exponenciais com jitter: `2s ±500ms → 5s ±1s → 10s ±2s` (em vez de 1.5/3/4 fixos)
-
-**Respeitar `Retry-After` do Gemini:**
-Quando vier 429/503, ler o header `Retry-After` (segundos) e usar como base do próximo sleep, capado em 15s.
-
-**Detectar erro de modelo overloaded no body:**
-Gemini às vezes retorna 200 com `{"error": {"status": "UNAVAILABLE"}}` no envelope. Tratar como retriable.
-
-**Timeout total (deadline) por chamada:**
-Hoje cada `tryModel` pode acumular muito tempo. Adicionar `globalDeadlineMs: 90000` (job inteiro tem até 90s). Quando perto do deadline, pula etapas.
-
-**Logs estruturados:**
-JSON em uma linha com `{tag, model, attempt, status, latencyMs, retryAfter}` pra facilitar grep depois.
-
-#### 2. Sem mudanças nos `start-*-job` ou no frontend
-
-A blindagem é 100% no shared. Todas as functions que importam `callGeminiNative` herdam o fix automaticamente: `start-script-job`, `start-tools-job`, `start-daily-guide-job`, `start-transcription-job`, `generate-onboarding`, `generate-strategy`, etc.
-
-#### 3. Métrica observável: coluna `attempts` em `ai_jobs`
-
-Quando o worker chamar Gemini, salvar quantas tentativas precisou no `result.attempts` ou em coluna nova. Permite ver depois se 95% dos jobs precisam só 1 tentativa ou se o `pro` tá derrubando tudo.
-
-**SQL pro user rodar no Studio:**
-```sql
-ALTER TABLE public.ai_jobs ADD COLUMN IF NOT EXISTS attempts INT;
-ALTER TABLE public.ai_jobs ADD COLUMN IF NOT EXISTS model_used TEXT;
+Tools / Scripts / Guia / Onboarding
+- generateContent estruturado
+- muitas usam gemini-2.5-pro primeiro
+- responseSchema / JSON obrigatório
+- prompts longos
+- algumas fazem 2 chamadas paralelas
+- falhas de JSON ou overload viram erro final
 ```
 
-### Resultado esperado
+Então não é “Supabase auto-hospedado é incapaz”. É que no self-hosted nós estamos chamando o Google direto, sem a camada de resiliência/balanceamento que existe no ambiente Lovable Cloud/AI Gateway. O chat funciona porque, por acaso, já está no perfil mais seguro: `flash + streaming + texto`.
 
-- Job que hoje falha com Gemini overloaded → automaticamente cai pra `flash` ou `flash-lite` e entrega resposta em 30-60s em vez de erro
-- Ainda dentro do orçamento de 90s do worker (que não tem timeout de gateway porque é background)
-- Mensagem "instável" só aparece se TODOS os 3 modelos falharem TODAS as tentativas (cenário de outage real do Google, raríssimo)
+## Plano de correção definitivo
 
-### O que NÃO vou fazer
+### 1. Mudar a estratégia padrão das tools para “flash-first”
 
-- ❌ Não vou mockar resposta
-- ❌ Não vou esconder erro do user
-- ❌ Não vou trocar Gemini por outro provider sem você pedir
-- ❌ Não vou subir attempts pro infinito (custa $ e mascara problemas reais)
+Para ferramentas de uso diário, script, guia e transcrição, usar:
 
-### Deploy depois da aprovação
+```text
+gemini-2.5-flash → gemini-2.5-flash-lite → gemini-2.5-pro somente se necessário
+```
 
-Frontend: nada (mudança só no edge function).
-VPS:
+Em vez de começar pelo `pro`.
+
+Motivo: essas funções não precisam do `pro` na maioria dos casos. O `flash` é exatamente o que já está funcionando bem no chat e tende a ser mais estável/rápido.
+
+### 2. Reservar `gemini-2.5-pro` só para tarefas realmente profundas
+
+Manter ou usar `pro` apenas onde ele faz diferença real:
+
+- análise visceral/onboarding profundo
+- matriz estratégica completa
+- raciocínios longos e complexos
+
+Para geração de hooks, scripts, guias e transcrição, priorizar estabilidade.
+
+### 3. Padronizar todas as funções no helper resiliente
+
+Hoje `start-transcription-job` ainda chama o endpoint Gemini direto, fora do helper `_shared/gemini.ts`.
+
+Vou colocar transcrição também no mesmo padrão resiliente:
+
+- timeout controlado
+- retry
+- fallback de modelo
+- logs estruturados
+- `attempts` / `model_used` quando possível
+
+### 4. Corrigir observabilidade de falhas
+
+A tabela já tem `attempts` e `model_used`, mas os jobs que falham ainda aparecem com `NULL` porque o metadata só é salvo no sucesso.
+
+Vou ajustar para persistir, também em falhas:
+
+- quantas tentativas foram feitas
+- último modelo tentado
+- status HTTP/erro upstream resumido
+
+Assim a tela SQL deixa claro se falhou no `pro`, no `flash`, no fallback, ou se foi erro de JSON/schema.
+
+### 5. Reduzir falhas por JSON inválido
+
+Adicionar uma camada de recuperação quando o Gemini retorna texto quase-JSON:
+
+- parser mais tolerante
+- se JSON estruturado vier inválido, fazer uma tentativa curta de “repair JSON” no `flash-lite`
+- se ainda falhar, retornar mensagem específica: “IA respondeu em formato inválido”, não “Google instável”
+
+Isso evita misturar overload real com erro de formatação.
+
+### 6. Evitar chamadas paralelas desnecessárias no guia diário
+
+O guia diário hoje pode fazer duas chamadas ao Gemini quase juntas. Em self-hosted isso aumenta chance de 429/503.
+
+Vou serializar ou escalonar melhor:
+
+```text
+Parte A obrigatória → Parte B opcional com fallback local se falhar
+```
+
+Ou seja: se exemplos extras falharem, o guia principal ainda entrega conteúdo em vez de abortar a experiência inteira.
+
+### 7. Melhorar a mensagem para o usuário final
+
+Trocar a mensagem genérica “Google instável” por mensagens mais úteis:
+
+- overload temporário real
+- resposta inválida da IA
+- limite/rate limit
+- timeout
+- falha parcial com conteúdo recuperado
+
+Sem mascarar erro, mas também sem desanimar com uma mensagem única para tudo.
+
+## Arquivos que serão ajustados
+
+- `supabase/functions/_shared/gemini.ts`
+- `supabase/functions/_shared/ai-job-runner.ts`
+- `supabase/functions/start-script-job/index.ts`
+- `supabase/functions/start-tools-job/index.ts`
+- `supabase/functions/start-daily-guide-job/index.ts`
+- `supabase/functions/start-transcription-job/index.ts`
+- possivelmente funções legadas `generate-*` ainda usadas em algum fluxo
+
+## Deploy necessário depois
+
+Como o backend é Supabase self-hosted, depois da alteração será necessário subir as functions na VPS:
+
 ```bash
 cd /root/app && git pull origin main
-./scripts/deploy-selfhost.sh start-script-job start-tools-job start-daily-guide-job start-transcription-job
+./scripts/deploy-selfhost.sh start-script-job start-tools-job start-daily-guide-job start-transcription-job get-ai-job-status
 ```
-SQL no Studio self-hosted (opcional mas recomendo pra observabilidade):
-```sql
-ALTER TABLE public.ai_jobs ADD COLUMN IF NOT EXISTS attempts INT;
-ALTER TABLE public.ai_jobs ADD COLUMN IF NOT EXISTS model_used TEXT;
-```
+
+E, se mexermos no helper compartilhado, redeployar todas as functions que importam `_shared/gemini.ts`.
+
+## Resultado esperado
+
+- Chat continua funcionando como hoje.
+- Tools deixam de depender primeiro do modelo mais instável.
+- Falhas por overload reduzem bastante.
+- Quando falhar, o diagnóstico fica claro no banco/logs.
+- Guia diário e tools passam a degradar melhor em vez de simplesmente morrer.
+- O comportamento fica muito mais parecido com a robustez percebida no Lovable Cloud.
