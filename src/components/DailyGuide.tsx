@@ -11,6 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
+import { useUserUsage } from '@/hooks/useUserUsage';
 
 interface DailyGuideProps { strategy: DayStrategy; weeklyTheme?: string; onAiContent?: (content: AiGuideContent) => void; primaryNiche?: string; contentStyle?: string; }
 
@@ -24,6 +25,7 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
   const [loading, setLoading] = useState(false);
   const [aiGenerated, setAiGenerated] = useState(false);
   const [aiContent, setAiContentLocal] = useState<AiGuideContent | null>(null);
+  const { refreshUsage } = useUserUsage();
   const sections = getDailyGuideContent(strategy);
 
   // Job assíncrono: start-daily-guide-job + polling get-ai-job-status (imune a timeout Kong/Cloudflare)
@@ -64,6 +66,8 @@ export function DailyGuide({ strategy, weeklyTheme, onAiContent, primaryNiche, c
 
       setAiContentLocal(content); onAiContent?.(content); setAiGenerated(true);
       toast.success('Sugestões personalizadas geradas com IA! ✨');
+      // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+      await refreshUsage();
     } catch (e) {
       console.error('[DailyGuide] error', e);
       toast.error(e instanceof Error ? e.message : 'Erro ao gerar sugestões.');
