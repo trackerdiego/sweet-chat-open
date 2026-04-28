@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useSubscription } from '@/hooks/useSubscription';
 import { CheckoutModal } from '@/components/CheckoutModal';
 
-const ALWAYS_OPEN = ['/onboarding', '/carteira', '/indique'];
+const ALWAYS_OPEN = ['/onboarding', '/carteira', '/indique', '/ajuda'];
 
 export function AccessGuard({ children }: { children: React.ReactNode }) {
   const { hasAccess, isExpired, isPastDueOrCanceled, loading } = useSubscription();
