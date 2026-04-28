@@ -180,6 +180,14 @@ const Auth = () => {
       </div>
       <div className="flex-1 flex items-start justify-center px-4 -mt-8">
         <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
+          {refCode && !isLogin && (
+            <div className="mb-3 glass-card p-3 flex items-center gap-2 text-sm">
+              <Gift size={16} className="text-primary shrink-0" />
+              <span className="text-foreground">
+                {refOwnerName ? <>Você foi convidado por <strong>{refOwnerName}</strong> 🎁</> : 'Você foi convidado para o InfluLab 🎁'}
+              </span>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="glass-card p-6 space-y-4">
             {!isLogin && (
               <div className="space-y-2">
