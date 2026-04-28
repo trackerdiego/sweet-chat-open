@@ -72,10 +72,16 @@ serve(async (req) => {
             prompt,
             schema: { type: "object", properties: { viralHook: { type: "string" }, storytellingBody: { type: "string" }, subtleConversion: { type: "string" } }, required: ["viralHook", "storytellingBody", "subtleConversion"] },
             tag: `script-try${attempt}`,
+            model: "gemini-2.5-flash",
+            midModel: "gemini-2.5-flash-lite",
+            fallbackModel: "gemini-2.5-pro",
             maxOutputTokens: 2000,
-            timeoutMs: 60000,
-            primaryAttempts: 2,
-            fallbackAttempts: 2,
+            timeoutMs: 45000,
+            midTimeoutMs: 35000,
+            fallbackTimeoutMs: 60000,
+            primaryAttempts: 3,
+            midAttempts: 2,
+            fallbackAttempts: 1,
           });
           break;
         } catch (e) {
@@ -91,7 +97,8 @@ serve(async (req) => {
         if (e instanceof GeminiError) {
           if (e.status === 429) throw new JobError("Muitas requisições à IA. Aguarde alguns segundos.");
           if (e.status === 402) throw new JobError("Créditos da IA esgotados.");
-          throw new JobError("O serviço de IA do Google está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida.");
+          if (e.status === 502) throw new JobError("A IA respondeu em formato inválido. Tente novamente — sua cota não foi consumida.", e);
+          throw new JobError("O serviço de IA está instável agora. Aguarde 1-2 minutos e tente novamente — sua cota não foi consumida.", e);
         }
         throw e;
       }
