@@ -171,6 +171,10 @@ const faqs = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const scrollToPlanos = () =>
+    document
+      .getElementById("planos")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -192,7 +196,7 @@ export default function Landing() {
             </Button>
             <Button
               size="sm"
-              onClick={() => navigate("/auth")}
+              onClick={scrollToPlanos}
               className="bg-primary hover:bg-primary/90"
             >
               Assinar agora
@@ -243,7 +247,7 @@ export default function Landing() {
               <div className="flex flex-col sm:flex-row items-start gap-3">
                 <Button
                   size="lg"
-                  onClick={() => navigate("/auth")}
+                  onClick={scrollToPlanos}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
                 >
                   Assinar agora
@@ -453,6 +457,7 @@ export default function Landing() {
       </Section>
 
       {/* ─── Pricing ─── */}
+      <div id="planos" className="scroll-mt-20">
       <Section className="py-24 px-4 bg-charcoal">
         <div className="container max-w-md mx-auto">
           <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm">
@@ -503,7 +508,7 @@ export default function Landing() {
               </ul>
               <Button
                 size="lg"
-                onClick={() => navigate("/auth")}
+                onClick={() => navigate("/auth?plan=yearly")}
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
               >
                 Assinar plano anual
@@ -512,10 +517,23 @@ export default function Landing() {
               <p className="text-xs text-white/40 mt-3">
                 Acesso imediato • Cancele a qualquer momento
               </p>
+
+              {/* Opção mensal discreta */}
+              <div className="mt-6 pt-5 border-t border-white/10">
+                <p className="text-xs text-white/40 mb-2">Prefere pagar mês a mês?</p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/auth?plan=monthly")}
+                  className="text-sm text-white/70 hover:text-primary transition-colors underline-offset-4 hover:underline"
+                >
+                  Assinar mensal por R$47/mês →
+                </button>
+              </div>
             </CardContent>
           </Card>
         </div>
       </Section>
+      </div>
 
       {/* ─── FAQ ─── */}
       <Section className="py-20 px-4 bg-background">
@@ -560,7 +578,7 @@ export default function Landing() {
           </p>
           <Button
             size="lg"
-            onClick={() => navigate("/auth")}
+            onClick={scrollToPlanos}
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
           >
             Assinar agora
