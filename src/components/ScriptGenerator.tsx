@@ -36,36 +36,53 @@ export function ScriptGenerator({ strategy, primaryNiche, contentStyle }: Script
 
   const handleCopy = () => { navigator.clipboard.writeText(fullScript); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
-  const invokeGenerate = async () => {
-    const { data, error } = await supabase.functions.invoke('generate-script', {
+  // Job assíncrono: start-script-job + polling em get-ai-job-status (imune a timeout Kong/Cloudflare)
+  const runScriptJob = async (): Promise<ScriptContent> => {
+    const { data, error } = await supabase.functions.invoke('start-script-job', {
       body: { day: strategy.day, title: strategy.title, pillar: strategy.pillar, pillarLabel: strategy.pillarLabel, viralHook: strategy.viralHook, storytellingBody: strategy.storytellingBody, subtleConversion: strategy.subtleConversion, primaryNiche: primaryNiche || '', contentStyle: contentStyle || 'casual', visceralElement: strategy.visceralElement || '' },
     });
     if (error) throw error;
-    if (data?.error) throw new Error(data.error);
-    return data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apiErr = (data as any)?.error as string | undefined;
+    if (apiErr) throw new Error(apiErr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobId = (data as any)?.jobId as string | undefined;
+    if (!jobId) throw new Error('Resposta inválida do servidor');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Sessão expirada');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const baseUrl = (supabase as any).supabaseUrl as string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apikey = (supabase as any).supabaseKey as string;
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 5 * 60 * 1000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
+      url.searchParams.set('jobId', jobId);
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${session.access_token}`, apikey } });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const job = json?.job;
+      if (!job) continue;
+      if (job.status === 'done') return job.result as ScriptContent;
+      if (job.status === 'failed') throw new Error(job.error_message || 'Erro ao processar');
+    }
+    throw new Error('A geração demorou mais que o esperado.');
   };
 
   const handleGenerateAI = async () => {
     if (!canUseScript) { toast({ title: 'Limite atingido', description: 'Assine para continuar.', variant: 'destructive' }); setCheckoutOpen(true); return; }
     setIsGeneratingAI(true);
     try {
-      const data = await invokeGenerate();
+      const data = await runScriptJob();
       setAiScript(data); setShowingAI(true);
-      // Backend já contabiliza uso após sucesso. Não chamar incrementUsage aqui pra evitar dupla contagem.
-    } catch (e: any) {
-      console.error('[ScriptGenerator] generate error:', e, e?.context);
-      const status = e?.context?.status as number | undefined;
-      let body: any = null;
-      try { body = e?.context?.body ? JSON.parse(e.context.body) : null; } catch { /* ignore */ }
-      const backendMsg = body?.error;
-      let title = 'Erro ao gerar com IA';
-      let description = backendMsg || 'Tente novamente em alguns segundos.';
-      if (status === 401) { title = 'Sessão expirada'; description = 'Faça login novamente.'; }
-      else if (status === 402) { title = 'Créditos da IA esgotados'; description = backendMsg || 'Avise o administrador.'; }
-      else if (status === 429) { title = 'Limite atingido'; description = backendMsg || 'Aguarde alguns segundos e tente de novo.'; if (!isPremium) setCheckoutOpen(true); }
-      else if (status === 502) { title = 'Resposta da IA inválida'; description = backendMsg || 'A IA respondeu fora do formato. Tente novamente.'; }
-      else if (status === 504) { title = 'IA demorou demais'; description = backendMsg || 'Tente novamente em alguns segundos.'; }
-      toast({ title, description, variant: 'destructive' });
+    } catch (e) {
+      console.error('[ScriptGenerator] generate error:', e);
+      const msg = e instanceof Error ? e.message : 'Tente novamente em alguns segundos.';
+      if (/limite/i.test(msg) && !isPremium) setCheckoutOpen(true);
+      toast({ title: 'Erro ao gerar com IA', description: msg, variant: 'destructive' });
     } finally { setIsGeneratingAI(false); }
   };
 

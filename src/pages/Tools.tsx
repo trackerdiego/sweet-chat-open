@@ -183,6 +183,44 @@ const stepLabels: Record<ProcessingStep, string> = {
   transcribing: 'Transcrevendo com IA...',
 };
 
+// Helper: roda um job assíncrono (start-* + polling get-ai-job-status) e devolve o resultado.
+// Usado no Tools porque o componente é "fire-and-forget" — não preciso de estado reativo de status.
+async function runAiJob<T = unknown>(functionName: string, payload: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(functionName, { body: payload });
+  if (error) throw error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const apiErr = (data as any)?.error as string | undefined;
+  if (apiErr) throw new Error(apiErr);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const jobId = (data as any)?.jobId as string | undefined;
+  if (!jobId) throw new Error('Resposta inválida do servidor');
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sessão expirada');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const baseUrl = (supabase as any).supabaseUrl as string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const apikey = (supabase as any).supabaseKey as string;
+
+  const startedAt = Date.now();
+  const MAX_MS = 5 * 60 * 1000;
+  while (Date.now() - startedAt < MAX_MS) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
+    url.searchParams.set('jobId', jobId);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${session.access_token}`, apikey },
+    });
+    if (!res.ok) continue;
+    const json = await res.json();
+    const job = json?.job;
+    if (!job) continue;
+    if (job.status === 'done') return job.result as T;
+    if (job.status === 'failed') throw new Error(job.error_message || 'Erro ao processar');
+  }
+  throw new Error('A geração demorou mais que o esperado. Tente novamente.');
+}
+
 const Tools = () => {
   const { profile } = useUserProfile();
   const { canUseTool, canTranscribe, remainingTools, remainingTranscriptions, incrementUsage, isPremium } = useUserUsage();
@@ -237,16 +275,16 @@ const Tools = () => {
       if (uploadError) throw uploadError;
 
       setProcessingStep('transcribing');
-      const { data, error } = await supabase.functions.invoke('transcribe-media', { body: { filePath, mimeType } });
-      if (error) throw error;
-      if (data?.transcription) {
-        setUserInput(prev => prev ? `${prev}\n\n${data.transcription}` : data.transcription);
+      // Job assíncrono: start-transcription-job + polling get-ai-job-status (imune a timeout Kong/Cloudflare)
+      const transcribeResult = await runAiJob<{ transcription?: string }>('start-transcription-job', { filePath, mimeType });
+      if (transcribeResult?.transcription) {
+        setUserInput(prev => prev ? `${prev}\n\n${transcribeResult.transcription}` : transcribeResult.transcription!);
         toast.success('Transcrição concluída! ✨');
         await incrementUsage('transcriptions');
       }
     } catch (err) {
       console.error('Transcription error:', err);
-      toast.error('Erro ao transcrever.');
+      toast.error(err instanceof Error ? err.message : 'Erro ao transcrever.');
     } finally {
       setProcessingStep('idle');
     }
@@ -260,25 +298,20 @@ const Tools = () => {
     setLoading(true);
     setResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-tools-content', {
-        body: { toolType: selectedTool.id, userInput: userInput.trim(), primaryNiche: profile?.primary_niche || '', contentStyle: profile?.content_style || 'casual' },
+      // Job assíncrono: start-tools-job (responde <2s) + polling get-ai-job-status
+      const data = await runAiJob<Record<string, unknown>>('start-tools-job', {
+        toolType: selectedTool.id,
+        userInput: userInput.trim(),
+        primaryNiche: profile?.primary_niche || '',
+        contentStyle: profile?.content_style || 'casual',
       });
-      if (error) throw error;
       setResult(data);
       toast.success('Conteúdo gerado! ✨');
-      // Backend já contabiliza uso após sucesso. Não chamar incrementUsage aqui pra evitar dupla contagem.
-    } catch (err: any) {
-      console.error('Tool generation error:', err, err?.context);
-      const status = err?.context?.status as number | undefined;
-      let body: any = null;
-      try { body = err?.context?.body ? JSON.parse(err.context.body) : null; } catch { /* ignore */ }
-      const backendMsg = body?.error;
-      if (status === 401) toast.error('Sessão expirada. Faça login novamente.');
-      else if (status === 402) toast.error(backendMsg || 'Créditos da IA esgotados.');
-      else if (status === 429) { toast.error(backendMsg || 'Limite atingido.'); if (!isPremium) setCheckoutOpen(true); }
-      else if (status === 502) toast.error(backendMsg || 'A IA respondeu fora do formato. Tente novamente.');
-      else if (status === 504) toast.error(backendMsg || 'A IA demorou demais. Tente novamente.');
-      else toast.error(backendMsg || 'Erro ao gerar.');
+    } catch (err) {
+      console.error('Tool generation error:', err);
+      const msg = err instanceof Error ? err.message : 'Erro ao gerar.';
+      if (/limite/i.test(msg) && !isPremium) setCheckoutOpen(true);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
