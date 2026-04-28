@@ -54,7 +54,7 @@ export default function Wallet() {
             <Coins size={28} />
             <span className="text-4xl font-bold tabular-nums">{loading ? '—' : wallet.coins_balance}</span>
           </div>
-          <p className="text-sm text-muted-foreground mt-2">≈ R$ {discountBrl} em desconto</p>
+          <p className="text-sm text-muted-foreground mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
           <p className="text-xs text-muted-foreground/70 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
         </motion.div>
 
@@ -72,9 +72,21 @@ export default function Wallet() {
           </Button>
         </motion.div>
 
-        <div className="bg-primary/5 border border-primary/15 rounded-xl p-4 text-sm text-muted-foreground">
-          💡 Em breve você poderá usar seus coins automaticamente para descontar na sua mensalidade.
-        </div>
+        {isActive && nextDiscount > 0 ? (
+          <div className="bg-primary/10 border border-primary/25 rounded-xl p-4 text-sm">
+            <p className="font-semibold text-foreground">🎯 Próximo desconto previsto</p>
+            <p className="text-2xl font-bold text-primary mt-1 tabular-nums">−R$ {nextDiscount.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Aplicado automaticamente {renewalDate ? `em ${renewalDate}` : 'na próxima fatura'} · Valor cheio: R$ {planPrice.toFixed(2)}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-primary/5 border border-primary/15 rounded-xl p-4 text-sm text-muted-foreground">
+            💡 {isActive
+              ? 'Acumule coins concluindo tarefas para ganhar desconto na próxima fatura.'
+              : 'Quando você assinar, seus coins viram desconto automático na mensalidade.'}
+          </div>
+        )}
 
         <div>
           <h2 className="font-semibold text-foreground px-1 mb-2">Histórico</h2>
