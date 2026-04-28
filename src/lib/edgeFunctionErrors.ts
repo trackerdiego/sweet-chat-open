@@ -60,3 +60,14 @@ export async function getEdgeFunctionErrorMessage(error: unknown, fallback = 'Fa
 export async function createEdgeFunctionError(error: unknown, fallback?: string): Promise<Error> {
   return new Error(await getEdgeFunctionErrorMessage(error, fallback));
 }
+
+export async function getResponseErrorMessage(response: Response, fallback = 'Falha ao consultar status da geração'): Promise<string> {
+  try {
+    const text = await response.clone().text();
+    const parsed = extractMessageFromBody(text);
+    if (parsed) return parsed;
+  } catch {
+    // Mantém fallback seguro abaixo.
+  }
+  return fallback;
+}
