@@ -1,12 +1,18 @@
 import { motion } from 'framer-motion';
-import { Zap, Award, Star } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Zap, Award, Star, Coins } from 'lucide-react';
+import { useWallet } from '@/hooks/useWallet';
 
 interface StreakCounterProps {
   streak: number;
-  points: number;
+  /** @deprecated mantido por compatibilidade — agora exibimos o saldo de Coins da carteira */
+  points?: number;
 }
 
-export function StreakCounter({ streak, points }: StreakCounterProps) {
+export function StreakCounter({ streak }: StreakCounterProps) {
+  const navigate = useNavigate();
+  const { wallet } = useWallet();
+
   const milestones = [
     { days: 7, label: '7 dias', icon: Zap, reached: streak >= 7 },
     { days: 14, label: '14 dias', icon: Star, reached: streak >= 14 },
@@ -46,10 +52,18 @@ export function StreakCounter({ streak, points }: StreakCounterProps) {
         ))}
       </div>
 
-      <div className="flex items-center justify-center gap-2 pt-2">
-        <Star size={16} className="text-primary" />
-        <span className="font-semibold text-sm">{points} Pontos de Influência</span>
-      </div>
+      <button
+        type="button"
+        onClick={() => navigate('/carteira')}
+        className="w-full flex items-center justify-center gap-2 pt-2 hover:opacity-80 transition-opacity"
+        aria-label="Ver minha carteira de coins"
+      >
+        <Coins size={16} className="text-primary" />
+        <span className="font-semibold text-sm">
+          {wallet.coins_balance.toLocaleString('pt-BR')} {wallet.coins_balance === 1 ? 'coin' : 'coins'}
+        </span>
+        <span className="text-xs text-muted-foreground">· ver carteira</span>
+      </button>
     </motion.div>
   );
 }
