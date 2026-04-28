@@ -44,6 +44,8 @@ PRIVATE_FNS=(
   get-onboarding-run-status
   transcribe-media
   admin-dashboard
+  admin-launch-health
+  admin-reprocess-asaas-event
   create-asaas-subscription
   award-task-coins
   register-referral
