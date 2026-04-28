@@ -74,6 +74,7 @@ function AppRoutes() {
           <Route path="/carteira" element={<Wallet />} />
           <Route path="/indique" element={<Referral />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/ajuda" element={<Help />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AccessGuard>
