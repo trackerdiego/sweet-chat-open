@@ -36,9 +36,10 @@ export default function Renew() {
     return () => clearInterval(id);
   }, [refresh, refreshSub]);
 
-  // Se virou ativo, redireciona pro app
+  // Só redireciona se o usuário ENTROU inativo e ficou ativo (pagamento confirmado).
+  // Usuário em dia adiantando pagamento permanece na tela.
   useEffect(() => {
-    if (isActive) {
+    if (isActive && wasInactive.current) {
       toast({ title: 'Pagamento confirmado!', description: 'Bem-vindo de volta.' });
       navigate('/');
     }
