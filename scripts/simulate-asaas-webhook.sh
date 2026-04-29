@@ -10,8 +10,8 @@
 #   ./scripts/simulate-asaas-webhook.sh --user-id <UUID> [--scenario all|created|cycle|overdue] [--cleanup]
 #
 # REQUISITOS (rodar na VPS self-hosted):
-#   - ~/supabase/docker/.env com ASAAS_WEBHOOK_TOKEN e POSTGRES_PASSWORD
-#   - psql + curl + jq instalados
+#   - ~/supabase/docker/.env com ASAAS_WEBHOOK_TOKEN
+#   - docker compose + curl + jq instalados
 #
 # LIMITAÇÕES CONHECIDAS:
 #   - pix_qr_code virá NULL (payment.id é fake → fetchPixQrCode 404). Não é bug.
@@ -60,18 +60,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 ASAAS_WEBHOOK_TOKEN=$(grep -E '^ASAAS_WEBHOOK_TOKEN=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
-POSTGRES_PASSWORD=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 
 if [[ -z "$ASAAS_WEBHOOK_TOKEN" ]]; then
   echo -e "${RED}ASAAS_WEBHOOK_TOKEN não encontrado em $ENV_FILE${NC}"; exit 1
 fi
-if [[ -z "$POSTGRES_PASSWORD" ]]; then
-  echo -e "${RED}POSTGRES_PASSWORD não encontrado em $ENV_FILE${NC}"; exit 1
-fi
 
-# Conexão direta ao Postgres do container (porta padrão 5432 mapeada localmente)
-export PGPASSWORD="$POSTGRES_PASSWORD"
-PSQL="psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -tAX"
+# Conexão ao Postgres pelo container self-hosted (evita pooler/porta local errada)
+export RESEND_API_KEY="${RESEND_API_KEY:-dummy}"
+PSQL="docker compose -f /root/supabase/docker/docker-compose.yml exec -T db psql -U postgres -d postgres -tAX"
 
 # ---------- Helpers ----------
 ts_ns() { date +%s%N; }
