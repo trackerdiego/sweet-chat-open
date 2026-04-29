@@ -108,6 +108,12 @@ export default function Renew() {
           </div>
         </div>
 
+        {isActive && (daysUntilDue ?? 0) > 3 && (
+          <div className="bg-primary/5 border border-primary/15 rounded-xl px-3 py-2.5 text-xs text-muted-foreground text-center">
+            Sua assinatura está ativa. Você pode adiantar o próximo pagamento abaixo.
+          </div>
+        )}
+
         {hasDiscount && (
           <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex items-start gap-2">
             <Sparkles size={16} className="text-primary mt-0.5 shrink-0" />
