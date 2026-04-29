@@ -360,12 +360,6 @@ if $DO_CLEANUP_ONLY; then
   exit 0
 fi
 
-# Sanity: user_id existe?
-exists=$($PSQL -c "SELECT EXISTS(SELECT 1 FROM auth.users WHERE id='$USER_ID')::text;")
-if [[ "$exists" != "t" ]]; then
-  echo -e "${RED}user_id não existe em auth.users${NC}"; exit 1
-fi
-
 case "$SCENARIO" in
   created) scenario_created ;;
   cycle)   scenario_cycle ;;
