@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift, QrCode } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserUsage } from '@/hooks/useUserUsage';
 import { useWallet } from '@/hooks/useWallet';
+import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
 import {
@@ -40,6 +41,7 @@ export function Navigation() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isPremium } = useUserUsage();
   const { wallet } = useWallet();
+  const { hasPendingPixInvoice, hasUrgentInvoice } = usePendingInvoice();
   const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
@@ -155,6 +157,15 @@ export function Navigation() {
                 <span className="flex-1">Carteira</span>
                 <span className="text-xs font-semibold tabular-nums text-muted-foreground">🪙 {wallet.coins_balance}</span>
               </DropdownMenuItem>
+              {hasPendingPixInvoice && (
+                <DropdownMenuItem onClick={() => navigate('/renovar')} className="gap-2">
+                  <QrCode size={16} className={hasUrgentInvoice ? 'text-destructive' : 'text-primary'} />
+                  <span className="flex-1">Fatura Pix</span>
+                  {hasUrgentInvoice && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-destructive">Urgente</span>
+                  )}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => navigate('/indique')} className="gap-2">
                 <Gift size={16} className="text-primary" />
                 <span>Indicar amigos</span>

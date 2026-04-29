@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Coins, Gift, ArrowRight, TrendingUp, CheckCircle2, Flame, Tag } from 'lucide-react';
+import { Coins, Gift, ArrowRight, TrendingUp, CheckCircle2, Flame, Tag, QrCode, AlertTriangle } from 'lucide-react';
 import { useWallet } from '@/hooks/useWallet';
 import { useSubscription } from '@/hooks/useSubscription';
+import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { Button } from '@/components/ui/button';
 
 const COIN_TO_BRL = 0.01;
@@ -31,6 +32,7 @@ function formatRelative(iso: string): string {
 export default function Wallet() {
   const { wallet, transactions, loading } = useWallet();
   const { isActive, currentPeriodEnd, plan } = useSubscription();
+  const { invoice, hasPendingPixInvoice, daysUntilDue } = usePendingInvoice();
   const navigate = useNavigate();
 
   const discountBrl = wallet.coins_balance * COIN_TO_BRL;
@@ -57,6 +59,56 @@ export default function Wallet() {
           <p className="text-sm text-muted-foreground mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
           <p className="text-xs text-muted-foreground/70 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
         </motion.div>
+
+        {hasPendingPixInvoice && invoice && (() => {
+          const overdue = (daysUntilDue ?? 0) < 0;
+          const urgent = !overdue && (daysUntilDue ?? 0) <= 3;
+          const dueLabel =
+            daysUntilDue === null ? '' :
+            daysUntilDue < 0 ? `Venceu há ${Math.abs(daysUntilDue)} ${Math.abs(daysUntilDue) === 1 ? 'dia' : 'dias'}` :
+            daysUntilDue === 0 ? 'Vence hoje' :
+            daysUntilDue === 1 ? 'Vence amanhã' :
+            `Vence em ${daysUntilDue} dias`;
+          const dueDateFmt = invoice.due_date
+            ? new Date(invoice.due_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+            : null;
+          return (
+            <motion.div
+              initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.03 }}
+              className={`glass-card p-5 border ${
+                overdue || urgent
+                  ? 'border-destructive/40 bg-destructive/5'
+                  : 'border-primary/20'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-foreground">
+                    {overdue || urgent ? (
+                      <AlertTriangle size={18} className="text-destructive shrink-0" />
+                    ) : (
+                      <QrCode size={18} className="text-primary shrink-0" />
+                    )}
+                    <span className="font-semibold">Próxima fatura Pix</span>
+                  </div>
+                  <p className="text-2xl font-bold mt-1 tabular-nums text-foreground">
+                    R$ {invoice.value.toFixed(2).replace('.', ',')}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${overdue || urgent ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                    {dueLabel}{dueDateFmt ? ` · ${dueDateFmt}` : ''}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => navigate('/renovar')}
+                  className={overdue || urgent ? 'bg-destructive hover:bg-destructive/90' : ''}
+                >
+                  Ver QR <ArrowRight size={14} />
+                </Button>
+              </div>
+            </motion.div>
+          );
+        })()}
 
         <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.05 }}
           className="glass-card p-5 flex items-center justify-between">

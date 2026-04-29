@@ -59,12 +59,15 @@ export function usePendingInvoice() {
 
   const days = daysUntil(invoice?.due_date ?? null);
   const isPix = invoice?.billing_type === 'PIX' || invoice?.billing_type === 'UNDEFINED';
-  const hasUrgentInvoice = !!invoice && !invoice.is_paid && isPix && days !== null && days <= 3;
+  // Pix pendente (mesmo sem urgência). Cartão recorrente NUNCA aparece.
+  const hasPendingPixInvoice = !!invoice && !invoice.is_paid && isPix;
+  const hasUrgentInvoice = hasPendingPixInvoice && days !== null && days <= 3;
 
   return {
     invoice,
     loading,
     daysUntilDue: days,
+    hasPendingPixInvoice,
     hasUrgentInvoice,
     refresh,
     applyDiscountAndFetch,

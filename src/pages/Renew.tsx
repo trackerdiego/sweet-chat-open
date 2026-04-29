@@ -18,6 +18,7 @@ export default function Renew() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const didApply = useRef(false);
+  const wasInactive = useRef(!isActive);
 
   // Aplica coins automaticamente na primeira carga
   useEffect(() => {
@@ -35,9 +36,10 @@ export default function Renew() {
     return () => clearInterval(id);
   }, [refresh, refreshSub]);
 
-  // Se virou ativo, redireciona pro app
+  // Só redireciona se o usuário ENTROU inativo e ficou ativo (pagamento confirmado).
+  // Usuário em dia adiantando pagamento permanece na tela.
   useEffect(() => {
-    if (isActive) {
+    if (isActive && wasInactive.current) {
       toast({ title: 'Pagamento confirmado!', description: 'Bem-vindo de volta.' });
       navigate('/');
     }
@@ -107,6 +109,12 @@ export default function Renew() {
             <Clock size={14} /> {dueLabel}
           </div>
         </div>
+
+        {isActive && (daysUntilDue ?? 0) > 3 && (
+          <div className="bg-primary/5 border border-primary/15 rounded-xl px-3 py-2.5 text-xs text-muted-foreground text-center">
+            Sua assinatura está ativa. Você pode adiantar o próximo pagamento abaixo.
+          </div>
+        )}
 
         {hasDiscount && (
           <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex items-start gap-2">
