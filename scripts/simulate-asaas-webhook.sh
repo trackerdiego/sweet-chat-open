@@ -324,14 +324,16 @@ scenario_overdue() {
 
 cleanup() {
   echo -e "\n${YELLOW}=== CLEANUP para user $USER_ID ===${NC}"
-  echo -e "${RED}ATENÇÃO:${NC} vai resetar subscription_state, user_usage e deletar eventos evt_sim_*"
+  echo -e "${YELLOW}Cleanup seguro:${NC} limpa next_invoice e eventos evt_sim_* sem alterar premium/status."
+  echo -e "${RED}Só use DESTRUCTIVE_CLEANUP=true${NC} se quiser resetar status/is_premium do usuário de teste."
   read -rp "Confirma? [y/N] " ans
   if [[ "$ans" != "y" && "$ans" != "Y" ]]; then
     echo "Cleanup abortado."
     return
   fi
 
-  $PSQL -c "
+  if [[ "${DESTRUCTIVE_CLEANUP:-false}" == "true" ]]; then
+    $PSQL -c "
     UPDATE public.subscription_state
     SET next_invoice = NULL,
         status = 'trial',
@@ -346,6 +348,17 @@ cleanup() {
     DELETE FROM public.asaas_webhook_events
     WHERE event_id LIKE 'evt_sim_%' AND (user_id = '$USER_ID' OR user_id IS NULL);
   " > /dev/null
+  else
+    $PSQL -c "
+      UPDATE public.subscription_state
+      SET next_invoice = NULL,
+          updated_at = now()
+      WHERE user_id = '$USER_ID';
+
+      DELETE FROM public.asaas_webhook_events
+      WHERE event_id LIKE 'evt_sim_%' AND (user_id = '$USER_ID' OR user_id IS NULL);
+    " > /dev/null
+  fi
   echo -e "${GREEN}Cleanup feito.${NC}"
   snapshot "POST-CLEANUP"
 }
