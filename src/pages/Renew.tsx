@@ -18,6 +18,7 @@ export default function Renew() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const didApply = useRef(false);
+  const wasInactive = useRef(!isActive);
 
   // Aplica coins automaticamente na primeira carga
   useEffect(() => {
