@@ -32,6 +32,7 @@ function formatRelative(iso: string): string {
 export default function Wallet() {
   const { wallet, transactions, loading } = useWallet();
   const { isActive, currentPeriodEnd, plan } = useSubscription();
+  const { invoice, hasPendingPixInvoice, daysUntilDue } = usePendingInvoice();
   const navigate = useNavigate();
 
   const discountBrl = wallet.coins_balance * COIN_TO_BRL;
