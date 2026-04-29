@@ -15,8 +15,8 @@ WITH candidates AS (
       e.payload #>> '{subscription,customer}'
     ) AS asaas_customer_id,
     CASE
-      WHEN COALESCE((e.payload #>> '{payment,value}')::numeric, (e.payload #>> '{subscription,value}')::numeric, 0) >= 250 THEN 'annual'
-      WHEN COALESCE((e.payload #>> '{payment,value}')::numeric, (e.payload #>> '{subscription,value}')::numeric, 0) >= 30 THEN 'monthly'
+      WHEN COALESCE(NULLIF(e.payload #>> '{payment,value}', '')::numeric, NULLIF(e.payload #>> '{subscription,value}', '')::numeric, 0) >= 250 THEN 'annual'
+      WHEN COALESCE(NULLIF(e.payload #>> '{payment,value}', '')::numeric, NULLIF(e.payload #>> '{subscription,value}', '')::numeric, 0) >= 30 THEN 'monthly'
       ELSE NULL
     END AS inferred_plan,
     e.received_at
