@@ -101,7 +101,9 @@ q_is_premium()   { $PSQL -c "SELECT COALESCE(is_premium::text,'null') FROM publi
 q_sub_status()   { $PSQL -c "SELECT COALESCE(status,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_sub_plan()     { $PSQL -c "SELECT COALESCE(plan,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_sub_asaas_id() { $PSQL -c "SELECT COALESCE(asaas_subscription_id,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
+q_sub_customer_id() { $PSQL -c "SELECT COALESCE(asaas_customer_id,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_next_inv()     { $PSQL -c "SELECT CASE WHEN next_invoice IS NULL THEN 'null' ELSE 'present' END FROM public.subscription_state WHERE user_id='$USER_ID';"; }
+q_next_inv_sub_id() { $PSQL -c "SELECT COALESCE(next_invoice->>'asaas_subscription_id','null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_event_state()  {
   local eid="$1"
   $PSQL -c "SELECT json_build_object('processed', processed_at IS NOT NULL, 'error', processing_error) FROM public.asaas_webhook_events WHERE event_id='$eid';"
@@ -235,7 +237,10 @@ scenario_created() {
   send_event "[1/2] PAYMENT_CREATED (Pix R\$47, vence $DUE)" \
     "$(mk_payment_created "$EID" "$PID" "$SID" 47 "$DUE")"
   sleep 1
+  assert "asaas_subscription_id" "$SID" "$(q_sub_asaas_id)"
+  assert "asaas_customer_id" "cus_sim_$USER_ID" "$(q_sub_customer_id)"
   assert "next_invoice present" "present" "$(q_next_inv)"
+  assert "next_invoice.asaas_subscription_id" "$SID" "$(q_next_inv_sub_id)"
   assert "event processed" "true" "$($PSQL -c "SELECT (processed_at IS NOT NULL)::text FROM public.asaas_webhook_events WHERE event_id='$EID';")"
 
   send_event "[2/2] mesmo PAYMENT_CREATED (idempotência)" \
