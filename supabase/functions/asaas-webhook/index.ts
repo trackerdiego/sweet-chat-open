@@ -350,6 +350,16 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
       is_paid: false,
       updated_at: new Date().toISOString(),
     };
+
+    await syncSubscriptionState(admin, {
+      userId,
+      asaasSubId: ctx.asaasSubId,
+      asaasCustomerId: ctx.asaasCustomerId,
+      value: ctx.value,
+      nextDueDate: ctx.nextDueDate,
+      apiKey,
+    });
+
     await setNextInvoice(admin, userId, invoice);
     console.log(`PAYMENT_CREATED: next_invoice salvo para user ${userId}, paymentId ${ctx.paymentId}`);
     return { userId };
