@@ -10,8 +10,8 @@
 #   ./scripts/simulate-asaas-webhook.sh --user-id <UUID> [--scenario all|created|cycle|overdue] [--cleanup]
 #
 # REQUISITOS (rodar na VPS self-hosted):
-#   - ~/supabase/docker/.env com ASAAS_WEBHOOK_TOKEN e POSTGRES_PASSWORD
-#   - psql + curl + jq instalados
+#   - ~/supabase/docker/.env com ASAAS_WEBHOOK_TOKEN
+#   - docker compose + curl + jq instalados
 #
 # LIMITAÇÕES CONHECIDAS:
 #   - pix_qr_code virá NULL (payment.id é fake → fetchPixQrCode 404). Não é bug.
@@ -60,18 +60,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 ASAAS_WEBHOOK_TOKEN=$(grep -E '^ASAAS_WEBHOOK_TOKEN=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
-POSTGRES_PASSWORD=$(grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'")
 
 if [[ -z "$ASAAS_WEBHOOK_TOKEN" ]]; then
   echo -e "${RED}ASAAS_WEBHOOK_TOKEN não encontrado em $ENV_FILE${NC}"; exit 1
 fi
-if [[ -z "$POSTGRES_PASSWORD" ]]; then
-  echo -e "${RED}POSTGRES_PASSWORD não encontrado em $ENV_FILE${NC}"; exit 1
-fi
 
-# Conexão direta ao Postgres do container (porta padrão 5432 mapeada localmente)
-export PGPASSWORD="$POSTGRES_PASSWORD"
-PSQL="psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -tAX"
+# Conexão ao Postgres pelo container self-hosted (evita pooler/porta local errada)
+export RESEND_API_KEY="${RESEND_API_KEY:-dummy}"
+PSQL="docker compose -f /root/supabase/docker/docker-compose.yml exec -T db psql -U postgres -d postgres -tAX"
 
 # ---------- Helpers ----------
 ts_ns() { date +%s%N; }
@@ -105,7 +101,9 @@ q_is_premium()   { $PSQL -c "SELECT COALESCE(is_premium::text,'null') FROM publi
 q_sub_status()   { $PSQL -c "SELECT COALESCE(status,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_sub_plan()     { $PSQL -c "SELECT COALESCE(plan,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_sub_asaas_id() { $PSQL -c "SELECT COALESCE(asaas_subscription_id,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
+q_sub_customer_id() { $PSQL -c "SELECT COALESCE(asaas_customer_id,'null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_next_inv()     { $PSQL -c "SELECT CASE WHEN next_invoice IS NULL THEN 'null' ELSE 'present' END FROM public.subscription_state WHERE user_id='$USER_ID';"; }
+q_next_inv_sub_id() { $PSQL -c "SELECT COALESCE(next_invoice->>'asaas_subscription_id','null') FROM public.subscription_state WHERE user_id='$USER_ID';"; }
 q_event_state()  {
   local eid="$1"
   $PSQL -c "SELECT json_build_object('processed', processed_at IS NOT NULL, 'error', processing_error) FROM public.asaas_webhook_events WHERE event_id='$eid';"
@@ -239,7 +237,10 @@ scenario_created() {
   send_event "[1/2] PAYMENT_CREATED (Pix R\$47, vence $DUE)" \
     "$(mk_payment_created "$EID" "$PID" "$SID" 47 "$DUE")"
   sleep 1
+  assert "asaas_subscription_id" "$SID" "$(q_sub_asaas_id)"
+  assert "asaas_customer_id" "cus_sim_$USER_ID" "$(q_sub_customer_id)"
   assert "next_invoice present" "present" "$(q_next_inv)"
+  assert "next_invoice.asaas_subscription_id" "$SID" "$(q_next_inv_sub_id)"
   assert "event processed" "true" "$($PSQL -c "SELECT (processed_at IS NOT NULL)::text FROM public.asaas_webhook_events WHERE event_id='$EID';")"
 
   send_event "[2/2] mesmo PAYMENT_CREATED (idempotência)" \
@@ -323,14 +324,16 @@ scenario_overdue() {
 
 cleanup() {
   echo -e "\n${YELLOW}=== CLEANUP para user $USER_ID ===${NC}"
-  echo -e "${RED}ATENÇÃO:${NC} vai resetar subscription_state, user_usage e deletar eventos evt_sim_*"
+  echo -e "${YELLOW}Cleanup seguro:${NC} limpa next_invoice e eventos evt_sim_* sem alterar premium/status."
+  echo -e "${RED}Só use DESTRUCTIVE_CLEANUP=true${NC} se quiser resetar status/is_premium do usuário de teste."
   read -rp "Confirma? [y/N] " ans
   if [[ "$ans" != "y" && "$ans" != "Y" ]]; then
     echo "Cleanup abortado."
     return
   fi
 
-  $PSQL -c "
+  if [[ "${DESTRUCTIVE_CLEANUP:-false}" == "true" ]]; then
+    $PSQL -c "
     UPDATE public.subscription_state
     SET next_invoice = NULL,
         status = 'trial',
@@ -345,6 +348,17 @@ cleanup() {
     DELETE FROM public.asaas_webhook_events
     WHERE event_id LIKE 'evt_sim_%' AND (user_id = '$USER_ID' OR user_id IS NULL);
   " > /dev/null
+  else
+    $PSQL -c "
+      UPDATE public.subscription_state
+      SET next_invoice = NULL,
+          updated_at = now()
+      WHERE user_id = '$USER_ID';
+
+      DELETE FROM public.asaas_webhook_events
+      WHERE event_id LIKE 'evt_sim_%' AND (user_id = '$USER_ID' OR user_id IS NULL);
+    " > /dev/null
+  fi
   echo -e "${GREEN}Cleanup feito.${NC}"
   snapshot "POST-CLEANUP"
 }
@@ -357,12 +371,6 @@ echo -e "${BLUE}cenário:${NC} $SCENARIO"
 if $DO_CLEANUP_ONLY; then
   cleanup
   exit 0
-fi
-
-# Sanity: user_id existe?
-exists=$($PSQL -c "SELECT EXISTS(SELECT 1 FROM auth.users WHERE id='$USER_ID')::text;")
-if [[ "$exists" != "t" ]]; then
-  echo -e "${RED}user_id não existe em auth.users${NC}"; exit 1
 fi
 
 case "$SCENARIO" in

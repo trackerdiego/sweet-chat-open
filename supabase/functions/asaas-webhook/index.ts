@@ -160,7 +160,7 @@ async function processReferralPayment(admin: any, userId: string) {
 // ---------- Sync subscription_state (PAYLOAD-FIRST) ----------
 type SyncInput = {
   userId: string;
-  status: string;
+  status?: string;
   // Dados extraídos do payload (preferidos)
   asaasSubId?: string | null;
   asaasCustomerId?: string | null;
@@ -174,9 +174,10 @@ type SyncInput = {
 async function syncSubscriptionState(admin: any, input: SyncInput) {
   const patch: Record<string, unknown> = {
     user_id: input.userId,
-    status: input.status,
     updated_at: new Date().toISOString(),
   };
+
+  if (input.status) patch.status = input.status;
 
   // 1) Aplica o que veio direto do payload
   if (input.asaasSubId) patch.asaas_subscription_id = input.asaasSubId;
@@ -349,6 +350,16 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
       is_paid: false,
       updated_at: new Date().toISOString(),
     };
+
+    await syncSubscriptionState(admin, {
+      userId,
+      asaasSubId: ctx.asaasSubId,
+      asaasCustomerId: ctx.asaasCustomerId,
+      value: ctx.value,
+      nextDueDate: ctx.nextDueDate,
+      apiKey,
+    });
+
     await setNextInvoice(admin, userId, invoice);
     console.log(`PAYMENT_CREATED: next_invoice salvo para user ${userId}, paymentId ${ctx.paymentId}`);
     return { userId };
