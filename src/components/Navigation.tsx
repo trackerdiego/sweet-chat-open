@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift, QrCode } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserUsage } from '@/hooks/useUserUsage';
 import { useWallet } from '@/hooks/useWallet';
+import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
 import {
