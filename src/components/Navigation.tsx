@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift, QrCode } from 'lucide-react';
+import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift, QrCode, LifeBuoy } from 'lucide-react';
+import { useSubscription } from '@/hooks/useSubscription';
 import { motion } from 'framer-motion';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -39,11 +40,18 @@ export function Navigation() {
   const navigate = useNavigate();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [subHelpOpen, setSubHelpOpen] = useState(false);
   const { isPremium } = useUserUsage();
   const { wallet } = useWallet();
   const { hasPendingPixInvoice, hasUrgentInvoice } = usePendingInvoice();
+  const { isActive } = useSubscription();
   const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
+  // Mostrar canal de ajuda discreto apenas para assinantes ativos no cartão recorrente
+  // (ativo + sem fatura Pix pendente = Asaas debitando automático no cartão)
+  const showSubscriptionHelp = isActive && !hasPendingPixInvoice && !!session?.user;
+  const userEmail = session?.user?.email ?? '';
+  const supportMailto = `mailto:suporte@influlab.pro?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
 
   const handleResetNiche = async () => {
     await updateProfile({ onboarding_completed: false, description_status: 'pending' as any });
@@ -182,6 +190,12 @@ export function Navigation() {
                 {isPremium ? <RefreshCw size={16} /> : <Lock size={16} />}
                 Redefinir perfil
               </DropdownMenuItem>
+              {showSubscriptionHelp && (
+                <DropdownMenuItem onClick={() => setSubHelpOpen(true)} className="gap-2">
+                  <LifeBuoy size={16} className="text-muted-foreground" />
+                  Ajuda com assinatura
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -201,6 +215,24 @@ export function Navigation() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={subHelpOpen} onOpenChange={setSubHelpOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Precisa de ajuda com sua assinatura?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Para qualquer ajuste — pausar, alterar plano, atualizar dados de pagamento ou cancelar — envie um email para <strong>suporte@influlab.pro</strong>. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { window.location.href = supportMailto; setSubHelpOpen(false); }}>
+              Enviar email agora
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </>
   );

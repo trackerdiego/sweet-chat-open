@@ -1,67 +1,73 @@
-## Diagnóstico
+## Objetivo
 
-Toda infra já existe e funciona:
-- Hook `usePendingInvoice` → lê `subscription_state.next_invoice` (QR, copia-e-cola, valor, vencimento, payment_url)
-- Página `/renovar` (`Renew.tsx`) → renderiza QR, botão copiar, abrir no banco, trocar pra cartão
-- Banner `PixDueBanner` → aparece no topo só quando faltam ≤3 dias
-- `AccessGuard` → redireciona pra `/renovar` quando `past_due`/`canceled`
+Eliminar a palavra "Renovar" da experiência de quem paga via cartão (gatilho ruim de retenção) e oferecer um canal **discreto** de cancelamento via email **somente** para esse público.
 
-**Gap real:** premium **Pix em dia** (faltam mais de 3 dias) não tem ponto de entrada visível pra ver o QR e adiantar pagamento. Hoje só vê quando faltam ≤3 dias.
+Quem paga via Pix continua vendo tudo igual — pra esses, "renovar" é literalmente o que precisam fazer todo mês.
 
-**Decidido:** assinantes via cartão **não enxergam nada** (Asaas cobra automático).
+## Mapeamento de "Renovar" no app hoje
 
-## Regra de exibição (única, em todo lugar)
+| Local | Texto/contexto | Quem vê | Decisão |
+|---|---|---|---|
+| `App.tsx` | rota `/renovar` | URL técnica | **manter** (só URL, ninguém lê) |
+| `Renew.tsx` | título **"Renove sua assinatura"** | Pix pendente | **trocar pra "Sua fatura Pix"** (palavra "renovar" some) |
+| `Navigation.tsx` | item dropdown "Fatura Pix" → `/renovar` | Pix pendente | **manter** (label já é "Fatura Pix", não "Renovar") |
+| `PixDueBanner.tsx` | banner "Sua fatura Pix vence..." → `/renovar` | Pix urgente | **manter** (texto não usa "renovar") |
+| `Wallet.tsx` | card "Próxima fatura Pix" → `/renovar` | Pix pendente | **manter** (label "Ver QR") |
+| `AccessGuard.tsx` | botão **"Pagar fatura pendente"** → `/renovar` | Past due / canceled | **manter** (palavra "renovar" não aparece) |
 
-Mostrar entrada de "Fatura Pix" se e somente se:
-- `invoice` existe em `next_invoice`
-- `invoice.is_paid === false`
-- `invoice.billing_type === 'PIX' || invoice.billing_type === 'UNDEFINED'`
-- (cartão = `'CREDIT_CARD'` → esconde tudo)
+Conclusão: única ocorrência visível da palavra "Renovar/Renove" pra usuário é o título de `Renew.tsx`. Trocar por "Sua fatura Pix" resolve.
 
-Vou expor isso como `hasPendingPixInvoice` no `usePendingInvoice` pra reusar limpo.
+## Canal discreto de cancelamento (cartão recorrente)
 
-## Mudanças
+### Regra de exibição
+Mostrar item **"Cancelar assinatura"** no dropdown Config **se e somente se**:
+- `isActive === true` (subscription ativa)
+- `subscription_state.asaas_customer_id IS NOT NULL` (não é premium manual da equipe)
+- **NÃO** existe Pix pendente (`!hasPendingPixInvoice`) → indicativo de cartão recorrente
 
-### 1. `src/hooks/usePendingInvoice.ts`
-Adicionar flag `hasPendingPixInvoice` (Pix pendente, mesmo sem urgência) ao lado do `hasUrgentInvoice` que já existe.
+Por que essa heurística? Quem está em cartão recorrente quase nunca tem `next_invoice` Pix populada — Asaas debita automático. Quem tem Pix pendente vê "Fatura Pix" no menu (pra ele, "cancelar" = parar de pagar a próxima Pix, sem precisar de email).
 
-### 2. `src/pages/Carteira.tsx`
-Adicionar card "Sua próxima fatura Pix" no topo da Carteira **só se `hasPendingPixInvoice`**:
-- Valor + data de vencimento + chip de status (em dia / vence em X dias / vencida)
-- Botão **"Ver QR Code Pix"** → navega pra `/renovar`
-- Se for cartão → não renderiza nada
+### Comportamento
+Click no item abre **AlertDialog** com:
+- Título: "Precisa de ajuda com sua assinatura?"
+- Texto: "Para qualquer ajuste na sua assinatura — pausar, alterar plano ou cancelar — envie um email para suporte@influlab.pro. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação."
+- Botão primário: **"Enviar email agora"** → `mailto:suporte@influlab.pro?subject=Ajuda com minha assinatura&body=Olá, preciso de ajuda com minha assinatura. Meu email cadastrado é: <user.email>`
+- Botão secundário: "Voltar"
 
-### 3. Menu/Profile
-Adicionar item "Fatura Pix" → `/renovar` **só visível quando `hasPendingPixInvoice`**. Vou descobrir o componente exato (Profile/Settings/dropdown) na execução. Cartão recorrente não vê o item.
+Sem botão "Cancelar agora" no app. Cancelamento self-service forçaria o cliente a tomar a decisão sozinho num clique — friction proposital pra dar à equipe a chance de reter.
 
-### 4. `src/pages/Renew.tsx`
-Adicionar faixa sutil no topo só quando `daysUntilDue > 3 && isActive`:
-> "Sua assinatura está ativa até DD/MM. Você pode adiantar o próximo pagamento abaixo."
+### Por que via email e não chat/WhatsApp
+Email cria registro escrito, dá tempo de retenção responder com proposta personalizada (desconto, pausa temporária), e evita "raivinha do cancelamento na hora". É padrão de SaaS B2C maduro (Notion, Loom, etc.).
 
-Mantém todo o resto intacto.
+## Mudanças no código
 
-### 5. `PixDueBanner.tsx`
-Não muda. Continua só pra urgência (≤3 dias). Pix em dia tem entrada sutil (Carteira + menu), urgente continua banner gritante no topo.
+### 1. `src/pages/Renew.tsx`
+Linha 110: `"Renove sua assinatura"` → `"Sua fatura Pix"`
 
-## Arquivos afetados
+### 2. `src/components/Navigation.tsx`
+Adicionar:
+- Import `MessageCircle` (ou `LifeBuoy`) do lucide
+- Hook `useSubscription` (pra `isActive`) — já é usado indiretamente
+- Estado `cancelHelpOpen`
+- Lógica `showSubscriptionHelp = isActive && !hasPendingPixInvoice && session?.user`
+- `DropdownMenuItem` "Ajuda com assinatura" abaixo de "Indicar amigos", visível só quando `showSubscriptionHelp`
+- `AlertDialog` no JSX com texto/botões descritos acima
+- O `mailto:` injeta o email do user logado no body
 
-- `src/hooks/usePendingInvoice.ts` (+1 flag exportada)
-- `src/pages/Carteira.tsx` (card opcional no topo)
-- `src/pages/Renew.tsx` (faixa "ainda em dia")
-- Componente de menu/perfil a identificar (item "Fatura Pix")
-
-## Não vou mexer em
-- Edge functions (já blindadas)
-- Banco / migrations
-- `PixDueBanner` (urgência continua igual)
-- Fluxo do AccessGuard
-- Nada relacionado a cartão recorrente
+### 3. Não vou mexer em
+- `AccessGuard` (texto já é neutro, "Pagar fatura pendente")
+- `PixDueBanner` (texto já é neutro, "Sua fatura Pix...")
+- Rota `/renovar` (URL técnica, ninguém digita)
+- Edge functions, banco
+- Fluxo Pix (intacto)
 
 ## Bloco copia-e-cola pra VPS
 
-Como mudanças são 100% frontend (Vercel auto-deploy do GitHub), entrego no fim:
-```
-# nada a rodar na VPS — Vercel pega do push automaticamente
+```bash
+# nada a rodar na VPS — Vercel auto-deploya do GitHub
+# (mudanças 100% frontend)
 ```
 
-Aguardo aprovação pra implementar.
+## Pergunta antes de aplicar
+
+Confirma que quer canal **só por email** (suporte@influlab.pro) ou prefere também oferecer **WhatsApp** como opção alternativa no mesmo dialog? E o item de menu vai chamar **"Ajuda com assinatura"** (mais sutil) ou **"Cancelar/alterar assinatura"** (mais transparente, mas usa a palavra "cancelar")?
