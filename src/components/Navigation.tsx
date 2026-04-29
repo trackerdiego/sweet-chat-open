@@ -41,6 +41,7 @@ export function Navigation() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isPremium } = useUserUsage();
   const { wallet } = useWallet();
+  const { hasPendingPixInvoice, hasUrgentInvoice } = usePendingInvoice();
   const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
 
