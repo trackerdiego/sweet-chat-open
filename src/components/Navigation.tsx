@@ -157,6 +157,15 @@ export function Navigation() {
                 <span className="flex-1">Carteira</span>
                 <span className="text-xs font-semibold tabular-nums text-muted-foreground">🪙 {wallet.coins_balance}</span>
               </DropdownMenuItem>
+              {hasPendingPixInvoice && (
+                <DropdownMenuItem onClick={() => navigate('/renovar')} className="gap-2">
+                  <QrCode size={16} className={hasUrgentInvoice ? 'text-destructive' : 'text-primary'} />
+                  <span className="flex-1">Fatura Pix</span>
+                  {hasUrgentInvoice && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-destructive">Urgente</span>
+                  )}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => navigate('/indique')} className="gap-2">
                 <Gift size={16} className="text-primary" />
                 <span>Indicar amigos</span>
