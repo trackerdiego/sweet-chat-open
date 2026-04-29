@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Coins, Gift, ArrowRight, TrendingUp, CheckCircle2, Flame, Tag } from 'lucide-react';
+import { Coins, Gift, ArrowRight, TrendingUp, CheckCircle2, Flame, Tag, QrCode, AlertTriangle } from 'lucide-react';
 import { useWallet } from '@/hooks/useWallet';
 import { useSubscription } from '@/hooks/useSubscription';
+import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { Button } from '@/components/ui/button';
 
 const COIN_TO_BRL = 0.01;
