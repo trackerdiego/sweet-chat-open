@@ -104,7 +104,7 @@ export default function Renew() {
         className="glass-card max-w-md w-full p-6 space-y-5"
       >
         <div className="text-center space-y-1">
-          <h1 className="font-serif text-2xl font-bold text-foreground">Renove sua assinatura</h1>
+          <h1 className="font-serif text-2xl font-bold text-foreground">Sua fatura Pix</h1>
           <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <Clock size={14} /> {dueLabel}
           </div>
