@@ -227,6 +227,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
   // ═══ ETAPA 1: profile ═══
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before profile`); return; }
     stages = await setStage(admin, runId, stages, "profile", { status: "running", started_at: new Date().toISOString() });
     const { error } = await admin.from("user_profiles").upsert({
       user_id: userId,
