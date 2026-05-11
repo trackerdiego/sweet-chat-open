@@ -332,22 +332,28 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
     const buildPrompt = (week: typeof WEEKS[number]) =>
       `Gere estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) do nicho "${input.primaryNiche}". Retorne EXATO no formato JSON do schema com array "strategies".`;
 
-    const weekResults = await Promise.allSettled(
-      WEEKS.map(async (week, i) => {
-        if (i > 0) await new Promise((r) => setTimeout(r, i * 600));
+    // Sequencial com retry: paralelo + Gemini estoura rate-limit no self-hosted
+    // e faz semanas inteiras caírem em fallback local (títulos genéricos
+    // "OBJEÇÕES/PECADOS/ESPERANÇA"). Sequencial é mais lento mas previsível.
+    const weekResults: PromiseSettledResult<{ week: typeof WEEKS[number]; strategies: Record<string, unknown>[] }>[] = [];
+    for (const week of WEEKS) {
+      try {
         const r = await callGeminiNative({
           apiKey: GEMINI_KEY,
           systemInstruction: buildSystem(week), prompt: buildPrompt(week),
           schema: { type: "object", properties: { strategies: { type: "array", items: STRATEGY_ITEM_SCHEMA } }, required: ["strategies"] },
           model: "gemini-2.5-flash", fallbackModel: "gemini-2.5-flash-lite",
           tag: `run-matrix-w${week.num}`, maxOutputTokens: 8192,
-          timeoutMs: 40000, fallbackTimeoutMs: 30000, primaryAttempts: 1, fallbackAttempts: 1,
+          timeoutMs: 60000, fallbackTimeoutMs: 45000, primaryAttempts: 2, fallbackAttempts: 2,
         });
         const obj = r.json as { strategies?: unknown[] };
         if (!Array.isArray(obj?.strategies) || obj.strategies.length === 0) throw new Error(`semana ${week.num} vazia`);
-        return { week, strategies: obj.strategies as Record<string, unknown>[] };
-      }),
-    );
+        weekResults.push({ status: "fulfilled", value: { week, strategies: obj.strategies as Record<string, unknown>[] } });
+      } catch (err) {
+        weekResults.push({ status: "rejected", reason: err });
+      }
+      await new Promise((r) => setTimeout(r, 800));
+    }
 
     let aiOk = 0;
     weekResults.forEach((res, idx) => {
