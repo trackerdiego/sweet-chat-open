@@ -44,7 +44,7 @@ const STAGE_META: Record<StageKey, { title: string; description: string; icon: t
 const STAGE_ORDER: StageKey[] = ['profile', 'audience', 'visceral', 'matrix'];
 
 const Onboarding = () => {
-  const { profile } = useUserProfile();
+  const { profile, refreshProfile } = useUserProfile();
   const navigate = useNavigate();
   const isReturningUser = !!profile && profile.primary_niche !== 'lifestyle' && profile.primary_niche.length < 80;
 
