@@ -251,6 +251,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   // ═══ ETAPA 2: audience description ═══
   let audienceDescription = "";
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before audience`); return; }
     stages = await setStage(admin, runId, stages, "audience", { status: "running", started_at: new Date().toISOString() });
     let source: "ai" | "fallback" = "ai";
     try {
