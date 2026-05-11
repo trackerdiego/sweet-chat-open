@@ -270,6 +270,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       audienceDescription = buildFallbackDescription(input.primaryNiche, secondaryList, styleDesc);
       console.warn(`[run ${runId}] audience fallback —`, err instanceof Error ? err.message : err);
     }
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before audience write`); return; }
     const { error } = await admin.from("audience_profiles").upsert({
       user_id: userId, audience_description: audienceDescription, generated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
