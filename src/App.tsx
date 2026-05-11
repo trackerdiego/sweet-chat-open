@@ -69,7 +69,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
-          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/onboarding" element={<Navigate to="/" replace />} />
           <Route path="/matriz" element={<Matrix />} />
           <Route path="/script" element={<Script />} />
           <Route path="/tarefas" element={<Tasks />} />

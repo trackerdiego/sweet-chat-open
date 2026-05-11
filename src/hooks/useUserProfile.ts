@@ -206,11 +206,22 @@ export function useUserProfile() {
     setProfile(null);
   }, [stopPolling]);
 
+  const refreshProfile = useCallback(async () => {
+    if (!session?.user) return null;
+    const { data } = await (supabase.from as any)('user_profiles')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (data) setProfile(data as UserProfile);
+    return data as UserProfile | null;
+  }, [session]);
+
   return {
     session,
     profile,
     loading,
     updateProfile,
+    refreshProfile,
     signOut,
     isAuthenticated: !!session,
     needsOnboarding: !!profile && !profile.onboarding_completed,
