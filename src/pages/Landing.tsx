@@ -43,7 +43,6 @@ const heroAvatars = [
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 import { StatsBar } from "@/components/landing/StatsBar";
-import { ProductDemoVideo } from "@/components/landing/ProductDemoVideo";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 
 import { ComparisonTable } from "@/components/landing/ComparisonTable";
