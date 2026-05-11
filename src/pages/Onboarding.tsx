@@ -82,11 +82,21 @@ const Onboarding = () => {
     if (run.status === 'completed' && matrixValidated) {
       toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
       try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
-      setTimeout(() => window.location.replace('/'), 900);
+      // Confirma no banco que onboarding_completed=true ANTES de navegar.
+      // Sem isso, o AppRoutes pode ler estado antigo (needsOnboarding=true) e
+      // jogar o usuário de volta para /onboarding ao tentar ir para /.
+      (async () => {
+        for (let i = 0; i < 5; i++) {
+          const p = await refreshProfile();
+          if (p?.onboarding_completed) break;
+          await new Promise(r => setTimeout(r, 400));
+        }
+        window.location.replace('/');
+      })();
     } else if (run.status === 'failed') {
       toast.error('Tivemos um problema em uma das etapas. Toque em "Tentar novamente".');
     }
-  }, [run, matrixValidated]);
+  }, [run, matrixValidated, refreshProfile]);
 
   const handleFinish = async () => {
     // Re-check session
