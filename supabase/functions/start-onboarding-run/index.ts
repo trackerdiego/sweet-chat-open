@@ -391,10 +391,13 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       return;
     }
 
-    const { error: upErr } = await admin.from("user_strategies").upsert({
+    // Delete-then-insert em vez de upsert: se um worker zumbi gravou antes,
+    // limpamos a contaminação antes de gravar a matriz nova.
+    await admin.from("user_strategies").delete().eq("user_id", userId);
+    const { error: upErr } = await admin.from("user_strategies").insert({
       user_id: userId, strategies: finalMatrix, generated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
-    if (upErr) throw new Error(`strategies upsert: ${upErr.message}`);
+    });
+    if (upErr) throw new Error(`strategies insert: ${upErr.message}`);
 
     await admin.from("user_profiles").update({ onboarding_completed: true }).eq("user_id", userId);
 
