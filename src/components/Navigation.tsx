@@ -65,16 +65,24 @@ export function Navigation() {
       // Sem isso, um run antigo pode terminar em background e re-escrever
       // onboarding_completed=true + user_strategies, jogando o usuário pra
       // matriz mesmo após o reset.
-      const [runRes, stratRes, audRes] = await Promise.all([
-        (supabase.from as any)('onboarding_runs')
-          .update({ status: 'failed', error_message: 'cancelled by user reset', completed_at: new Date().toISOString() })
-          .eq('user_id', uid)
-          .in('status', ['pending', 'running']),
+      try {
+        await supabase.functions.invoke('cancel-onboarding-runs', { body: {} });
+      } catch (e) {
+        console.warn('[handleResetNiche] cancel runs warning', e);
+      }
+      const [stratRes, audRes] = await Promise.all([
         (supabase.from as any)('user_strategies').delete().eq('user_id', uid),
         (supabase.from as any)('audience_profiles').delete().eq('user_id', uid),
       ]);
-      if (runRes?.error) {
-        console.warn('[handleResetNiche] cancel runs warning', runRes.error);
+      if (stratRes?.error) {
+        console.error('[handleResetNiche] user_strategies delete error', stratRes.error);
+        toast.error('Não foi possível limpar a matriz anterior. Avise o suporte.');
+        return;
+      }
+      if (audRes?.error) {
+        console.error('[handleResetNiche] audience_profiles delete error', audRes.error);
+        toast.error('Não foi possível limpar o perfil de público anterior. Avise o suporte.');
+        return;
       }
       if (stratRes?.error) {
         console.error('[handleResetNiche] user_strategies delete error', stratRes.error);
