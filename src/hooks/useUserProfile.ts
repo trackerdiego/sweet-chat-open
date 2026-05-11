@@ -201,6 +201,10 @@ export function useUserProfile() {
   const signOut = useCallback(async () => {
     stopPolling();
     localStorage.removeItem(SESSION_TOKEN_KEY);
+    // Limpa runId de onboarding pra evitar que o próximo usuário no mesmo
+    // device faça polling de um run alheio (RLS protege os dados, mas o
+    // estado de UI fica confuso).
+    try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
