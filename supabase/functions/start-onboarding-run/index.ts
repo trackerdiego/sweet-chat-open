@@ -461,6 +461,15 @@ serve(async (req) => {
       contentStyle: contentStyle.trim(),
     };
 
+    // CRÍTICO: cancela qualquer run anterior pending/running do usuário antes
+    // de criar o novo. Workers zumbis batem no isCancelled() e param de
+    // sobrescrever dados com o input_payload antigo (bug do "loja de roupas
+    // virou marketing digital").
+    await admin.from("onboarding_runs")
+      .update({ status: "failed", error_message: "superseded by new run", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("user_id", user.id)
+      .in("status", ["pending", "running"]);
+
     const { data: created, error: createErr } = await admin.from("onboarding_runs").insert({
       user_id: user.id,
       status: "pending",
