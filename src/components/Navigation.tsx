@@ -56,18 +56,38 @@ export function Navigation() {
 
   const handleResetNiche = async () => {
     const uid = session?.user?.id;
-    await updateProfile({ onboarding_completed: false, description_status: 'pending' as any });
-    if (uid) {
-      try {
-        await Promise.all([
-          (supabase.from as any)('user_strategies').delete().eq('user_id', uid),
-          (supabase.from as any)('audience_profiles').delete().eq('user_id', uid),
-        ]);
-      } catch (e) {
-        console.warn('[handleResetNiche] cleanup failed', e);
+    if (!uid) {
+      toast.error('Sessão expirada. Faça login novamente.');
+      return;
+    }
+    try {
+      const [stratRes, audRes] = await Promise.all([
+        (supabase.from as any)('user_strategies').delete().eq('user_id', uid),
+        (supabase.from as any)('audience_profiles').delete().eq('user_id', uid),
+      ]);
+      if (stratRes?.error) {
+        console.error('[handleResetNiche] user_strategies delete error', stratRes.error);
+        toast.error('Não foi possível limpar a matriz anterior. Avise o suporte.');
+        return;
       }
+      if (audRes?.error) {
+        console.error('[handleResetNiche] audience_profiles delete error', audRes.error);
+        toast.error('Não foi possível limpar o perfil de público anterior. Avise o suporte.');
+        return;
+      }
+    } catch (e) {
+      console.error('[handleResetNiche] cleanup failed', e);
+      toast.error('Erro ao limpar dados anteriores. Tente novamente.');
+      return;
+    }
+    const { error: profErr } = await updateProfile({ onboarding_completed: false, description_status: 'pending' as any });
+    if (profErr) {
+      console.error('[handleResetNiche] profile reset error', profErr);
+      toast.error('Erro ao redefinir perfil. Tente novamente.');
+      return;
     }
     try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
+    try { localStorage.removeItem('influlab_session_token'); } catch {}
     window.location.replace('/onboarding');
   };
 

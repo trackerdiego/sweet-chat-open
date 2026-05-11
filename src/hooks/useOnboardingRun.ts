@@ -70,7 +70,13 @@ export function useOnboardingRun() {
         setRun(r);
         setMatrixValidated(mv);
         runIdRef.current = r.id;
-        try { localStorage.setItem(STORAGE_KEY, r.id); } catch {}
+        // Só persiste runs ativos. Runs completos/falhos são lixo que faz o
+        // onboarding pular direto pra tela final ao reabrir.
+        if (r.status === 'pending' || r.status === 'running') {
+          try { localStorage.setItem(STORAGE_KEY, r.id); } catch {}
+        } else {
+          try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        }
       }
       return { run: r, matrixValidated: mv };
     } catch (e) {
@@ -123,11 +129,19 @@ export function useOnboardingRun() {
   const resume = useCallback(async () => {
     let storedId: string | null = null;
     try { storedId = localStorage.getItem(STORAGE_KEY); } catch {}
-    const res = await pollOnce(storedId || undefined);
+    // Só busca se temos um runId explícito armazenado. Sem isso, NÃO buscar o
+    // último run do usuário — caso contrário um run antigo "completed" reaparece
+    // e empurra direto pra tela final do onboarding.
+    if (!storedId) return null;
+    const res = await pollOnce(storedId);
     if (res?.run && (res.run.status === 'pending' || res.run.status === 'running')) {
       startPolling(res.run.id);
       return res.run;
     }
+    // Run finalizado/falho ou inexistente: limpa estado local
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    setRun(null);
+    setMatrixValidated(false);
     return null;
   }, [pollOnce, startPolling]);
 
