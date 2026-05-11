@@ -386,9 +386,6 @@ export default function Landing() {
         </div>
       </Section>
 
-      {/* ─── Product Demo Video ─── */}
-      <ProductDemoVideo />
-
       {/* ─── Features Grid ─── */}
       <Section className="py-20 px-4 bg-charcoal">
         <div className="container max-w-5xl mx-auto">
