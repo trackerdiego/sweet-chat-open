@@ -434,9 +434,6 @@ export default function Landing() {
       {/* ─── How It Works ─── */}
       <HowItWorks />
 
-      {/* ─── Video Testimonials ─── */}
-      <VideoTestimonialsGrid />
-
       {/* ─── Social Proof ─── */}
       <Section className="py-20 px-4 bg-background">
         <div className="container max-w-4xl mx-auto text-center">
