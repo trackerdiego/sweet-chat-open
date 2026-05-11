@@ -27,6 +27,19 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
+import avatar1 from "@/assets/avatars/avatar-1.png";
+import avatar2 from "@/assets/avatars/avatar-2.png";
+import avatar3 from "@/assets/avatars/avatar-3.png";
+import avatar4 from "@/assets/avatars/avatar-4.png";
+import avatar5 from "@/assets/avatars/avatar-5.png";
+
+const heroAvatars = [
+  { src: avatar1, alt: "Criador InfluLab" },
+  { src: avatar2, alt: "Criadora InfluLab" },
+  { src: avatar3, alt: "Criadores InfluLab" },
+  { src: avatar4, alt: "Criador InfluLab" },
+  { src: avatar5, alt: "Criadora InfluLab" },
+];
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 import { StatsBar } from "@/components/landing/StatsBar";
@@ -267,13 +280,14 @@ export default function Landing() {
               {/* Hero social proof */}
               <div className="mt-6 flex items-center gap-3">
                 <div className="flex -space-x-2">
-                  {["C", "J", "F", "M", "R"].map((c, i) => (
-                    <div
+                  {heroAvatars.map((a, i) => (
+                    <img
                       key={i}
-                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent ring-2 ring-charcoal flex items-center justify-center text-[11px] font-semibold text-white"
-                    >
-                      {c}
-                    </div>
+                      src={a.src}
+                      alt={a.alt}
+                      loading="lazy"
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-charcoal"
+                    />
                   ))}
                 </div>
                 <div className="text-xs text-white/60">
