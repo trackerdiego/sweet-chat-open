@@ -304,6 +304,9 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ─── Stats Bar ─── */}
+      <StatsBar />
+
       {/* ─── Feature Bar ─── */}
       <LandingFeatureBar />
 
