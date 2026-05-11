@@ -65,8 +65,19 @@ const Onboarding = () => {
     return false;
   };
 
-  // Tenta retomar um run em andamento ao montar
+  // Tenta retomar um run em andamento ao montar.
+  // CRÍTICO: só retoma se o profile ainda está sem onboarding completo. Se o
+  // usuário recomeçou via reset (onboarding_completed=false mas com matriz
+  // antiga), o resume cego pegava um run pending antigo cujo input_payload
+  // tinha o nicho ANTERIOR (ex.: "marketing digital") e sobrescrevia tudo
+  // com aquele dado, ignorando o que o usuário acabou de digitar.
   useEffect(() => {
+    if (!profile) return;
+    if (profile.onboarding_completed) {
+      // Se já completou, qualquer runId no localStorage é lixo.
+      try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
+      return;
+    }
     (async () => {
       const existing = await resume();
       if (existing && (existing.status === 'pending' || existing.status === 'running')) {
@@ -74,7 +85,7 @@ const Onboarding = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profile?.user_id, profile?.onboarding_completed]);
 
   // Quando o run termina, finaliza
   useEffect(() => {

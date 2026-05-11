@@ -152,6 +152,17 @@ export function useOnboardingRun() {
     if (!storedId) return null;
     const res = await pollOnce(storedId);
     if (res?.run && (res.run.status === 'pending' || res.run.status === 'running')) {
+      // Guard: só retoma runs RECENTES (< 10 min). Runs mais antigos provavelmente
+      // são zumbis de uma sessão anterior — o input_payload pode estar desatualizado
+      // (ex.: usuário recomeçou onboarding com nicho diferente). Limpa e ignora.
+      const ageMs = Date.now() - new Date(res.run.created_at).getTime();
+      if (ageMs > 10 * 60 * 1000) {
+        console.warn('[useOnboardingRun] discarding stale run', res.run.id, `${Math.round(ageMs/60000)}min old`);
+        try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        setRun(null);
+        setMatrixValidated(false);
+        return null;
+      }
       startPolling(res.run.id);
       return res.run;
     }

@@ -1,66 +1,63 @@
-## Problema
+## Diagnóstico
 
-`start-onboarding-run` retorna **500** ao apertar "Começar Jornada" (passo 2). O frontend só mostra `Edge Function returned a non-2xx status code` porque o `supabase.functions.invoke` engole o corpo da resposta. Sem o erro real, é chute.
+A matriz veio com o nicho antigo (marketing digital) mesmo você tendo descrito "loja de roupas" porque um **worker antigo continuou rodando em background** e sobrescreveu seus dados novos com os do payload anterior.
+
+Reconstruindo o que aconteceu:
+
+1. Tentativa anterior (marketing digital) → criou um `onboarding_runs` com `input_payload = "marketing digital"`, gravou o worker em `EdgeRuntime.waitUntil`, mas algo travou no meio (você relatou erros) e o `runId` ficou salvo em `localStorage` como pending/running.
+2. Você reabriu o onboarding e descreveu "loja de roupas".
+3. O `useEffect` de mount chamou `resume()`, viu o runId antigo no localStorage com status pending/running e voltou a fazer polling dele — o worker antigo terminou usando o **input_payload antigo** (marketing digital) e fez upsert em `audience_profiles` + `user_strategies` + `user_profiles.onboarding_completed=true`.
+4. Mesmo que você tenha clicado "Começar" e disparado um run novo (loja de roupas), o worker antigo ainda estava vivo e re-escreveu por cima depois.
+
+A salvaguarda existente (`if cur?.status === 'failed' skip writes`) só está na etapa 4 (matrix) e só dispara se ALGUÉM marcar o run antigo como failed — coisa que ninguém faz hoje quando o usuário recomeça.
 
 ## Plano
 
-### 1. Surfar a mensagem real do erro no frontend
-Em `src/hooks/useOnboardingRun.ts`, função `start()`: quando `supabase.functions.invoke` falhar, ler `error.context?.json()` ou fazer fetch manual com `.text()` pra capturar o `error` / `detail` que a edge function já retorna no body. Mostrar isso no toast em vez do genérico.
+### 1. Cancelar runs anteriores ao iniciar um novo (`start-onboarding-run/index.ts`)
+Antes de criar o novo `onboarding_runs`, marcar **todos** os runs `pending`/`running` desse `user_id` como `failed` com `error_message='superseded by new run'`. Isso garante que workers antigos vivos batam no guard de cancelamento e parem de escrever.
 
-### 2. Capturar erro completo em `start-onboarding-run`
-- O outer try/catch hoje retorna só `{ error: e.message }`. Adicionar `stack` e `name` no JSON quando `Deno.env.get("DEBUG_ERRORS") === "1"`.
-- Logar `console.error` antes de retornar pra cair no Docker logs do `functions` service.
+### 2. Estender o guard de cancelamento para TODAS as etapas (não só matrix)
+No início de cada etapa (profile, audience, visceral, matrix), reler `onboarding_runs.status`. Se for `failed`, abortar imediatamente sem fazer upsert. Hoje só a etapa 4 checa — etapas 1–3 sobrescrevem `user_profiles`, `audience_profiles` mesmo após cancelamento.
 
-### 3. Comandos de diagnóstico (rodar AGORA na VPS)
+### 3. Não retomar runs antigos quando o usuário está claramente recomeçando (`Onboarding.tsx`)
+Hoje o `useEffect` chama `resume()` cego. Adicionar regra: só retomar se `profile.onboarding_completed === false` E o run no localStorage tiver `created_at` recente (ex.: < 30 min). Caso contrário, limpar o `localStorage` e ignorar.
 
-**A) Pegar logs ao vivo do worker:**
-```bash
-ssh root@SEU_IP
-cd ~/supabase/docker
-docker compose logs -f functions --tail=200 | grep -E "start-onboarding|run-|error|ERROR"
-```
-Mantém aberto, vai no app, aperta "Começar Jornada" → erro aparece no log.
+### 4. Limpar dados velhos antes do worker novo gravar
+No worker novo, antes da etapa 4 (matrix) gravar `user_strategies`, deletar a linha existente desse `user_id` e inserir do zero (em vez de upsert) — assim, mesmo que algum worker zumbi tenha gravado antes, ele é apagado.
 
-**B) Ver últimos runs do user no Studio (`https://studio.influlab.pro` → SQL):**
+### 5. SQL pro VPS (Studio self-hosted) — corrigir SEU caso agora
+Limpar manualmente seus dados travados:
 ```sql
-select id, status, current_stage, error_message, stages, created_at, completed_at
-from public.onboarding_runs
-where user_id = (select id from auth.users where email = 'agentevendeagente@gmail.com')
-order by created_at desc limit 10;
-
--- Limpa runs antigos (incluindo qualquer 'pending' fantasma)
+-- Cancela runs órfãos
 update public.onboarding_runs
-   set status = 'failed', completed_at = coalesce(completed_at, now())
- where user_id = (select id from auth.users where email = 'agentevendeagente@gmail.com')
+   set status='failed', error_message='manual cleanup', completed_at=now()
+ where user_id = (select id from auth.users where email='SEU_EMAIL') 
    and status in ('pending','running');
 
--- Reseta perfil pra ter certeza
-update public.user_profiles
-   set onboarding_completed = false, description_status = 'pending', primary_niche = 'lifestyle'
- where user_id = (select id from auth.users where email = 'agentevendeagente@gmail.com');
+-- Apaga matriz e perfil de público antigos
+delete from public.user_strategies where user_id = (select id from auth.users where email='SEU_EMAIL');
+delete from public.audience_profiles where user_id = (select id from auth.users where email='SEU_EMAIL');
 
-delete from public.user_strategies
-where user_id = (select id from auth.users where email = 'agentevendeagente@gmail.com');
+-- Reseta onboarding pra você refazer limpo
+update public.user_profiles 
+   set onboarding_completed=false, description_status='pending', primary_niche='lifestyle'
+ where user_id = (select id from auth.users where email='SEU_EMAIL');
 ```
++ no DevTools do app: `localStorage.removeItem('influlab.onboardingRunId')` antes de refazer.
 
-**C) Limpar localStorage** — F12 no app → Application → Local Storage → remover `influlab.onboardingRunId`.
-
-### 4. Deploy do fix da matriz (que já fiz no loop anterior)
-Como você ainda não rodou o deploy do meu fix, o código novo (timeouts maiores + sequencial + retry) ainda nem está em produção. Aproveita e sobe junto:
+### 6. Deploy
 ```bash
-cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh start-onboarding-run
+ssh root@VPS
+cd /root/app && git pull
+./scripts/deploy-selfhost.sh start-onboarding-run
 ```
 
-### 5. Reproduzir e me mandar o log
-Depois de A+B+C+4, refaz o onboarding. Se ainda der 500, me cola **a linha exata** do `docker compose logs functions` que apareceu no momento do clique. Aí eu corrijo a causa raiz com precisão (se for Gemini key, RLS, timeout, parse, etc).
+## Resumo técnico
 
-## Arquivos previstos (loop seguinte, depois do diagnóstico)
+| Camada | Mudança |
+|---|---|
+| `start-onboarding-run/index.ts` | Cancela runs ativos antigos antes de criar novo; check de `status==='failed'` no início de cada etapa; delete-then-insert em `user_strategies` |
+| `src/pages/Onboarding.tsx` | `resume()` só se onboarding incompleto + run recente |
+| SQL manual | Limpa seu user pra rodar limpo agora |
 
-- `src/hooks/useOnboardingRun.ts` (mensagem de erro detalhada no toast)
-- `supabase/functions/start-onboarding-run/index.ts` (logs + body de erro mais rico)
-- Possivelmente outras correções dependendo do que o log mostrar
-
-## Resultado esperado
-
-- Você consegue ver o erro real (mensagem + stack) no toast e no log do Docker.
-- Eu consigo apontar a correção exata em 1 loop, sem ficar chutando.
+Não toca em prompts da Gemini, pillars ou schema da matriz — o problema não é geração, é contaminação cruzada de runs.

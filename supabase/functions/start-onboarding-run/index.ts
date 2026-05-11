@@ -207,6 +207,11 @@ async function setStage(admin: ReturnType<typeof createClient>, runId: string, s
 }
 
 // ─── Worker em background ─────────────────────────────────────
+async function isCancelled(admin: ReturnType<typeof createClient>, runId: string): Promise<boolean> {
+  const { data } = await admin.from("onboarding_runs").select("status").eq("id", runId).maybeSingle();
+  return data?.status === "failed";
+}
+
 async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string }) {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -222,6 +227,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
   // ═══ ETAPA 1: profile ═══
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before profile`); return; }
     stages = await setStage(admin, runId, stages, "profile", { status: "running", started_at: new Date().toISOString() });
     const { error } = await admin.from("user_profiles").upsert({
       user_id: userId,
@@ -245,6 +251,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   // ═══ ETAPA 2: audience description ═══
   let audienceDescription = "";
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before audience`); return; }
     stages = await setStage(admin, runId, stages, "audience", { status: "running", started_at: new Date().toISOString() });
     let source: "ai" | "fallback" = "ai";
     try {
@@ -263,6 +270,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       audienceDescription = buildFallbackDescription(input.primaryNiche, secondaryList, styleDesc);
       console.warn(`[run ${runId}] audience fallback —`, err instanceof Error ? err.message : err);
     }
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before audience write`); return; }
     const { error } = await admin.from("audience_profiles").upsert({
       user_id: userId, audience_description: audienceDescription, generated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -280,6 +288,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   // ═══ ETAPA 3: visceral avatar ═══
   let avatarProfile: Record<string, unknown> = {};
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before visceral`); return; }
     stages = await setStage(admin, runId, stages, "visceral", { status: "running", started_at: new Date().toISOString() });
     let source: "ai" | "fallback" = "ai";
     try {
@@ -300,6 +309,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       avatarProfile = buildFallbackAvatar(input.primaryNiche, secondaryList);
       console.warn(`[run ${runId}] visceral fallback —`, err instanceof Error ? err.message : err);
     }
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before visceral write`); return; }
     const { error } = await admin.from("audience_profiles").upsert({
       user_id: userId, audience_description: audienceDescription, avatar_profile: avatarProfile, generated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -315,6 +325,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
   // ═══ ETAPA 4: matrix 30 dias ═══
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before matrix`); return; }
     stages = await setStage(admin, runId, stages, "matrix", { status: "running", started_at: new Date().toISOString() });
     const dayAssignments = distributeVisceralElements(avatarProfile);
     const localMatrix: Record<string, unknown>[] = [];
@@ -380,10 +391,13 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       return;
     }
 
-    const { error: upErr } = await admin.from("user_strategies").upsert({
+    // Delete-then-insert em vez de upsert: se um worker zumbi gravou antes,
+    // limpamos a contaminação antes de gravar a matriz nova.
+    await admin.from("user_strategies").delete().eq("user_id", userId);
+    const { error: upErr } = await admin.from("user_strategies").insert({
       user_id: userId, strategies: finalMatrix, generated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
-    if (upErr) throw new Error(`strategies upsert: ${upErr.message}`);
+    });
+    if (upErr) throw new Error(`strategies insert: ${upErr.message}`);
 
     await admin.from("user_profiles").update({ onboarding_completed: true }).eq("user_id", userId);
 
@@ -446,6 +460,15 @@ serve(async (req) => {
       secondaryNiches: secondaryNiches || [],
       contentStyle: contentStyle.trim(),
     };
+
+    // CRÍTICO: cancela qualquer run anterior pending/running do usuário antes
+    // de criar o novo. Workers zumbis batem no isCancelled() e param de
+    // sobrescrever dados com o input_payload antigo (bug do "loja de roupas
+    // virou marketing digital").
+    await admin.from("onboarding_runs")
+      .update({ status: "failed", error_message: "superseded by new run", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("user_id", user.id)
+      .in("status", ["pending", "running"]);
 
     const { data: created, error: createErr } = await admin.from("onboarding_runs").insert({
       user_id: user.id,
