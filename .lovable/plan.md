@@ -1,41 +1,45 @@
-Sim — pelo diagnóstico, existe um ajuste que precisa rodar no Supabase self-hosted, porque o frontend está tentando apagar `user_strategies` e `audience_profiles`, mas essas tabelas não têm policy `DELETE` para o usuário autenticado. Com RLS ativo, o delete falha ou não remove nada; daí a matriz antiga continua existindo e o onboarding pode validar como “tudo pronto”.
+## Diagnóstico
 
-Plano de correção:
+O problema ainda não está no cache nem no SQL isoladamente. A navegação depende de `user_profiles.onboarding_completed`, mas a atualização desse estado no frontend fica presa em três riscos:
 
-1. Corrigir o reset no frontend
-- Tratar explicitamente erro nos deletes em `Navigation.tsx`, em vez de ignorar silenciosamente.
-- Limpar também o run salvo no navegador antes de redirecionar.
-- Garantir que o redirecionamento para `/onboarding` abra o formulário inicial, não a tela de pipeline/finalização.
+1. `AppRoutes` só decide entre `/onboarding` e app normal usando o perfil carregado no primeiro fetch.
+2. Depois que o onboarding em background termina, a tela faz `window.location.replace('/')` antes de forçar uma nova leitura do perfil.
+3. A rota `/onboarding` continua acessível mesmo quando `onboarding_completed=true`, então um run antigo/completo ou uma atualização atrasada pode produzir ida para tela errada, e o app pode cair em `/matriz`/app com dados antigos.
 
-2. Corrigir a retomada do onboarding
-- Ajustar `useOnboardingRun` para não salvar no localStorage runs que já estão `completed` ou `failed`.
-- Quando encontrar run finalizado, limpar `influlab.onboardingRunId` e não ativar pipeline.
+## Plano de correção
 
-3. Entregar SQL obrigatório para o Supabase Studio self-hosted
-- Criar policies `DELETE` para o próprio usuário em:
-  - `public.user_strategies`
-  - `public.audience_profiles`
-- Opcionalmente permitir limpar `onboarding_runs` antigos do próprio usuário, ou deixar só o frontend ignorar runs finalizados.
+1. **Adicionar sincronização explícita do perfil**
+   - Expor um `refreshProfile()` no `useUserProfile` para reler `user_profiles` sob demanda.
+   - Evitar depender apenas do estado inicial do hook após reset ou conclusão do onboarding.
 
-SQL recomendado para rodar no Studio self-hosted:
+2. **Bloquear rota `/onboarding` quando não deve processar automaticamente**
+   - No `AppRoutes`, tratar `/onboarding` de forma controlada:
+     - Se `needsOnboarding=true`, mostrar onboarding.
+     - Se `needsOnboarding=false`, não deixar onboarding antigo disparar fluxo/pipeline por acidente; redirecionar para `/`.
+   - Isso impede que apagar `/onboarding` da URL e dar refresh entre estados cause pulos inconsistentes.
 
-```sql
-create policy if not exists "Users can delete own strategies"
-on public.user_strategies
-for delete
-to authenticated
-using (auth.uid() = user_id);
+3. **Após reset de matriz, limpar estado local e aguardar banco confirmar**
+   - Em `Navigation.tsx`, depois de marcar `onboarding_completed=false`, invalidar/remover qualquer run local antigo.
+   - Redirecionar para `/onboarding` só após a atualização do perfil retornar sucesso.
 
-create policy if not exists "Users can delete own audience profile"
-on public.audience_profiles
-for delete
-to authenticated
-using (auth.uid() = user_id);
-```
+4. **Após onboarding terminar, atualizar perfil antes de sair da tela**
+   - Em `Onboarding.tsx`, quando `run.status === 'completed' && matrixValidated`, limpar run local e navegar para `/` somente depois de uma nova leitura do perfil confirmar `onboarding_completed=true`.
+   - Trocar `window.location.replace` por navegação controlada quando possível para evitar corrida com estado antigo.
 
-4. Se quiser corrigir o usuário atual imediatamente
-- Depois das policies, rodar uma limpeza manual para o email afetado, para remover a matriz antiga e forçar o formulário completo.
-- Como o Supabase self-hosted não expõe `auth.users` facilmente via frontend, eu entrego o SQL de limpeza usando o `user_id` exato se você me passar, ou usando uma consulta pelo email se o Studio tiver acesso à tabela `auth.users`.
+5. **Entregar SQL de auditoria/correção para o self-hosted**
+   - Como o backend é self-hosted, incluir um bloco SQL para verificar exatamente o usuário `agentevendeagente@gmail.com`: perfil, `onboarding_completed`, descrição, matriz e runs recentes.
+   - Incluir SQL opcional de reset limpo caso o banco ainda esteja inconsistente.
 
-Resultado esperado:
-- Ao clicar em “Redefinir matriz”, o app remove a matriz anterior, limpa o perfil de público anterior, zera o estado local e abre a primeira tela do onboarding para preencher nome, descrição do público/negócio e estilo antes de rodar a IA novamente.
+## Arquivos previstos
+
+- `src/hooks/useUserProfile.ts`
+- `src/App.tsx`
+- `src/pages/Onboarding.tsx`
+- `src/components/Navigation.tsx`
+
+## Resultado esperado
+
+- Ao acessar `/` com onboarding pendente, vai para `/onboarding` e fica no formulário.
+- Ao remover `/onboarding` da URL enquanto ainda está pendente, o app volta para `/onboarding` corretamente, sem pular para final ou matriz.
+- Ao concluir o onboarding, só entra no app depois de confirmar perfil e matriz válidos.
+- Ao resetar matriz, não reaproveita run antigo nem estado local antigo.
