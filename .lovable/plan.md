@@ -1,63 +1,96 @@
-## Diagnóstico
+## Visão de escala
 
-A matriz veio com o nicho antigo (marketing digital) mesmo você tendo descrito "loja de roupas" porque um **worker antigo continuou rodando em background** e sobrescreveu seus dados novos com os do payload anterior.
-
-Reconstruindo o que aconteceu:
-
-1. Tentativa anterior (marketing digital) → criou um `onboarding_runs` com `input_payload = "marketing digital"`, gravou o worker em `EdgeRuntime.waitUntil`, mas algo travou no meio (você relatou erros) e o `runId` ficou salvo em `localStorage` como pending/running.
-2. Você reabriu o onboarding e descreveu "loja de roupas".
-3. O `useEffect` de mount chamou `resume()`, viu o runId antigo no localStorage com status pending/running e voltou a fazer polling dele — o worker antigo terminou usando o **input_payload antigo** (marketing digital) e fez upsert em `audience_profiles` + `user_strategies` + `user_profiles.onboarding_completed=true`.
-4. Mesmo que você tenha clicado "Começar" e disparado um run novo (loja de roupas), o worker antigo ainda estava vivo e re-escreveu por cima depois.
-
-A salvaguarda existente (`if cur?.status === 'failed' skip writes`) só está na etapa 4 (matrix) e só dispara se ALGUÉM marcar o run antigo como failed — coisa que ninguém faz hoje quando o usuário recomeça.
+A correção anterior já resolve o problema pra todos os usuários (não só pra você): cancela runs zumbis no servidor, guarda em todas etapas, delete-then-insert, e descarta runs > 10 min. Mas faltam 3 endurecimentos pra aguentar centenas de usuários simultâneos sem criar novos órfãos.
 
 ## Plano
 
-### 1. Cancelar runs anteriores ao iniciar um novo (`start-onboarding-run/index.ts`)
-Antes de criar o novo `onboarding_runs`, marcar **todos** os runs `pending`/`running` desse `user_id` como `failed` com `error_message='superseded by new run'`. Isso garante que workers antigos vivos batam no guard de cancelamento e parem de escrever.
+### 1. Janitor automático de runs travados (novo cron)
+Hoje, se um worker morre no meio (OOM, deploy, crash), `onboarding_runs.status` fica `running` pra sempre — ocupa polling do frontend infinitamente e bloqueia novas tentativas até o usuário fechar a aba.
 
-### 2. Estender o guard de cancelamento para TODAS as etapas (não só matrix)
-No início de cada etapa (profile, audience, visceral, matrix), reler `onboarding_runs.status`. Se for `failed`, abortar imediatamente sem fazer upsert. Hoje só a etapa 4 checa — etapas 1–3 sobrescrevem `user_profiles`, `audience_profiles` mesmo após cancelamento.
-
-### 3. Não retomar runs antigos quando o usuário está claramente recomeçando (`Onboarding.tsx`)
-Hoje o `useEffect` chama `resume()` cego. Adicionar regra: só retomar se `profile.onboarding_completed === false` E o run no localStorage tiver `created_at` recente (ex.: < 30 min). Caso contrário, limpar o `localStorage` e ignorar.
-
-### 4. Limpar dados velhos antes do worker novo gravar
-No worker novo, antes da etapa 4 (matrix) gravar `user_strategies`, deletar a linha existente desse `user_id` e inserir do zero (em vez de upsert) — assim, mesmo que algum worker zumbi tenha gravado antes, ele é apagado.
-
-### 5. SQL pro VPS (Studio self-hosted) — corrigir SEU caso agora
-Limpar manualmente seus dados travados:
+**Fix:** edge function `cleanup-stuck-runs` chamada por cron a cada 5 min:
 ```sql
--- Cancela runs órfãos
+update onboarding_runs
+   set status='failed', error_message='worker timeout (>5min sem update)', completed_at=now()
+ where status in ('pending','running')
+   and updated_at < now() - interval '5 minutes';
+```
+Dispara via `pg_cron` (já tem no self-hosted) ou cron HTTP externo.
+
+### 2. Constraint de DB: no máximo 1 run ativo por usuário
+Sem isso, dois cliques rápidos em "Começar" criam dois `INSERT` simultâneos (a checagem JS não é atômica) → dois workers competindo pelo mesmo `user_strategies`.
+
+**Fix:** índice único parcial:
+```sql
+create unique index if not exists onboarding_runs_one_active_per_user
+  on public.onboarding_runs(user_id)
+  where status in ('pending','running');
+```
+Combinado com o cancel-old-runs que já fizemos (que vira `failed` antes do `INSERT`), garante atomicidade no DB — se uma race driblar a aplicação, o constraint barra.
+
+### 3. Limpar localStorage no logout
+Hoje, se Usuário A faz logout em desktop público e Usuário B loga, o `influlab.onboardingRunId` do A persiste e B pode acabar fazendo polling de um run alheio. RLS protege os dados, mas o estado de UI fica esquisito.
+
+**Fix:** em `useUserProfile.signOut()`, remover `influlab.onboardingRunId` (junto com `influlab_session_token` que já é limpo).
+
+### 4. Job-level user_id check no polling
+`get-onboarding-run-status` já filtra por usuário (RLS), mas adicionar checagem explícita `user_id === auth.uid()` antes de retornar é defesa em profundidade — protege contra um runId vazado em logs/URL.
+
+### 5. SQL pra rodar agora no Studio self-hosted
+Combina: (a) índice único, (b) cleanup imediato de TODOS os runs travados de TODOS os usuários, (c) reset específico do seu user (`agentevendeagente@gmail.com`).
+
+```sql
+-- (a) Constraint estrutural — vale pra todos os usuários daqui pra frente
+create unique index if not exists onboarding_runs_one_active_per_user
+  on public.onboarding_runs(user_id)
+  where status in ('pending','running');
+
+-- (b) Limpa TODOS os runs zumbis de TODOS os usuários (one-shot, antes do cron entrar)
 update public.onboarding_runs
-   set status='failed', error_message='manual cleanup', completed_at=now()
- where user_id = (select id from auth.users where email='SEU_EMAIL') 
-   and status in ('pending','running');
+   set status='failed',
+       error_message='backfill: stuck run cleanup',
+       completed_at=now(),
+       updated_at=now()
+ where status in ('pending','running')
+   and updated_at < now() - interval '5 minutes';
 
--- Apaga matriz e perfil de público antigos
-delete from public.user_strategies where user_id = (select id from auth.users where email='SEU_EMAIL');
-delete from public.audience_profiles where user_id = (select id from auth.users where email='SEU_EMAIL');
+-- (c) Reset do SEU user (agentevendeagente@gmail.com) pra refazer onboarding limpo
+with me as (select id from auth.users where email='agentevendeagente@gmail.com')
+update public.onboarding_runs
+   set status='failed', error_message='manual reset', completed_at=now(), updated_at=now()
+ where user_id = (select id from me) and status in ('pending','running');
 
--- Reseta onboarding pra você refazer limpo
-update public.user_profiles 
+delete from public.user_strategies
+ where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
+
+delete from public.audience_profiles
+ where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
+
+update public.user_profiles
    set onboarding_completed=false, description_status='pending', primary_niche='lifestyle'
- where user_id = (select id from auth.users where email='SEU_EMAIL');
-```
-+ no DevTools do app: `localStorage.removeItem('influlab.onboardingRunId')` antes de refazer.
-
-### 6. Deploy
-```bash
-ssh root@VPS
-cd /root/app && git pull
-./scripts/deploy-selfhost.sh start-onboarding-run
+ where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
 ```
 
-## Resumo técnico
+### 6. Cron pg_cron (uma vez no Studio, fica rodando pra sempre)
+```sql
+select cron.schedule(
+  'onboarding-runs-janitor',
+  '*/5 * * * *',
+  $$ update public.onboarding_runs
+        set status='failed',
+            error_message='janitor: no heartbeat 5min',
+            completed_at=now(),
+            updated_at=now()
+      where status in ('pending','running')
+        and updated_at < now() - interval '5 minutes' $$
+);
+```
 
-| Camada | Mudança |
+## Arquivos a tocar
+
+| Arquivo | Mudança |
 |---|---|
-| `start-onboarding-run/index.ts` | Cancela runs ativos antigos antes de criar novo; check de `status==='failed'` no início de cada etapa; delete-then-insert em `user_strategies` |
-| `src/pages/Onboarding.tsx` | `resume()` só se onboarding incompleto + run recente |
-| SQL manual | Limpa seu user pra rodar limpo agora |
+| `src/hooks/useUserProfile.ts` | `signOut()` remove `influlab.onboardingRunId` do localStorage |
+| `supabase/functions/get-onboarding-run-status/index.ts` | Confirmar (e adicionar se faltar) `user_id===auth.uid()` antes de retornar |
+| SQL manual (Studio) | Índice único + backfill + cron janitor + reset do seu user |
 
-Não toca em prompts da Gemini, pillars ou schema da matriz — o problema não é geração, é contaminação cruzada de runs.
+Não toca em prompts, geração de matriz, ou worker (já blindado na rodada anterior). Foco: durabilidade operacional pra escala.
