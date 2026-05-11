@@ -9,6 +9,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,8 +55,20 @@ export function Navigation() {
   const supportMailto = `mailto:suporte@influlab.pro?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
 
   const handleResetNiche = async () => {
+    const uid = session?.user?.id;
     await updateProfile({ onboarding_completed: false, description_status: 'pending' as any });
-    navigate('/onboarding', { replace: true });
+    if (uid) {
+      try {
+        await Promise.all([
+          (supabase.from as any)('user_strategies').delete().eq('user_id', uid),
+          (supabase.from as any)('audience_profiles').delete().eq('user_id', uid),
+        ]);
+      } catch (e) {
+        console.warn('[handleResetNiche] cleanup failed', e);
+      }
+    }
+    try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
+    window.location.replace('/onboarding');
   };
 
   const handleNotificationToggle = async () => {
