@@ -9,6 +9,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
