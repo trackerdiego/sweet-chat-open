@@ -69,7 +69,7 @@ const Onboarding = () => {
   useEffect(() => {
     (async () => {
       const existing = await resume();
-      if (existing && (existing.status === 'pending' || existing.status === 'running' || existing.status === 'completed')) {
+      if (existing && (existing.status === 'pending' || existing.status === 'running')) {
         setShowPipeline(true);
       }
     })();

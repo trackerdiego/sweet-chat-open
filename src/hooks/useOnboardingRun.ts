@@ -128,9 +128,6 @@ export function useOnboardingRun() {
       startPolling(res.run.id);
       return res.run;
     }
-    if (res?.run && res.run.status === 'completed' && res.matrixValidated) {
-      return res.run;
-    }
     return null;
   }, [pollOnce, startPolling]);
 
