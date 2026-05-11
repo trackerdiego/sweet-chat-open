@@ -325,6 +325,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
   // ═══ ETAPA 4: matrix 30 dias ═══
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before matrix`); return; }
     stages = await setStage(admin, runId, stages, "matrix", { status: "running", started_at: new Date().toISOString() });
     const dayAssignments = distributeVisceralElements(avatarProfile);
     const localMatrix: Record<string, unknown>[] = [];
