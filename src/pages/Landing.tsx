@@ -502,78 +502,97 @@ export default function Landing() {
       {/* ─── Pricing ─── */}
       <div id="planos" className="scroll-mt-20">
       <Section className="py-24 px-4 bg-charcoal">
-        <div className="container max-w-md mx-auto">
-          <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
-            <CardContent className="p-8 text-center">
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-3 border border-primary/20">
-                <Crown className="h-3.5 w-3.5" />
-                Acesso completo
-              </span>
-              <div className="flex items-center justify-center gap-2 mb-4">
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-primary-foreground px-2.5 py-1 rounded-full">
-                  Mais escolhido
+        <div className="container max-w-3xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="font-serif text-3xl md:text-4xl font-bold text-white mb-2">Escolha seu plano</h2>
+            <p className="text-white/60 text-sm">Mesmo acesso completo nos dois. Cancele quando quiser.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+            {/* Card Mensal */}
+            <Card className="border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden flex flex-col">
+              <CardContent className="p-7 text-center flex flex-col flex-1">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white/70 bg-white/5 rounded-full px-3 py-1 mb-3 border border-white/10 self-center">
+                  Mensal
                 </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/90">
-                  Economia de R$267/ano
-                </span>
-              </div>
-              <h3 className="font-serif text-2xl font-bold mb-1 text-white">
-                InfluLab Pro
-              </h3>
-              <p className="text-white/50 text-sm mb-6">
-                Tudo que você precisa para crescer
-              </p>
-              <div className="mb-6 space-y-2">
-                <div className="flex items-baseline justify-center gap-1">
-                  <span className="text-sm text-white/50">R$</span>
-                  <span className="text-5xl font-bold tracking-tight text-white">
-                    24,75
-                  </span>
-                  <span className="text-white/50 text-sm">/mês</span>
+                <h3 className="font-serif text-2xl font-bold mb-1 text-white">InfluLab Pro</h3>
+                <p className="text-white/50 text-sm mb-6">Pague mês a mês</p>
+                <div className="mb-6 space-y-2">
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-sm text-white/50">R$</span>
+                    <span className="text-5xl font-bold tracking-tight text-white">47</span>
+                    <span className="text-white/50 text-sm">/mês</span>
+                  </div>
+                  <p className="text-xs text-white/50">Cobrado todo mês • cancele quando quiser</p>
                 </div>
-                <p className="text-xs text-white/60">
-                  no plano anual de <span className="font-semibold text-white">R$297</span> à vista
-                  <span className="text-primary font-medium"> • economize 47%</span>
-                </p>
-                <p className="text-xs text-white/40">
-                  <span className="line-through text-white/30">R$47/mês</span> no plano mensal avulso
-                </p>
-              </div>
 
-              <ul className="text-left space-y-2.5 mb-8">
-                {benefits.map((b, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <span className="text-white/80">{b}</span>
-                  </li>
-                ))}
-              </ul>
-              <Button
-                size="lg"
-                onClick={() => navigate("/auth?plan=yearly")}
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
-              >
-                Assinar plano anual
-                <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-              <p className="text-xs text-white/40 mt-3">
-                Acesso imediato • Cancele a qualquer momento
-              </p>
-
-              {/* Opção mensal discreta */}
-              <div className="mt-6 pt-5 border-t border-white/10">
-                <p className="text-xs text-white/40 mb-2">Prefere pagar mês a mês?</p>
-                <button
-                  type="button"
+                <ul className="text-left space-y-2.5 mb-8 flex-1">
+                  {benefits.map((b, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-white/60 shrink-0 mt-0.5" />
+                      <span className="text-white/75">{b}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  size="lg"
+                  variant="outline"
                   onClick={() => navigate("/auth?plan=monthly")}
-                  className="text-sm text-white/70 hover:text-primary transition-colors underline-offset-4 hover:underline"
+                  className="w-full border-white/20 bg-transparent text-white hover:bg-white/10 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                 >
-                  Assinar mensal por R$47/mês →
-                </button>
-              </div>
-            </CardContent>
-          </Card>
+                  Assinar mensal
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Card Anual (destaque) */}
+            <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm flex flex-col">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
+              <CardContent className="p-7 text-center flex flex-col flex-1">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-primary-foreground px-2.5 py-1 rounded-full mb-3 self-center">
+                  <Crown className="h-3.5 w-3.5" />
+                  Mais escolhido • 47% off
+                </span>
+                <h3 className="font-serif text-2xl font-bold mb-1 text-white">InfluLab Pro</h3>
+                <p className="text-white/50 text-sm mb-6">Pague 1x no ano e economize</p>
+                <div className="mb-6 space-y-2">
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-sm text-white/50">R$</span>
+                    <span className="text-5xl font-bold tracking-tight text-white">297</span>
+                    <span className="text-white/50 text-sm">/ano</span>
+                  </div>
+                  <p className="text-xs text-white/70">
+                    Equivale a <span className="font-semibold text-white">R$24,75/mês</span>
+                    <span className="text-primary font-medium"> • economize R$267</span>
+                  </p>
+                  <p className="text-xs text-white/40">
+                    <span className="line-through text-white/30">R$564/ano</span> se pago mensalmente
+                  </p>
+                </div>
+
+                <ul className="text-left space-y-2.5 mb-8 flex-1">
+                  {benefits.map((b, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                      <span className="text-white/80">{b}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  size="lg"
+                  onClick={() => navigate("/auth?plan=yearly")}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
+                >
+                  Assinar plano anual
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+                <p className="text-xs text-white/40 mt-3">
+                  Acesso imediato • Cancele a qualquer momento
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </Section>
       </div>
