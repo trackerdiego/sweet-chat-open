@@ -8,7 +8,7 @@ const rows: { feature: string; influlab: Cell; chatgpt: Cell; sozinho: Cell }[] 
   { feature: "Análise visceral da audiência", influlab: "yes", chatgpt: "no", sozinho: "no" },
   { feature: "Guia diário automático", influlab: "yes", chatgpt: "no", sozinho: "no" },
   { feature: "Tempo de setup", influlab: "5 min", chatgpt: "Horas", sozinho: "Semanas" },
-  { feature: "Custo mensal", influlab: "R$24,75", chatgpt: "R$120+", sozinho: "Seu tempo" },
+  { feature: "Custo mensal", influlab: "R$47/mês ou R$24,75 no anual", chatgpt: "R$120+", sozinho: "Seu tempo" },
   { feature: "Suporte humano", influlab: "yes", chatgpt: "no", sozinho: "no" },
 ];
 
