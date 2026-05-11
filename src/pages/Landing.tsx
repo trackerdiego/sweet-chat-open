@@ -496,6 +496,9 @@ export default function Landing() {
         </div>
       </Section>
 
+      {/* ─── Comparison Table ─── */}
+      <ComparisonTable />
+
       {/* ─── Pricing ─── */}
       <div id="planos" className="scroll-mt-20">
       <Section className="py-24 px-4 bg-charcoal">
