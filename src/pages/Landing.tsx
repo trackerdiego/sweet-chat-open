@@ -29,6 +29,12 @@ import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
+import { StatsBar } from "@/components/landing/StatsBar";
+import { ProductDemoVideo } from "@/components/landing/ProductDemoVideo";
+import { HowItWorks } from "@/components/landing/HowItWorks";
+import { VideoTestimonialsGrid } from "@/components/landing/VideoTestimonialsGrid";
+import { ComparisonTable } from "@/components/landing/ComparisonTable";
+import { GuaranteeBlock } from "@/components/landing/GuaranteeBlock";
 
 function Section({
   children,
