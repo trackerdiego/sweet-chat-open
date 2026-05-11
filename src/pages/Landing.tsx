@@ -29,6 +29,12 @@ import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
+import { StatsBar } from "@/components/landing/StatsBar";
+import { ProductDemoVideo } from "@/components/landing/ProductDemoVideo";
+import { HowItWorks } from "@/components/landing/HowItWorks";
+import { VideoTestimonialsGrid } from "@/components/landing/VideoTestimonialsGrid";
+import { ComparisonTable } from "@/components/landing/ComparisonTable";
+import { GuaranteeBlock } from "@/components/landing/GuaranteeBlock";
 
 function Section({
   children,
@@ -257,6 +263,28 @@ export default function Landing() {
                   Cancele quando quiser • Suporte humano
                 </span>
               </div>
+
+              {/* Hero social proof */}
+              <div className="mt-6 flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  {["C", "J", "F", "M", "R"].map((c, i) => (
+                    <div
+                      key={i}
+                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent ring-2 ring-charcoal flex items-center justify-center text-[11px] font-semibold text-white"
+                    >
+                      {c}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-white/60">
+                  <div className="flex gap-0.5 mb-0.5">
+                    {[...Array(5)].map((_, j) => (
+                      <Star key={j} className="h-3 w-3 fill-primary text-primary" />
+                    ))}
+                  </div>
+                  <span className="text-white/50">+1.200 criadores ativos</span>
+                </div>
+              </div>
             </motion.div>
 
             {/* Right — Mockup */}
@@ -275,6 +303,9 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      {/* ─── Stats Bar ─── */}
+      <StatsBar />
 
       {/* ─── Feature Bar ─── */}
       <LandingFeatureBar />
@@ -342,6 +373,9 @@ export default function Landing() {
         </div>
       </Section>
 
+      {/* ─── Product Demo Video ─── */}
+      <ProductDemoVideo />
+
       {/* ─── Features Grid ─── */}
       <Section className="py-20 px-4 bg-charcoal">
         <div className="container max-w-5xl mx-auto">
@@ -382,6 +416,12 @@ export default function Landing() {
           </div>
         </div>
       </Section>
+
+      {/* ─── How It Works ─── */}
+      <HowItWorks />
+
+      {/* ─── Video Testimonials ─── */}
+      <VideoTestimonialsGrid />
 
       {/* ─── Social Proof ─── */}
       <Section className="py-20 px-4 bg-background">
@@ -455,6 +495,9 @@ export default function Landing() {
           </div>
         </div>
       </Section>
+
+      {/* ─── Comparison Table ─── */}
+      <ComparisonTable />
 
       {/* ─── Pricing ─── */}
       <div id="planos" className="scroll-mt-20">
@@ -534,6 +577,9 @@ export default function Landing() {
         </div>
       </Section>
       </div>
+
+      {/* ─── Guarantee ─── */}
+      <GuaranteeBlock />
 
       {/* ─── FAQ ─── */}
       <Section className="py-20 px-4 bg-background">
