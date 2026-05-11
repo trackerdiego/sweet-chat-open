@@ -373,6 +373,9 @@ export default function Landing() {
         </div>
       </Section>
 
+      {/* ─── Product Demo Video ─── */}
+      <ProductDemoVideo />
+
       {/* ─── Features Grid ─── */}
       <Section className="py-20 px-4 bg-charcoal">
         <div className="container max-w-5xl mx-auto">
@@ -413,6 +416,12 @@ export default function Landing() {
           </div>
         </div>
       </Section>
+
+      {/* ─── How It Works ─── */}
+      <HowItWorks />
+
+      {/* ─── Video Testimonials ─── */}
+      <VideoTestimonialsGrid />
 
       {/* ─── Social Proof ─── */}
       <Section className="py-20 px-4 bg-background">
@@ -565,6 +574,9 @@ export default function Landing() {
         </div>
       </Section>
       </div>
+
+      {/* ─── Guarantee ─── */}
+      <GuaranteeBlock />
 
       {/* ─── FAQ ─── */}
       <Section className="py-20 px-4 bg-background">
