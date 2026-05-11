@@ -365,6 +365,15 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
     finalMatrix.sort((a, b) => Number(a.day) - Number(b.day));
     if (finalMatrix.length < 28) throw new Error(`matriz incompleta (${finalMatrix.length})`);
 
+    // Antes de escrever os resultados finais, verifica se o run foi cancelado
+    // pelo usuário (via reset). Sem isso, um worker antigo termina e
+    // re-escreve onboarding_completed=true depois do reset.
+    const { data: cur } = await admin.from("onboarding_runs").select("status").eq("id", runId).maybeSingle();
+    if (cur?.status === "failed") {
+      console.log(`[run ${runId}] cancelled mid-flight — skipping final writes`);
+      return;
+    }
+
     const { error: upErr } = await admin.from("user_strategies").upsert({
       user_id: userId, strategies: finalMatrix, generated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
