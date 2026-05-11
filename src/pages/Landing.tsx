@@ -27,6 +27,19 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
+import avatar1 from "@/assets/avatars/avatar-1.png";
+import avatar2 from "@/assets/avatars/avatar-2.png";
+import avatar3 from "@/assets/avatars/avatar-3.png";
+import avatar4 from "@/assets/avatars/avatar-4.png";
+import avatar5 from "@/assets/avatars/avatar-5.png";
+
+const heroAvatars = [
+  { src: avatar1, alt: "Criador InfluLab" },
+  { src: avatar2, alt: "Criadora InfluLab" },
+  { src: avatar3, alt: "Criadores InfluLab" },
+  { src: avatar4, alt: "Criador InfluLab" },
+  { src: avatar5, alt: "Criadora InfluLab" },
+];
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 import { StatsBar } from "@/components/landing/StatsBar";
