@@ -263,6 +263,28 @@ export default function Landing() {
                   Cancele quando quiser • Suporte humano
                 </span>
               </div>
+
+              {/* Hero social proof */}
+              <div className="mt-6 flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  {["C", "J", "F", "M", "R"].map((c, i) => (
+                    <div
+                      key={i}
+                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent ring-2 ring-charcoal flex items-center justify-center text-[11px] font-semibold text-white"
+                    >
+                      {c}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-white/60">
+                  <div className="flex gap-0.5 mb-0.5">
+                    {[...Array(5)].map((_, j) => (
+                      <Star key={j} className="h-3 w-3 fill-primary text-primary" />
+                    ))}
+                  </div>
+                  <span className="text-white/50">+1.200 criadores ativos</span>
+                </div>
+              </div>
             </motion.div>
 
             {/* Right — Mockup */}
