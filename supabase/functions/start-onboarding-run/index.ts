@@ -309,6 +309,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       avatarProfile = buildFallbackAvatar(input.primaryNiche, secondaryList);
       console.warn(`[run ${runId}] visceral fallback —`, err instanceof Error ? err.message : err);
     }
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before visceral write`); return; }
     const { error } = await admin.from("audience_profiles").upsert({
       user_id: userId, audience_description: audienceDescription, avatar_profile: avatarProfile, generated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
