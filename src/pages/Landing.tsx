@@ -280,13 +280,14 @@ export default function Landing() {
               {/* Hero social proof */}
               <div className="mt-6 flex items-center gap-3">
                 <div className="flex -space-x-2">
-                  {["C", "J", "F", "M", "R"].map((c, i) => (
-                    <div
+                  {heroAvatars.map((a, i) => (
+                    <img
                       key={i}
-                      className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent ring-2 ring-charcoal flex items-center justify-center text-[11px] font-semibold text-white"
-                    >
-                      {c}
-                    </div>
+                      src={a.src}
+                      alt={a.alt}
+                      loading="lazy"
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-charcoal"
+                    />
                   ))}
                 </div>
                 <div className="text-xs text-white/60">
