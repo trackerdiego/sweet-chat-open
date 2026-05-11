@@ -1,24 +1,17 @@
-# Substituir iniciais por fotos reais nos avatares do hero
+## Remover seção de depoimentos em vídeo vertical da landing page
 
-## Mudança
-No hero da Landing (`src/pages/Landing.tsx`, linhas 268-287), o bloco "+1.200 criadores ativos" mostra 5 círculos com as letras C/J/F/M/R sobre gradiente roxo. Trocar pelas 5 fotos enviadas.
+### Contexto
+A landing page atual exibe duas seções de vídeo:
+1. **Vídeo horizontal de demo** (`ProductDemoVideo`) — demonstração do produto em 16:9.
+2. **Depoimentos em vídeo vertical** (`VideoTestimonialsGrid`) — grid de cards com vídeos de criadores em formato vertical (scroll horizontal no mobile).
 
-## Passos
+### O que será feito
+Remover a seção `VideoTestimonialsGrid` da `Landing.tsx`, mantendo apenas o `ProductDemoVideo` (horizontal). Também remover a importação do componente caso não seja mais usada em outro lugar do arquivo.
 
-1. **Copiar as 5 imagens** para `src/assets/avatars/`:
-   - `imgi_7_Frame-3.png` → `avatar-1.png`
-   - `imgi_6_Frame-4.png` → `avatar-2.png`
-   - `imgi_5_Frame-5.png` → `avatar-3.png`
-   - `imgi_4_Frame-8.png` → `avatar-4.png`
-   - `imgi_3_Frame-9.png` → `avatar-5.png`
+### Arquivos alterados
+- `src/pages/Landing.tsx`
+  - Remover importação de `VideoTestimonialsGrid`
+  - Remover uso `<VideoTestimonialsGrid />` da JSX
 
-2. **Editar `src/pages/Landing.tsx`**:
-   - Importar as 5 imagens como módulos ES6
-   - Substituir o `.map(["C","J",...])` por um array de `{ src, alt }` renderizando `<img>` com mesmas classes (`w-8 h-8 rounded-full ring-2 ring-charcoal`) + `object-cover` e `loading="lazy"`
-   - Remover o gradiente de fundo (não aparece mais por baixo da foto)
-
-## Fora de escopo
-- Mexer em qualquer outro avatar/seção da landing
-- Backend, qualquer outra página
-
-100% frontend, deploy automático Vercel.
+### Técnico
+100% frontend. Deploy automático via Vercel. Sem impacto no backend ou Supabase.

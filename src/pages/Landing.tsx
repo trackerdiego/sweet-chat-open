@@ -45,7 +45,7 @@ import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 import { StatsBar } from "@/components/landing/StatsBar";
 import { ProductDemoVideo } from "@/components/landing/ProductDemoVideo";
 import { HowItWorks } from "@/components/landing/HowItWorks";
-import { VideoTestimonialsGrid } from "@/components/landing/VideoTestimonialsGrid";
+
 import { ComparisonTable } from "@/components/landing/ComparisonTable";
 import { GuaranteeBlock } from "@/components/landing/GuaranteeBlock";
 
