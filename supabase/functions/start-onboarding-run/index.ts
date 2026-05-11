@@ -207,6 +207,11 @@ async function setStage(admin: ReturnType<typeof createClient>, runId: string, s
 }
 
 // ─── Worker em background ─────────────────────────────────────
+async function isCancelled(admin: ReturnType<typeof createClient>, runId: string): Promise<boolean> {
+  const { data } = await admin.from("onboarding_runs").select("status").eq("id", runId).maybeSingle();
+  return data?.status === "failed";
+}
+
 async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string }) {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
