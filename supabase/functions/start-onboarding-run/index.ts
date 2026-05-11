@@ -288,6 +288,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   // ═══ ETAPA 3: visceral avatar ═══
   let avatarProfile: Record<string, unknown> = {};
   try {
+    if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before visceral`); return; }
     stages = await setStage(admin, runId, stages, "visceral", { status: "running", started_at: new Date().toISOString() });
     let source: "ai" | "fallback" = "ai";
     try {
