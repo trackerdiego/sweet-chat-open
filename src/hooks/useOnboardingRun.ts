@@ -107,11 +107,28 @@ export function useOnboardingRun() {
     setStarting(true);
     setError(null);
     try {
-      const { data, error: invokeErr } = await supabase.functions.invoke('start-onboarding-run', {
-        body: params,
+      // Fetch direto pra capturar o body do erro (invoke engole o JSON em caso de non-2xx)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirou. Faça login novamente.');
+      const url = `${(supabase as any).supabaseUrl}/functions/v1/start-onboarding-run`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: (supabase as any).supabaseKey,
+        },
+        body: JSON.stringify(params),
       });
-      if (invokeErr) throw invokeErr;
-      const runId = (data as any)?.runId as string | undefined;
+      const raw = await res.text();
+      let parsed: any = null;
+      try { parsed = raw ? JSON.parse(raw) : null; } catch {}
+      if (!res.ok) {
+        const detail = parsed?.detail || parsed?.error || raw || `HTTP ${res.status}`;
+        console.error('[start-onboarding-run] erro:', res.status, parsed || raw);
+        throw new Error(`(${res.status}) ${detail}`);
+      }
+      const runId = parsed?.runId as string | undefined;
       if (!runId) throw new Error('runId ausente na resposta');
       try { localStorage.setItem(STORAGE_KEY, runId); } catch {}
       startPolling(runId);

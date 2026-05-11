@@ -474,7 +474,16 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ runId }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
-    console.error("start-onboarding-run error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error("start-onboarding-run FATAL:", err.name, err.message, err.stack);
+    return new Response(
+      JSON.stringify({
+        error: "Falha ao iniciar onboarding",
+        detail: err.message,
+        name: err.name,
+        stack: err.stack?.split("\n").slice(0, 6).join(" | "),
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 });
