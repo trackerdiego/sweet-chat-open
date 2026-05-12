@@ -9,6 +9,7 @@ import { useUserUsage } from '@/hooks/useUserUsage';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckCircle2, Lock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HelpButton } from '@/components/HelpButton';
 
 const Matrix = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();

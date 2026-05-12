@@ -9,6 +9,7 @@ import { DailyGuide, AiGuideContent } from '@/components/DailyGuide';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HelpButton } from '@/components/HelpButton';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
