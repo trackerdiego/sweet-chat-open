@@ -325,40 +325,6 @@ export default function Help() {
             </AccordionContent>
           </AccordionItem>
 
-          {/* ===================== TUTORIAIS ===================== */}
-          <AccordionItem
-            value="tutoriais"
-            className="glass-card border-none px-4 rounded-2xl"
-          >
-            <AccordionTrigger className="hover:no-underline py-4">
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                  <PlayCircle size={18} />
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground flex items-center gap-2">
-                    Tutoriais em vídeo
-                    <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-1.5 py-0.5 rounded-full font-semibold">
-                      Em breve
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground font-normal">
-                    Vídeos curtos de cada ferramenta
-                  </p>
-                </div>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pb-5 text-sm text-muted-foreground">
-              <p>
-                Estamos preparando vídeos curtos mostrando como usar cada ferramenta do app:
-                Matriz, Script, Tarefas, Ferramentas e mais.
-              </p>
-              <p className="mt-2 text-xs">
-                Quer ser avisado quando lançarmos? Mantenha as notificações ativadas em
-                Config → Ativar notificações.
-              </p>
-            </AccordionContent>
-          </AccordionItem>
 
           {/* ===================== SUPORTE ===================== */}
           <AccordionItem
