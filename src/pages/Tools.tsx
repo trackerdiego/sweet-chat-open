@@ -14,6 +14,7 @@ import { AiChat } from '@/components/AiChat';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
+import { HelpButton } from '@/components/HelpButton';
 
 type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat';
 
