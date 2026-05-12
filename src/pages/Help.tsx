@@ -359,6 +359,7 @@ export default function Help() {
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+        </div>
 
         <motion.div
           initial={{ opacity: 0 }}
