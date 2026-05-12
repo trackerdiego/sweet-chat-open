@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Coins,
@@ -12,6 +13,7 @@ import {
   PlayCircle,
   Mail,
   HelpCircle,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,11 +22,35 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { VideoEmbed } from '@/components/landing/VideoEmbed';
+import { TUTORIALS, type TutorialTopic } from '@/data/tutorials';
 
 const SUPPORT_EMAIL = 'suporte@influlab.pro';
+const TUTORIAL_TOPICS: TutorialTopic[] = ['onboarding', 'matriz', 'scripts', 'tools', 'tarefas'];
 
 export default function Help() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Hash-driven open state for tutorials accordion (e.g. /ajuda#matriz)
+  const initialHash = location.hash.replace('#', '') as TutorialTopic | '';
+  const [openTutorial, setOpenTutorial] = useState<string>(
+    TUTORIAL_TOPICS.includes(initialHash as TutorialTopic) ? initialHash : '',
+  );
+  const tutorialRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    const hash = location.hash.replace('#', '');
+    if (!hash) return;
+    if (TUTORIAL_TOPICS.includes(hash as TutorialTopic)) {
+      setOpenTutorial(hash);
+      // small delay so accordion content mounts before scroll
+      const t = setTimeout(() => {
+        tutorialRefs.current[hash]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
+      return () => clearTimeout(t);
+    }
+  }, [location.hash]);
 
   return (
     <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
