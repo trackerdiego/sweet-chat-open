@@ -77,7 +77,71 @@ export default function Help() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
+      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6">
+        {/* ===================== TUTORIAIS EM VÍDEO ===================== */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <PlayCircle size={16} className="text-primary" />
+            <h2 className="font-semibold text-foreground text-sm">Tutoriais em vídeo</h2>
+          </div>
+
+          <Accordion
+            type="single"
+            collapsible
+            value={openTutorial}
+            onValueChange={setOpenTutorial}
+            className="space-y-3"
+          >
+            {TUTORIALS.map((tut) => (
+              <AccordionItem
+                key={tut.topic}
+                id={tut.topic}
+                ref={(el) => (tutorialRefs.current[tut.topic] = el as HTMLDivElement | null)}
+                value={tut.topic}
+                className="glass-card border-none px-4 rounded-2xl scroll-mt-4"
+              >
+                <AccordionTrigger className="hover:no-underline py-4">
+                  <div className="flex items-center gap-3 text-left flex-1">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                      <PlayCircle size={18} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{tut.title}</p>
+                      <p className="text-xs text-muted-foreground font-normal flex items-center gap-1.5">
+                        <Clock size={11} /> {tut.duration}
+                        {!tut.wistiaId && (
+                          <span className="ml-1.5 text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+                            Em produção
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-5 space-y-3 text-sm text-muted-foreground">
+                  <p>{tut.description}</p>
+                  {tut.wistiaId ? (
+                    <VideoEmbed
+                      provider="wistia"
+                      videoId={tut.wistiaId}
+                      title={tut.title}
+                      thumbnailUrl={tut.thumbnailUrl}
+                      aspect="16/9"
+                    />
+                  ) : (
+                    <div className="aspect-video w-full rounded-2xl bg-gradient-to-br from-primary/15 via-charcoal/40 to-accent/10 ring-1 ring-white/10 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <PlayCircle size={32} className="text-primary/60" />
+                      <p className="font-medium text-foreground/80">Vídeo em produção</p>
+                      <p>Estamos finalizando a gravação. Volte em breve!</p>
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </section>
+
+        <div className="space-y-4">
         <Accordion
           type="single"
           collapsible
