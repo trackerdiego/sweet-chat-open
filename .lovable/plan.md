@@ -1,96 +1,63 @@
-## Visão de escala
+# Plano: Tutoriais em vídeo (Onboarding, Matriz, Scripts, Tools, Tarefas)
 
-A correção anterior já resolve o problema pra todos os usuários (não só pra você): cancela runs zumbis no servidor, guarda em todas etapas, delete-then-insert, e descarta runs > 10 min. Mas faltam 3 endurecimentos pra aguentar centenas de usuários simultâneos sem criar novos órfãos.
+## Visão geral
+Híbrido: `/ajuda` vira a central de tutoriais (1 vídeo por funcionalidade) e cada página do app ganha um botão "?" no header que leva direto pro vídeo correspondente via âncora (`/ajuda#matriz`). Hospedagem em **Wistia** (player limpo, sem ads, branding controlável — já suportado pelo `VideoEmbed` existente).
 
-## Plano
+## O que muda na UI
 
-### 1. Janitor automático de runs travados (novo cron)
-Hoje, se um worker morre no meio (OOM, deploy, crash), `onboarding_runs.status` fica `running` pra sempre — ocupa polling do frontend infinitamente e bloqueia novas tentativas até o usuário fechar a aba.
+### 1. `/ajuda` — nova seção "Tutoriais"
+Substituir o item "Em breve" do accordion atual por uma seção real com 5 cards de vídeo, cada um com `id` âncora pra link direto:
 
-**Fix:** edge function `cleanup-stuck-runs` chamada por cron a cada 5 min:
-```sql
-update onboarding_runs
-   set status='failed', error_message='worker timeout (>5min sem update)', completed_at=now()
- where status in ('pending','running')
-   and updated_at < now() - interval '5 minutes';
-```
-Dispara via `pg_cron` (já tem no self-hosted) ou cron HTTP externo.
+- `#onboarding` — Como configurar seu perfil
+- `#matriz` — Entendendo sua matriz estratégica de 30 dias
+- `#scripts` — Gerando roteiros com IA
+- `#tools` — Ferramentas (hooks, CTAs, storytelling…)
+- `#tarefas` — Checklist diária e como ganhar coins
 
-### 2. Constraint de DB: no máximo 1 run ativo por usuário
-Sem isso, dois cliques rápidos em "Começar" criam dois `INSERT` simultâneos (a checagem JS não é atômica) → dois workers competindo pelo mesmo `user_strategies`.
+Cada card: thumbnail Wistia + play, título, descrição curta, duração. Lazy-load (padrão já existente no `VideoEmbed`).
 
-**Fix:** índice único parcial:
-```sql
-create unique index if not exists onboarding_runs_one_active_per_user
-  on public.onboarding_runs(user_id)
-  where status in ('pending','running');
-```
-Combinado com o cancel-old-runs que já fizemos (que vira `failed` antes do `INSERT`), garante atomicidade no DB — se uma race driblar a aplicação, o constraint barra.
+### 2. Botão "?" em cada página
+Adicionar nos headers de:
+- `Onboarding.tsx`
+- `Matrix.tsx`
+- `Script.tsx`
+- `Tools.tsx`
+- `Tasks.tsx`
 
-### 3. Limpar localStorage no logout
-Hoje, se Usuário A faz logout em desktop público e Usuário B loga, o `influlab.onboardingRunId` do A persiste e B pode acabar fazendo polling de um run alheio. RLS protege os dados, mas o estado de UI fica esquisito.
+Comportamento: ícone `HelpCircle` discreto → `navigate('/ajuda#matriz')`. Em `/ajuda`, detectar `location.hash` no mount, abrir o accordion certo e fazer `scrollIntoView` suave.
 
-**Fix:** em `useUserProfile.signOut()`, remover `influlab.onboardingRunId` (junto com `influlab_session_token` que já é limpo).
+### 3. Componente reutilizável
+`src/components/HelpButton.tsx` recebendo `topic: 'onboarding' | 'matriz' | 'scripts' | 'tools' | 'tarefas'` — encapsula ícone + navegação, mantém visual consistente.
 
-### 4. Job-level user_id check no polling
-`get-onboarding-run-status` já filtra por usuário (RLS), mas adicionar checagem explícita `user_id === auth.uid()` antes de retornar é defesa em profundidade — protege contra um runId vazado em logs/URL.
+## Implementação técnica
 
-### 5. SQL pra rodar agora no Studio self-hosted
-Combina: (a) índice único, (b) cleanup imediato de TODOS os runs travados de TODOS os usuários, (c) reset específico do seu user (`agentevendeagente@gmail.com`).
+**Arquivos novos:**
+- `src/components/HelpButton.tsx` — botão "?" reutilizável
+- `src/data/tutorials.ts` — mapa `{ topic, wistiaId, title, description, duration }` (fonte única de verdade; trocar IDs quando vídeos estiverem prontos)
 
-```sql
--- (a) Constraint estrutural — vale pra todos os usuários daqui pra frente
-create unique index if not exists onboarding_runs_one_active_per_user
-  on public.onboarding_runs(user_id)
-  where status in ('pending','running');
+**Arquivos editados:**
+- `src/pages/Help.tsx` — substituir bloco "Tutoriais em breve" por accordion com 5 itens, cada um com `<VideoEmbed provider="wistia" videoId={...} />`. Adicionar lógica de hash → abrir item + scroll suave.
+- `src/pages/Onboarding.tsx`, `Matrix.tsx`, `Script.tsx`, `Tools.tsx`, `Tasks.tsx` — adicionar `<HelpButton topic="..." />` nos headers.
 
--- (b) Limpa TODOS os runs zumbis de TODOS os usuários (one-shot, antes do cron entrar)
-update public.onboarding_runs
-   set status='failed',
-       error_message='backfill: stuck run cleanup',
-       completed_at=now(),
-       updated_at=now()
- where status in ('pending','running')
-   and updated_at < now() - interval '5 minutes';
+**Não precisa mexer em `VideoEmbed`** — já suporta Wistia nativamente (`https://fast.wistia.net/embed/iframe/${videoId}`). Único detalhe: `thumbnailUrl` precisa ser passado manualmente pra Wistia (YouTube infere automático). Vou aceitar `thumbnailUrl` opcional em cada entrada de `tutorials.ts`; quando não tiver, cai no gradient fallback que já existe no componente.
 
--- (c) Reset do SEU user (agentevendeagente@gmail.com) pra refazer onboarding limpo
-with me as (select id from auth.users where email='agentevendeagente@gmail.com')
-update public.onboarding_runs
-   set status='failed', error_message='manual reset', completed_at=now(), updated_at=now()
- where user_id = (select id from me) and status in ('pending','running');
+**Sem backend:** zero mudança de schema, zero edge function, zero deploy de VPS. É 100% frontend → auto-deploy Vercel ao commitar.
 
-delete from public.user_strategies
- where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
+## Estado dos vídeos
+Você ainda não gravou. Estratégia em 2 fases:
 
-delete from public.audience_profiles
- where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
+**Fase 1 (agora):** Subo a estrutura toda funcionando com **placeholders** — botão "?" navegando, accordion abrindo na âncora certa, cards mostrando "Vídeo em produção" no lugar do player. Tudo pronto pra receber os IDs.
 
-update public.user_profiles
-   set onboarding_completed=false, description_status='pending', primary_niche='lifestyle'
- where user_id = (select id from auth.users where email='agentevendeagente@gmail.com');
-```
+**Fase 2 (depois que você gravar):** Você sobe os 5 vídeos no Wistia, me manda os 5 IDs (formato: `abc123xyz`) e eu faço 1 PR de 1 minuto trocando os valores em `src/data/tutorials.ts`.
 
-### 6. Cron pg_cron (uma vez no Studio, fica rodando pra sempre)
-```sql
-select cron.schedule(
-  'onboarding-runs-janitor',
-  '*/5 * * * *',
-  $$ update public.onboarding_runs
-        set status='failed',
-            error_message='janitor: no heartbeat 5min',
-            completed_at=now(),
-            updated_at=now()
-      where status in ('pending','running')
-        and updated_at < now() - interval '5 minutes' $$
-);
-```
+Posso também sugerir o roteiro de cada vídeo (script falado + sequência de cliques na tela) se quiser — ajuda a manter consistência e duração curta (90-180s cada é o ideal pra retenção).
 
-## Arquivos a tocar
+## O que NÃO faz parte
+- Não mexe em `/`, landing, ou paywall
+- Não adiciona ferramenta de gravação/upload no app
+- Não cria sistema de "marcar como assistido" (pode entrar num v2 se quiser gamificar com coins)
 
-| Arquivo | Mudança |
-|---|---|
-| `src/hooks/useUserProfile.ts` | `signOut()` remove `influlab.onboardingRunId` do localStorage |
-| `supabase/functions/get-onboarding-run-status/index.ts` | Confirmar (e adicionar se faltar) `user_id===auth.uid()` antes de retornar |
-| SQL manual (Studio) | Índice único + backfill + cron janitor + reset do seu user |
-
-Não toca em prompts, geração de matriz, ou worker (já blindado na rodada anterior). Foco: durabilidade operacional pra escala.
+## Próximos passos (após este plano)
+1. Implementar Fase 1 com placeholders
+2. Você grava + sobe os 5 vídeos no Wistia
+3. Me manda os IDs → troca rápida em `tutorials.ts`
