@@ -3,6 +3,7 @@ import { useInfluencer } from '@/hooks/useInfluencer';
 import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HelpButton } from '@/components/HelpButton';
 
 const Script = () => {
   const { strategies, loading } = useUserStrategies();
@@ -22,7 +23,10 @@ const Script = () => {
   }
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))] relative">
+      <div className="absolute right-3 top-[max(1rem,env(safe-area-inset-top))] md:top-24 z-10">
+        <HelpButton topic="scripts" variant="dark" />
+      </div>
       {todayStrategy && (
         <ScriptGenerator
           strategy={todayStrategy}

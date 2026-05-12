@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, X, Users, Brain, LayoutGrid, UserCircle } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { HelpButton } from '@/components/HelpButton';
 
 const contentStyles = [
   { id: 'casual', label: 'Casual', description: 'Leve e descontraído, como conversa entre amigos', emoji: '😊' },
@@ -335,7 +336,10 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center">
+      <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center relative">
+        <div className="absolute right-3 top-[max(1rem,env(safe-area-inset-top))]">
+          <HelpButton topic="onboarding" />
+        </div>
         <span className="font-serif text-xl font-bold text-primary">InfluLab</span>
         <p className="text-white/60 text-sm mt-1">Configure seu perfil</p>
       </div>

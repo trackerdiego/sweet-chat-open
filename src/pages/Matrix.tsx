@@ -9,6 +9,7 @@ import { useUserUsage } from '@/hooks/useUserUsage';
 import { PremiumGate } from '@/components/PremiumGate';
 import { CheckCircle2, Lock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HelpButton } from '@/components/HelpButton';
 
 const Matrix = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();
@@ -58,9 +59,12 @@ const Matrix = () => {
   return (
     <div className="min-h-screen pb-24 md:pt-20">
       <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
-        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-lg mx-auto">
-          <h1 className="font-serif text-3xl font-bold text-white">Matriz 30 Dias</h1>
-          <p className="text-white/60 text-sm mt-1">Sua biblioteca completa de estratégias</p>
+        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-lg mx-auto flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-serif text-3xl font-bold text-white">Matriz 30 Dias</h1>
+            <p className="text-white/60 text-sm mt-1">Sua biblioteca completa de estratégias</p>
+          </div>
+          <HelpButton topic="matriz" />
         </motion.div>
       </div>
 

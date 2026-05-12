@@ -14,6 +14,7 @@ import { AiChat } from '@/components/AiChat';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
+import { HelpButton } from '@/components/HelpButton';
 
 type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat';
 
@@ -329,7 +330,10 @@ const Tools = () => {
       <AnimatePresence mode="wait">
         {!selectedTool ? (
           <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-            <div className="text-center space-y-2 mb-6">
+            <div className="relative text-center space-y-2 mb-6">
+              <div className="absolute right-0 top-0">
+                <HelpButton topic="tools" variant="dark" />
+              </div>
               <h1 className="font-serif text-2xl font-bold">Ferramentas IA</h1>
               <p className="text-muted-foreground text-sm">Ferramentas avançadas alimentadas pelo seu estudo visceral</p>
             </div>

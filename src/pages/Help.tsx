@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Coins,
@@ -12,6 +13,7 @@ import {
   PlayCircle,
   Mail,
   HelpCircle,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,11 +22,35 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { VideoEmbed } from '@/components/landing/VideoEmbed';
+import { TUTORIALS, type TutorialTopic } from '@/data/tutorials';
 
 const SUPPORT_EMAIL = 'suporte@influlab.pro';
+const TUTORIAL_TOPICS: TutorialTopic[] = ['onboarding', 'matriz', 'scripts', 'tools', 'tarefas'];
 
 export default function Help() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Hash-driven open state for tutorials accordion (e.g. /ajuda#matriz)
+  const initialHash = location.hash.replace('#', '') as TutorialTopic | '';
+  const [openTutorial, setOpenTutorial] = useState<string>(
+    TUTORIAL_TOPICS.includes(initialHash as TutorialTopic) ? initialHash : '',
+  );
+  const tutorialRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    const hash = location.hash.replace('#', '');
+    if (!hash) return;
+    if (TUTORIAL_TOPICS.includes(hash as TutorialTopic)) {
+      setOpenTutorial(hash);
+      // small delay so accordion content mounts before scroll
+      const t = setTimeout(() => {
+        tutorialRefs.current[hash]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
+      return () => clearTimeout(t);
+    }
+  }, [location.hash]);
 
   return (
     <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
@@ -51,7 +77,71 @@ export default function Help() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
+      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6">
+        {/* ===================== TUTORIAIS EM VÍDEO ===================== */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <PlayCircle size={16} className="text-primary" />
+            <h2 className="font-semibold text-foreground text-sm">Tutoriais em vídeo</h2>
+          </div>
+
+          <Accordion
+            type="single"
+            collapsible
+            value={openTutorial}
+            onValueChange={setOpenTutorial}
+            className="space-y-3"
+          >
+            {TUTORIALS.map((tut) => (
+              <AccordionItem
+                key={tut.topic}
+                id={tut.topic}
+                ref={(el) => (tutorialRefs.current[tut.topic] = el as HTMLDivElement | null)}
+                value={tut.topic}
+                className="glass-card border-none px-4 rounded-2xl scroll-mt-4"
+              >
+                <AccordionTrigger className="hover:no-underline py-4">
+                  <div className="flex items-center gap-3 text-left flex-1">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                      <PlayCircle size={18} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{tut.title}</p>
+                      <p className="text-xs text-muted-foreground font-normal flex items-center gap-1.5">
+                        <Clock size={11} /> {tut.duration}
+                        {!tut.wistiaId && (
+                          <span className="ml-1.5 text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+                            Em produção
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-5 space-y-3 text-sm text-muted-foreground">
+                  <p>{tut.description}</p>
+                  {tut.wistiaId ? (
+                    <VideoEmbed
+                      provider="wistia"
+                      videoId={tut.wistiaId}
+                      title={tut.title}
+                      thumbnailUrl={tut.thumbnailUrl}
+                      aspect="16/9"
+                    />
+                  ) : (
+                    <div className="aspect-video w-full rounded-2xl bg-gradient-to-br from-primary/15 via-charcoal/40 to-accent/10 ring-1 ring-white/10 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <PlayCircle size={32} className="text-primary/60" />
+                      <p className="font-medium text-foreground/80">Vídeo em produção</p>
+                      <p>Estamos finalizando a gravação. Volte em breve!</p>
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </section>
+
+        <div className="space-y-4">
         <Accordion
           type="single"
           collapsible
@@ -235,40 +325,6 @@ export default function Help() {
             </AccordionContent>
           </AccordionItem>
 
-          {/* ===================== TUTORIAIS ===================== */}
-          <AccordionItem
-            value="tutoriais"
-            className="glass-card border-none px-4 rounded-2xl"
-          >
-            <AccordionTrigger className="hover:no-underline py-4">
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                  <PlayCircle size={18} />
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground flex items-center gap-2">
-                    Tutoriais em vídeo
-                    <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-1.5 py-0.5 rounded-full font-semibold">
-                      Em breve
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground font-normal">
-                    Vídeos curtos de cada ferramenta
-                  </p>
-                </div>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pb-5 text-sm text-muted-foreground">
-              <p>
-                Estamos preparando vídeos curtos mostrando como usar cada ferramenta do app:
-                Matriz, Script, Tarefas, Ferramentas e mais.
-              </p>
-              <p className="mt-2 text-xs">
-                Quer ser avisado quando lançarmos? Mantenha as notificações ativadas em
-                Config → Ativar notificações.
-              </p>
-            </AccordionContent>
-          </AccordionItem>
 
           {/* ===================== SUPORTE ===================== */}
           <AccordionItem
@@ -303,6 +359,7 @@ export default function Help() {
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+        </div>
 
         <motion.div
           initial={{ opacity: 0 }}
