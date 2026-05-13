@@ -1,63 +1,52 @@
-# Plano: Tutoriais em vídeo (Onboarding, Matriz, Scripts, Tools, Tarefas)
+## Objetivo
+Mostrar o vídeo Wistia `e9u6kg4om8` (vertical 9:16 — "como adicionar o app à tela inicial") em um **modal automático no primeiro login** do usuário, com opção de fechar e não exibir novamente.
 
-## Visão geral
-Híbrido: `/ajuda` vira a central de tutoriais (1 vídeo por funcionalidade) e cada página do app ganha um botão "?" no header que leva direto pro vídeo correspondente via âncora (`/ajuda#matriz`). Hospedagem em **Wistia** (player limpo, sem ads, branding controlável — já suportado pelo `VideoEmbed` existente).
+## Estratégia
 
-## O que muda na UI
+**Gatilho:** primeiro login após signup. Como o app já tem onboarding obrigatório, o melhor momento é **logo após o usuário concluir o onboarding e cair no `/` pela primeira vez** — ali ele acabou de virar usuário ativo e precisa instalar o PWA pra receber push/usar offline.
 
-### 1. `/ajuda` — nova seção "Tutoriais"
-Substituir o item "Em breve" do accordion atual por uma seção real com 5 cards de vídeo, cada um com `id` âncora pra link direto:
+**Persistência:** flag em `localStorage` (`influlab.installVideoSeen=1`). Sem schema novo, sem backend, sem migration. Se o user trocar de device, vê de novo — aceitável (é tutorial de instalação, faz sentido por device).
 
-- `#onboarding` — Como configurar seu perfil
-- `#matriz` — Entendendo sua matriz estratégica de 30 dias
-- `#scripts` — Gerando roteiros com IA
-- `#tools` — Ferramentas (hooks, CTAs, storytelling…)
-- `#tarefas` — Checklist diária e como ganhar coins
+**Não exibir quando:**
+- Já está em PWA standalone (`display-mode: standalone` ou `navigator.standalone`) — já instalou.
+- Está dentro de iframe / preview Lovable — evita poluir dev.
+- Já marcou como visto.
 
-Cada card: thumbnail Wistia + play, título, descrição curta, duração. Lazy-load (padrão já existente no `VideoEmbed`).
+## Arquivos
 
-### 2. Botão "?" em cada página
-Adicionar nos headers de:
-- `Onboarding.tsx`
-- `Matrix.tsx`
-- `Script.tsx`
-- `Tools.tsx`
-- `Tasks.tsx`
+1. **`src/components/InstallVideoModal.tsx`** (novo)
+   - Dialog do shadcn, fundo escuro, fecha em X ou "Já instalei / Ver depois".
+   - Carrega o script `player.js` + `e9u6kg4om8.js` via `useEffect` (uma vez, com cleanup-safe — checa se já foi adicionado).
+   - Renderiza `<wistia-player media-id="e9u6kg4om8" aspect="0.5625" />` num container 9:16 com `max-h-[80vh]` mobile-first.
+   - Botão secundário "Não mostrar novamente" → grava localStorage e fecha.
 
-Comportamento: ícone `HelpCircle` discreto → `navigate('/ajuda#matriz')`. Em `/ajuda`, detectar `location.hash` no mount, abrir o accordion certo e fazer `scrollIntoView` suave.
+2. **`src/pages/Index.tsx`** (edição mínima)
+   - `useEffect` no mount: se `!localStorage['influlab.installVideoSeen']` && não-standalone && não-iframe && `profile.onboarding_completed` → abre modal após 800ms (deixa a página renderizar).
+   - Reaproveita lógica existente de `useInAppBrowser` / detecção standalone que já temos em `useInstallPrompt`.
 
-### 3. Componente reutilizável
-`src/components/HelpButton.tsx` recebendo `topic: 'onboarding' | 'matriz' | 'scripts' | 'tools' | 'tarefas'` — encapsula ícone + navegação, mantém visual consistente.
+3. **`src/data/tutorials.ts`** (opcional, sem mudanças necessárias)
+   - O vídeo `e9u6kg4om8` é específico de instalação, separado dos 5 tutoriais de funcionalidades — não entra nesse catálogo.
 
-## Implementação técnica
+## Detalhes técnicos
 
-**Arquivos novos:**
-- `src/components/HelpButton.tsx` — botão "?" reutilizável
-- `src/data/tutorials.ts` — mapa `{ topic, wistiaId, title, description, duration }` (fonte única de verdade; trocar IDs quando vídeos estiverem prontos)
+- **Tipo do custom element:** declarar global em `src/vite-env.d.ts` pra TS não reclamar:
+  ```ts
+  declare namespace JSX {
+    interface IntrinsicElements {
+      'wistia-player': React.DetailedHTMLProps<any, any> & { 'media-id': string; aspect?: string };
+    }
+  }
+  ```
+- **Scripts Wistia:** injetar via `document.createElement('script')` com `data-wistia-loaded` flag pra não duplicar entre navegações SPA.
+- **Acessibilidade:** `aria-label`, foco no botão fechar, ESC fecha.
+- **Mobile:** vídeo 9:16, container `max-w-[360px]` centralizado, modal full-screen no mobile (<sm).
 
-**Arquivos editados:**
-- `src/pages/Help.tsx` — substituir bloco "Tutoriais em breve" por accordion com 5 itens, cada um com `<VideoEmbed provider="wistia" videoId={...} />`. Adicionar lógica de hash → abrir item + scroll suave.
-- `src/pages/Onboarding.tsx`, `Matrix.tsx`, `Script.tsx`, `Tools.tsx`, `Tasks.tsx` — adicionar `<HelpButton topic="..." />` nos headers.
+## Fora do escopo
 
-**Não precisa mexer em `VideoEmbed`** — já suporta Wistia nativamente (`https://fast.wistia.net/embed/iframe/${videoId}`). Único detalhe: `thumbnailUrl` precisa ser passado manualmente pra Wistia (YouTube infere automático). Vou aceitar `thumbnailUrl` opcional em cada entrada de `tutorials.ts`; quando não tiver, cai no gradient fallback que já existe no componente.
+- Re-exibir manualmente (poderíamos adicionar um link "Como instalar" em `/ajuda` depois, fácil).
+- Tracking de visualizações (sem analytics novo).
+- Forçar instalação — só ensina, user fecha quando quiser.
 
-**Sem backend:** zero mudança de schema, zero edge function, zero deploy de VPS. É 100% frontend → auto-deploy Vercel ao commitar.
+## Deploy
 
-## Estado dos vídeos
-Você ainda não gravou. Estratégia em 2 fases:
-
-**Fase 1 (agora):** Subo a estrutura toda funcionando com **placeholders** — botão "?" navegando, accordion abrindo na âncora certa, cards mostrando "Vídeo em produção" no lugar do player. Tudo pronto pra receber os IDs.
-
-**Fase 2 (depois que você gravar):** Você sobe os 5 vídeos no Wistia, me manda os 5 IDs (formato: `abc123xyz`) e eu faço 1 PR de 1 minuto trocando os valores em `src/data/tutorials.ts`.
-
-Posso também sugerir o roteiro de cada vídeo (script falado + sequência de cliques na tela) se quiser — ajuda a manter consistência e duração curta (90-180s cada é o ideal pra retenção).
-
-## O que NÃO faz parte
-- Não mexe em `/`, landing, ou paywall
-- Não adiciona ferramenta de gravação/upload no app
-- Não cria sistema de "marcar como assistido" (pode entrar num v2 se quiser gamificar com coins)
-
-## Próximos passos (após este plano)
-1. Implementar Fase 1 com placeholders
-2. Você grava + sobe os 5 vídeos no Wistia
-3. Me manda os IDs → troca rápida em `tutorials.ts`
+100% frontend → auto-deploy Vercel. Sem VPS, sem edge function, sem SQL.
