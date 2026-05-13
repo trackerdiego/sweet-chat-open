@@ -53,7 +53,6 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
           className="relative mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl bg-charcoal/60 ring-1 ring-white/10"
           style={{ aspectRatio: '9 / 16' }}
         >
-          {/* @ts-expect-error custom element */}
           <wistia-player media-id={WISTIA_ID} aspect="0.5625" style={{ display: 'block', width: '100%', height: '100%' }} />
         </div>
 

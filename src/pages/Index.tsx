@@ -14,7 +14,8 @@ import { ChevronRight, Calendar, LogOut, Crown, Loader2, HelpCircle } from 'luci
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { InstallVideoModal, INSTALL_VIDEO_SEEN_KEY } from '@/components/InstallVideoModal';
 
 const Index = () => {
   const { strategies, loading: strategiesLoading, hasPersonalized } = useUserStrategies();
@@ -23,6 +24,29 @@ const Index = () => {
   const { isPremium, freeLimits } = useUserUsage();
   const navigate = useNavigate();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [installVideoOpen, setInstallVideoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!profile?.onboarding_completed) return;
+    let seen = false;
+    try { seen = !!localStorage.getItem(INSTALL_VIDEO_SEEN_KEY); } catch {}
+    if (seen) return;
+
+    const isStandalone =
+      (window.navigator as any).standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+    if (isStandalone) return;
+
+    let inIframe = false;
+    try { inIframe = window.self !== window.top; } catch { inIframe = true; }
+    const isPreview =
+      window.location.hostname.includes('id-preview--') ||
+      window.location.hostname.includes('lovableproject.com');
+    if (inIframe || isPreview) return;
+
+    const t = setTimeout(() => setInstallVideoOpen(true), 800);
+    return () => clearTimeout(t);
+  }, [profile?.onboarding_completed]);
   // Só mostra skeleton se ainda não temos NENHUMA estratégia (nem fallback).
   // Como useUserStrategies inicia com fallbackStrategies, isso é raro — só
   // num primeiríssimo render antes do useEffect rodar.
@@ -176,6 +200,7 @@ const Index = () => {
         <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
       </div>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <InstallVideoModal open={installVideoOpen} onOpenChange={setInstallVideoOpen} />
     </div>
   );
 };
