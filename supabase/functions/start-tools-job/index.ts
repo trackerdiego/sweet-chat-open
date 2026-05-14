@@ -37,6 +37,7 @@ const TOOL_SCHEMAS: Record<string, object> = {
   patterns: { type: "object", properties: { patterns: { type: "array", items: { type: "object", properties: { framework: { type: "string" }, emotionalTriggers: { type: "string" }, adaptation: { type: "string" }, example: { type: "string" } }, required: ["framework", "emotionalTriggers", "adaptation", "example"] } } }, required: ["patterns"] },
   hooks: { type: "object", properties: { analyses: { type: "array", items: { type: "object", properties: { originalHook: { type: "string" }, emotionalTrigger: { type: "string" }, technique: { type: "string" }, variations: { type: "array", items: { type: "string" } } }, required: ["originalHook", "emotionalTrigger", "technique", "variations"] } } }, required: ["analyses"] },
   viral: { type: "object", properties: { structureAnalysis: { type: "string" }, scriptHook: { type: "string" }, scriptBody: { type: "string" }, scriptCta: { type: "string" }, filmingInstructions: { type: "string" }, whyItWillWork: { type: "string" } }, required: ["structureAnalysis", "scriptHook", "scriptBody", "scriptCta", "filmingInstructions", "whyItWillWork"] },
+  reelsDescription: { type: "object", properties: { hookLine: { type: "string" }, body: { type: "string" }, cta: { type: "string" }, fullCaption: { type: "string" }, hashtags: { type: "array", items: { type: "string" } }, alternativeHooks: { type: "array", items: { type: "string" } } }, required: ["hookLine", "body", "cta", "fullCaption", "hashtags", "alternativeHooks"] },
 };
 
 serve(async (req) => {
