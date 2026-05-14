@@ -15,6 +15,10 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
+import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+
+const SOCIAL_LINK_REGEX = /(https?:\/\/)?(www\.)?(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|kwai\.com)\/\S+/i;
 
 type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat' | 'reelsDescription';
 
