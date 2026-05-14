@@ -34,7 +34,7 @@ const tools: ToolConfig[] = [
   { id: 'dissonance', icon: Zap, title: 'Ganchos de Dissonância', description: 'Gere headlines impossíveis de ignorar', needsInput: false },
   { id: 'patterns', icon: Search, title: 'Extração de Padrões', description: 'Descubra os frameworks ocultos de copies', needsInput: true, inputPlaceholder: 'Cole aqui 3-5 anúncios ou copies...', inputLabel: 'Anúncios/Copies de referência' },
   { id: 'hooks', icon: Scissors, title: 'Desconstrução de Hooks', description: 'Descubra por que hooks virais funcionam', needsInput: true, inputPlaceholder: 'Cole hooks ou headlines virais...', inputLabel: 'Hooks/Headlines para desconstruir' },
-  { id: 'viral', icon: RefreshCw, title: 'Adaptação de Virais', description: 'Receba um roteiro adaptado ao seu nicho', needsInput: true, inputPlaceholder: 'Cole a transcrição do vídeo viral...', inputLabel: 'Transcrição do vídeo viral' },
+  { id: 'viral', icon: RefreshCw, title: 'Roubar Trend Viral', description: 'Cole a transcrição OU envie o vídeo do trend — recebe um roteiro pronto adaptado ao seu nicho', needsInput: true, inputPlaceholder: 'Cole a transcrição do trend ou envie o vídeo abaixo...', inputLabel: 'Trend para roubar' },
 ];
 
 function ToolCard({ tool, onClick }: { tool: ToolConfig; onClick: () => void }) {
