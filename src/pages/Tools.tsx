@@ -30,6 +30,7 @@ interface ToolConfig {
 
 const tools: ToolConfig[] = [
   { id: 'chat', icon: MessageSquare, title: 'Consultor IA', description: 'Chat estratégico que já conhece seu público', needsInput: false },
+  { id: 'reelsDescription', icon: Instagram, title: 'Descrição de Reels', description: 'Cole o tema OU envie o vídeo — recebe a legenda pronta com hashtags', needsInput: true, inputPlaceholder: 'Cole a transcrição/tema do reel ou envie o vídeo abaixo...', inputLabel: 'Conteúdo do reel' },
   { id: 'dissonance', icon: Zap, title: 'Ganchos de Dissonância', description: 'Gere headlines impossíveis de ignorar', needsInput: false },
   { id: 'patterns', icon: Search, title: 'Extração de Padrões', description: 'Descubra os frameworks ocultos de copies', needsInput: true, inputPlaceholder: 'Cole aqui 3-5 anúncios ou copies...', inputLabel: 'Anúncios/Copies de referência' },
   { id: 'hooks', icon: Scissors, title: 'Desconstrução de Hooks', description: 'Descubra por que hooks virais funcionam', needsInput: true, inputPlaceholder: 'Cole hooks ou headlines virais...', inputLabel: 'Hooks/Headlines para desconstruir' },
