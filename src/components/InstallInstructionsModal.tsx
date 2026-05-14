@@ -85,31 +85,36 @@ function InAppSteps({ onCopyLink }: { onCopyLink?: () => void }) {
   );
 }
 
-function ModalBody({ mode, onCopyLink }: Pick<Props, 'mode' | 'onCopyLink'>) {
+function ModalBody({ mode, onCopyLink, intro }: Pick<Props, 'mode' | 'onCopyLink' | 'intro'>) {
   return (
-    <div className="py-2">
+    <div className="py-2 space-y-4">
+      {intro && (
+        <div className="rounded-xl bg-primary/5 border border-primary/15 p-3 text-sm leading-relaxed">
+          {intro}
+        </div>
+      )}
       {mode === 'safari' ? <SafariSteps /> : <InAppSteps onCopyLink={onCopyLink} />}
     </div>
   );
 }
 
-export function InstallInstructionsModal({ open, onOpenChange, mode, onCopyLink }: Props) {
+export function InstallInstructionsModal({ open, onOpenChange, mode, onCopyLink, intro, title, description }: Props) {
   const isMobile = useIsMobile();
 
-  const title = 'Instale o InfluLab no seu celular';
-  const description = mode === 'safari'
+  const finalTitle = title ?? 'Instale o InfluLab no seu celular';
+  const finalDescription = description ?? (mode === 'safari'
     ? 'Siga os passos abaixo para adicionar o app à sua tela inicial'
-    : 'Para instalar, você precisa abrir no Safari primeiro';
+    : 'Para instalar, você precisa abrir no Safari primeiro');
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent className="px-6 pb-8">
           <DrawerHeader className="text-left px-0">
-            <DrawerTitle className="text-xl">{title}</DrawerTitle>
-            <DrawerDescription>{description}</DrawerDescription>
+            <DrawerTitle className="text-xl">{finalTitle}</DrawerTitle>
+            <DrawerDescription>{finalDescription}</DrawerDescription>
           </DrawerHeader>
-          <ModalBody mode={mode} onCopyLink={onCopyLink} />
+          <ModalBody mode={mode} onCopyLink={onCopyLink} intro={intro} />
         </DrawerContent>
       </Drawer>
     );
@@ -119,10 +124,10 @@ export function InstallInstructionsModal({ open, onOpenChange, mode, onCopyLink 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl">{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle className="text-xl">{finalTitle}</DialogTitle>
+          <DialogDescription>{finalDescription}</DialogDescription>
         </DialogHeader>
-        <ModalBody mode={mode} onCopyLink={onCopyLink} />
+        <ModalBody mode={mode} onCopyLink={onCopyLink} intro={intro} />
       </DialogContent>
     </Dialog>
   );
