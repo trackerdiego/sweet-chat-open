@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Search, Scissors, RefreshCw, Sparkles, Loader2, Copy, Check, ArrowLeft, Upload, FileAudio, FileVideo, MessageSquare } from 'lucide-react';
+import { Zap, Search, Scissors, RefreshCw, Sparkles, Loader2, Copy, Check, ArrowLeft, Upload, FileAudio, FileVideo, MessageSquare, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
 
-type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat';
+type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat' | 'reelsDescription';
 
 interface ToolConfig {
   id: ToolType;
@@ -30,6 +30,7 @@ interface ToolConfig {
 
 const tools: ToolConfig[] = [
   { id: 'chat', icon: MessageSquare, title: 'Consultor IA', description: 'Chat estratégico que já conhece seu público', needsInput: false },
+  { id: 'reelsDescription', icon: Instagram, title: 'Descrição de Reels', description: 'Cole o tema OU envie o vídeo — recebe a legenda pronta com hashtags', needsInput: true, inputPlaceholder: 'Cole a transcrição/tema do reel ou envie o vídeo abaixo...', inputLabel: 'Conteúdo do reel' },
   { id: 'dissonance', icon: Zap, title: 'Ganchos de Dissonância', description: 'Gere headlines impossíveis de ignorar', needsInput: false },
   { id: 'patterns', icon: Search, title: 'Extração de Padrões', description: 'Descubra os frameworks ocultos de copies', needsInput: true, inputPlaceholder: 'Cole aqui 3-5 anúncios ou copies...', inputLabel: 'Anúncios/Copies de referência' },
   { id: 'hooks', icon: Scissors, title: 'Desconstrução de Hooks', description: 'Descubra por que hooks virais funcionam', needsInput: true, inputPlaceholder: 'Cole hooks ou headlines virais...', inputLabel: 'Hooks/Headlines para desconstruir' },
@@ -154,6 +155,55 @@ function ResultRenderer({ toolType, data }: { toolType: ToolType; data: any }) {
             {copiedIdx === 99 ? 'Copiado!' : 'Copiar Script'}
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (toolType === 'reelsDescription' && data.fullCaption) {
+    const caption = data.fullCaption as string;
+    const hashtags = (data.hashtags as string[] | undefined) || [];
+    const altHooks = (data.alternativeHooks as string[] | undefined) || [];
+    const hashtagsStr = hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ');
+    const charCount = caption.length;
+    const overLimit = charCount > 2200;
+    return (
+      <div className="space-y-3">
+        <div className="glass-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="font-semibold text-sm">📱 Legenda do Reel</h4>
+            <Badge variant={overLimit ? 'destructive' : 'outline'} className="text-[10px]">{charCount}/2200</Badge>
+          </div>
+          <pre className="whitespace-pre-wrap text-sm font-sans bg-muted/50 rounded-lg p-3 leading-relaxed select-text">{caption}</pre>
+          <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(caption, 200)}>
+            {copiedIdx === 200 ? <Check size={14} /> : <Copy size={14} />}
+            {copiedIdx === 200 ? 'Copiado!' : 'Copiar legenda'}
+          </Button>
+        </div>
+
+        {hashtags.length > 0 && (
+          <div className="glass-card p-4 space-y-2">
+            <h4 className="font-semibold text-sm">#️⃣ Hashtags ({hashtags.length})</h4>
+            <p className="text-xs text-muted-foreground leading-relaxed break-words">{hashtagsStr}</p>
+            <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(hashtagsStr, 201)}>
+              {copiedIdx === 201 ? <Check size={14} /> : <Copy size={14} />}
+              {copiedIdx === 201 ? 'Copiado!' : 'Copiar hashtags'}
+            </Button>
+          </div>
+        )}
+
+        {altHooks.length > 0 && (
+          <div className="glass-card p-4 space-y-2">
+            <h4 className="font-semibold text-sm">🎯 Hooks alternativos (A/B)</h4>
+            {altHooks.map((h, i) => (
+              <div key={i} className="flex items-start justify-between gap-2 bg-muted/50 rounded-lg p-2">
+                <p className="text-xs">"{h}"</p>
+                <Button variant="ghost" size="icon" className="shrink-0 h-7 w-7" onClick={() => copyText(h, 210 + i)}>
+                  {copiedIdx === 210 + i ? <Check size={12} /> : <Copy size={12} />}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
