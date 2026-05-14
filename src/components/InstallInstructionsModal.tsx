@@ -9,6 +9,9 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   mode: 'safari' | 'in-app';
   onCopyLink?: () => void;
+  intro?: React.ReactNode;
+  title?: string;
+  description?: string;
 }
 
 function Step({ number, icon, text }: { number: number; icon: React.ReactNode; text: string }) {
