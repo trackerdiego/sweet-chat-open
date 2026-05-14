@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Search, Scissors, RefreshCw, Sparkles, Loader2, Copy, Check, ArrowLeft, Upload, FileAudio, FileVideo, MessageSquare, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,10 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
+import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+
+const SOCIAL_LINK_REGEX = /(https?:\/\/)?(www\.)?(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|kwai\.com)\/\S+/i;
 
 type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat' | 'reelsDescription';
 
@@ -284,6 +288,26 @@ const Tools = () => {
   const [result, setResult] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const { isStandalone } = useInstallPrompt();
+  const [linkInstallOpen, setLinkInstallOpen] = useState(false);
+  const linkWarnedRef = useRef(false);
+
+  // Detecta link de rede social colado no input do "Roubar Trend Viral".
+  // Se o app NÃO estiver instalado como PWA → abre modal explicando como instalar.
+  // Se ESTIVER instalado → mostra toast informando que o fluxo por link entra em breve
+  // (por enquanto, baixar o vídeo e usar o botão de upload).
+  useEffect(() => {
+    if (selectedTool?.id !== 'viral') { linkWarnedRef.current = false; return; }
+    if (!userInput.trim()) { linkWarnedRef.current = false; return; }
+    if (linkWarnedRef.current) return;
+    if (!SOCIAL_LINK_REGEX.test(userInput)) return;
+    linkWarnedRef.current = true;
+    if (isStandalone) {
+      toast.info('Roubar trend só com o link entra em breve! Por enquanto, baixe o vídeo do trend e use o botão "Enviar vídeo" abaixo.', { duration: 6000 });
+    } else {
+      setLinkInstallOpen(true);
+    }
+  }, [userInput, selectedTool, isStandalone]);
 
   const extractAudio = useCallback(async (file: File): Promise<{ blob: Blob; name: string }> => {
     const ffmpeg = await getFFmpeg();
@@ -382,6 +406,18 @@ const Tools = () => {
   return (
     <div className={`${selectedTool?.id === 'chat' ? 'h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-20 md:pb-0' : 'min-h-screen pb-24 md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]'} max-w-lg mx-auto`}>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <InstallInstructionsModal
+        open={linkInstallOpen}
+        onOpenChange={setLinkInstallOpen}
+        mode="safari"
+        title="Instale o app pra roubar trends só com o link"
+        description="O recurso de colar o link do Reel/TikTok funciona dentro do app instalado. Siga os passos abaixo:"
+        intro={
+          <>
+            <strong>Por que?</strong> Pra puxar o vídeo direto da rede social, o Instagram exige que você compartilhe do app deles pro nosso. Isso só é possível com o InfluLab instalado na tela de início. Depois é só abrir o Reel → tocar em <strong>Compartilhar</strong> → escolher <strong>InfluLab</strong>.
+          </>
+        }
+      />
       <AnimatePresence mode="wait">
         {!selectedTool ? (
           <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
