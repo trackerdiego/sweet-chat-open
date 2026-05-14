@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Search, Scissors, RefreshCw, Sparkles, Loader2, Copy, Check, ArrowLeft, Upload, FileAudio, FileVideo, MessageSquare } from 'lucide-react';
+import { Zap, Search, Scissors, RefreshCw, Sparkles, Loader2, Copy, Check, ArrowLeft, Upload, FileAudio, FileVideo, MessageSquare, Instagram } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
