@@ -406,6 +406,18 @@ const Tools = () => {
   return (
     <div className={`${selectedTool?.id === 'chat' ? 'h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-20 md:pb-0' : 'min-h-screen pb-24 md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]'} max-w-lg mx-auto`}>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <InstallInstructionsModal
+        open={linkInstallOpen}
+        onOpenChange={setLinkInstallOpen}
+        mode="safari"
+        title="Instale o app pra roubar trends só com o link"
+        description="O recurso de colar o link do Reel/TikTok funciona dentro do app instalado. Siga os passos abaixo:"
+        intro={
+          <>
+            <strong>Por que?</strong> Pra puxar o vídeo direto da rede social, o Instagram exige que você compartilhe do app deles pro nosso. Isso só é possível com o InfluLab instalado na tela de início. Depois é só abrir o Reel → tocar em <strong>Compartilhar</strong> → escolher <strong>InfluLab</strong>.
+          </>
+        }
+      />
       <AnimatePresence mode="wait">
         {!selectedTool ? (
           <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
