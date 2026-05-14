@@ -288,6 +288,26 @@ const Tools = () => {
   const [result, setResult] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const { isStandalone } = useInstallPrompt();
+  const [linkInstallOpen, setLinkInstallOpen] = useState(false);
+  const linkWarnedRef = useRef(false);
+
+  // Detecta link de rede social colado no input do "Roubar Trend Viral".
+  // Se o app NÃO estiver instalado como PWA → abre modal explicando como instalar.
+  // Se ESTIVER instalado → mostra toast informando que o fluxo por link entra em breve
+  // (por enquanto, baixar o vídeo e usar o botão de upload).
+  useEffect(() => {
+    if (selectedTool?.id !== 'viral') { linkWarnedRef.current = false; return; }
+    if (!userInput.trim()) { linkWarnedRef.current = false; return; }
+    if (linkWarnedRef.current) return;
+    if (!SOCIAL_LINK_REGEX.test(userInput)) return;
+    linkWarnedRef.current = true;
+    if (isStandalone) {
+      toast.info('Roubar trend só com o link entra em breve! Por enquanto, baixe o vídeo do trend e use o botão "Enviar vídeo" abaixo.', { duration: 6000 });
+    } else {
+      setLinkInstallOpen(true);
+    }
+  }, [userInput, selectedTool, isStandalone]);
 
   const extractAudio = useCallback(async (file: File): Promise<{ blob: Blob; name: string }> => {
     const ffmpeg = await getFFmpeg();
