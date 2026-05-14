@@ -159,6 +159,55 @@ function ResultRenderer({ toolType, data }: { toolType: ToolType; data: any }) {
     );
   }
 
+  if (toolType === 'reelsDescription' && data.fullCaption) {
+    const caption = data.fullCaption as string;
+    const hashtags = (data.hashtags as string[] | undefined) || [];
+    const altHooks = (data.alternativeHooks as string[] | undefined) || [];
+    const hashtagsStr = hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ');
+    const charCount = caption.length;
+    const overLimit = charCount > 2200;
+    return (
+      <div className="space-y-3">
+        <div className="glass-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="font-semibold text-sm">📱 Legenda do Reel</h4>
+            <Badge variant={overLimit ? 'destructive' : 'outline'} className="text-[10px]">{charCount}/2200</Badge>
+          </div>
+          <pre className="whitespace-pre-wrap text-sm font-sans bg-muted/50 rounded-lg p-3 leading-relaxed select-text">{caption}</pre>
+          <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(caption, 200)}>
+            {copiedIdx === 200 ? <Check size={14} /> : <Copy size={14} />}
+            {copiedIdx === 200 ? 'Copiado!' : 'Copiar legenda'}
+          </Button>
+        </div>
+
+        {hashtags.length > 0 && (
+          <div className="glass-card p-4 space-y-2">
+            <h4 className="font-semibold text-sm">#️⃣ Hashtags ({hashtags.length})</h4>
+            <p className="text-xs text-muted-foreground leading-relaxed break-words">{hashtagsStr}</p>
+            <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(hashtagsStr, 201)}>
+              {copiedIdx === 201 ? <Check size={14} /> : <Copy size={14} />}
+              {copiedIdx === 201 ? 'Copiado!' : 'Copiar hashtags'}
+            </Button>
+          </div>
+        )}
+
+        {altHooks.length > 0 && (
+          <div className="glass-card p-4 space-y-2">
+            <h4 className="font-semibold text-sm">🎯 Hooks alternativos (A/B)</h4>
+            {altHooks.map((h, i) => (
+              <div key={i} className="flex items-start justify-between gap-2 bg-muted/50 rounded-lg p-2">
+                <p className="text-xs">"{h}"</p>
+                <Button variant="ghost" size="icon" className="shrink-0 h-7 w-7" onClick={() => copyText(h, 210 + i)}>
+                  {copiedIdx === 210 + i ? <Check size={12} /> : <Copy size={12} />}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return <p className="text-sm text-muted-foreground">Resultado recebido.</p>;
 }
 
