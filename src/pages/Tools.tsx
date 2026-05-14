@@ -16,7 +16,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
 
-type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat';
+type ToolType = 'dissonance' | 'patterns' | 'hooks' | 'viral' | 'chat' | 'reelsDescription';
 
 interface ToolConfig {
   id: ToolType;
