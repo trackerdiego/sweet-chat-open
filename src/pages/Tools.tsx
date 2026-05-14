@@ -322,7 +322,12 @@ const Tools = () => {
       }
 
       setProcessingStep('uploading');
-      const filePath = `${user.id}/${Date.now()}-${uploadName}`;
+      const safeName = (uploadName
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
+        .slice(0, 80)) || 'media';
+      const filePath = `${user.id}/${Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage.from('media-uploads').upload(filePath, uploadBlob);
       if (uploadError) throw uploadError;
 
