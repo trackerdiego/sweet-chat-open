@@ -1,16 +1,42 @@
 import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, Clock, Lock, ChevronDown, Sparkles } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, Lock, ChevronDown, Sparkles, Loader2, Shuffle } from 'lucide-react';
 import { DailyTaskState, TaskKey } from '@/hooks/useInfluencer';
-import { DailyScheduleData, TimeBlock } from '@/data/dailySchedule';
+import { DailyScheduleData, TimeBlock, pickExamplesForDay } from '@/data/dailySchedule';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useState } from 'react';
 import confetti from 'canvas-confetti';
+import { useAiJob } from '@/hooks/useAiJob';
+import { toast } from 'sonner';
 
-interface DailyScheduleProps { schedule: DailyScheduleData; tasks: DailyTaskState; progress: number; onComplete: (task: TaskKey) => void; aiContent?: { contentTypes?: string[]; hooks?: string[]; videoFormats?: string[]; storytelling?: string[]; ctas?: string[]; cliffhangers?: string[]; taskExamples?: Record<string, string[]>; } | null; }
+interface DailyScheduleProps {
+  schedule: DailyScheduleData;
+  tasks: DailyTaskState;
+  progress: number;
+  onComplete: (task: TaskKey) => void;
+  day: number;
+  pillar: string;
+  pillarLabel: string;
+  dayTitle: string;
+  primaryNiche?: string;
+  contentStyle?: string;
+  aiContent?: {
+    contentTypes?: string[];
+    hooks?: string[];
+    videoFormats?: string[];
+    storytelling?: string[];
+    ctas?: string[];
+    cliffhangers?: string[];
+    taskExamples?: Record<string, string[]>;
+  } | null;
+  onAiTaskExamples?: (examples: Record<string, string[]>) => void;
+}
 
-function fireConfetti() { confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#C9A96E', '#D4C5A9', '#2D2D2D'] }); }
+function fireConfetti() {
+  confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 }, colors: ['#C9A96E', '#D4C5A9', '#2D2D2D'] });
+}
 
 const blockColors: Record<string, string> = { morning: 'border-l-amber-400', afternoon: 'border-l-orange-400', night: 'border-l-indigo-400' };
 
@@ -45,7 +71,7 @@ function TaskItem({ taskKey, time, label, description, done, onComplete, example
   );
 }
 
-function ScheduleBlock({ block, tasks, onComplete, aiContent }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; aiContent?: DailyScheduleProps['aiContent']; }) {
+function ScheduleBlock({ block, tasks, onComplete, aiContent, day }: { block: TimeBlock; tasks: DailyTaskState; onComplete: (task: TaskKey) => void; aiContent?: DailyScheduleProps['aiContent']; day: number; }) {
   const [open, setOpen] = useState(true);
   const completedCount = block.tasks.filter(t => { if (t.key === 'valueStories') return tasks.valueStories >= 5; return tasks[t.key as keyof DailyTaskState] === true; }).length;
   const allDone = completedCount === block.tasks.length;
@@ -65,7 +91,10 @@ function ScheduleBlock({ block, tasks, onComplete, aiContent }: { block: TimeBlo
             const isDone = task.key === 'valueStories' ? tasks.valueStories >= 5 : tasks[task.key as keyof DailyTaskState] === true;
             const displayLabel = task.key === 'valueStories' ? `${task.label} (${tasks.valueStories}/5)` : task.label;
             const aiExamples = aiContent?.taskExamples?.[task.key];
-            const examples = aiExamples && aiExamples.length > 0 ? aiExamples : task.examples;
+            // Precedência: IA > rotação determinística diária do banco estático
+            const examples = aiExamples && aiExamples.length > 0
+              ? aiExamples
+              : pickExamplesForDay(task.examples || [], day, task.key, 5);
             return <TaskItem key={task.key} taskKey={task.key as TaskKey} time={task.time} label={displayLabel} description={task.description} done={isDone} onComplete={onComplete} examples={examples} />;
           })}
         </div>
@@ -74,10 +103,40 @@ function ScheduleBlock({ block, tasks, onComplete, aiContent }: { block: TimeBlo
   );
 }
 
-export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent }: DailyScheduleProps) {
+export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent, day, pillar, pillarLabel, dayTitle, primaryNiche, contentStyle, onAiTaskExamples }: DailyScheduleProps) {
   const [selectedCliffhanger, setSelectedCliffhanger] = useState<number | null>(null);
   const cliffhangerOptions = aiContent?.cliffhangers && aiContent.cliffhangers.length > 0 ? aiContent.cliffhangers : schedule.cliffhangerOptions;
   const handleCliffhangerSelect = (idx: number) => { if (!tasks.cliffhanger) { setSelectedCliffhanger(idx); onComplete('cliffhanger'); fireConfetti(); } };
+
+  const taskExamplesJob = useAiJob<{ taskExamples?: Record<string, string[]> }>('task_examples');
+  const aiExamplesReady = !!aiContent?.taskExamples && Object.keys(aiContent.taskExamples).length > 0;
+
+  const handleDiversifyExamples = async () => {
+    try {
+      await taskExamplesJob.start({
+        day,
+        pillar,
+        pillarLabel,
+        dayTitle,
+        weeklyTheme: schedule.weeklyTheme.name,
+        primaryNiche: primaryNiche || '',
+        contentStyle: contentStyle || 'casual',
+      });
+    } catch {
+      // erro já tratado pelo hook
+    }
+  };
+
+  // Quando o job termina com sucesso, repassa pra cima
+  if (taskExamplesJob.status === 'done' && taskExamplesJob.result?.taskExamples && onAiTaskExamples) {
+    const examples = taskExamplesJob.result.taskExamples;
+    // Defer pra evitar setState durante render
+    queueMicrotask(() => {
+      onAiTaskExamples(examples);
+      toast.success('Sugestões diversificadas com IA! ✨');
+      taskExamplesJob.reset();
+    });
+  }
 
   return (
     <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="space-y-3">
@@ -87,8 +146,26 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
           {schedule.isFeedDay && <Badge className="bg-primary/20 text-primary border-0 text-xs">📸 Dia de Feed</Badge>}
         </div>
         <Progress value={progress} className="h-2" /><p className="text-xs text-muted-foreground text-right mt-1">{progress}% concluído</p>
+        <Button
+          onClick={handleDiversifyExamples}
+          disabled={taskExamplesJob.isLoading}
+          variant={aiExamplesReady ? 'outline' : 'default'}
+          className={`w-full mt-3 ${!aiExamplesReady ? 'gold-gradient text-primary-foreground' : ''}`}
+          size="sm"
+        >
+          {taskExamplesJob.isLoading ? (
+            <><Loader2 size={14} className="animate-spin" /> Gerando sugestões...</>
+          ) : aiExamplesReady ? (
+            <><Shuffle size={14} /> Diversificar novamente com IA</>
+          ) : (
+            <><Sparkles size={14} /> ✨ Diversificar sugestões dos horários</>
+          )}
+        </Button>
+        <p className="text-[10px] text-muted-foreground text-center mt-1.5 leading-tight">
+          Gera novas sugestões personalizadas para cada horário do dia — independente do Guia do Dia.
+        </p>
       </div>
-      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} aiContent={aiContent} />)}
+      {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} aiContent={aiContent} day={day} />)}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="glass-card p-4 border-l-4 border-l-primary">
         <div className="flex items-start gap-3">
           {tasks.cliffhanger ? <CheckCircle2 size={18} className="text-primary shrink-0 mt-0.5" /> : <Lock size={18} className="text-primary shrink-0 mt-0.5" />}
