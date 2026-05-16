@@ -74,13 +74,20 @@ const Tasks = () => {
             />
           )}
 
-          {schedule && (
+          {schedule && todayStrategy && (
             <DailySchedule
               schedule={schedule}
               tasks={todayTasks}
               progress={dailyProgress}
               onComplete={completeTask}
               aiContent={aiContent}
+              day={state.currentDay}
+              pillar={todayStrategy.pillar}
+              pillarLabel={todayStrategy.pillarLabel}
+              dayTitle={todayStrategy.title}
+              primaryNiche={profile?.primary_niche}
+              contentStyle={profile?.content_style}
+              onAiTaskExamples={handleAiTaskExamples}
             />
           )}
         </PremiumGate>
