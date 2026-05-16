@@ -20,6 +20,9 @@ const Tasks = () => {
   const { canAccessDay } = useUserUsage();
   const todayStrategy = strategies[state.currentDay - 1];
   const [aiContent, setAiContent] = useState<AiGuideContent | null>(null);
+  const handleAiTaskExamples = (examples: Record<string, string[]>) => {
+    setAiContent((prev) => ({ ...(prev || {}), taskExamples: { ...(prev?.taskExamples || {}), ...examples } }));
+  };
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const dayLocked = !canAccessDay(state.currentDay);
@@ -71,13 +74,20 @@ const Tasks = () => {
             />
           )}
 
-          {schedule && (
+          {schedule && todayStrategy && (
             <DailySchedule
               schedule={schedule}
               tasks={todayTasks}
               progress={dailyProgress}
               onComplete={completeTask}
               aiContent={aiContent}
+              day={state.currentDay}
+              pillar={todayStrategy.pillar}
+              pillarLabel={todayStrategy.pillarLabel}
+              dayTitle={todayStrategy.title}
+              primaryNiche={profile?.primary_niche}
+              contentStyle={profile?.content_style}
+              onAiTaskExamples={handleAiTaskExamples}
             />
           )}
         </PremiumGate>
