@@ -455,8 +455,102 @@ const taskExamples: Record<string, Record<string, string[]>> = {
   },
 };
 
+// Banco extra de exemplos GENÉRICOS (qualquer nicho) — concatenado aos
+// exemplos específicos do pilar pra dar variedade dia a dia.
+const genericExamplesBank: Record<string, string[]> = {
+  morningInsight: [
+    '"Bom dia! Pergunta séria: você acordou hoje fazendo o que mudou ontem ou repetindo o piloto automático?"',
+    '"Acordei pensando: a maioria das pessoas adia o sonho esperando o momento perfeito. Spoiler: nunca chega."',
+    '"Hoje é o melhor dia pra começar aquela coisa que você adia há 3 meses."',
+    '"1% melhor por dia = 37x melhor no fim do ano. A matemática não mente."',
+    '"O que você consome de manhã (notícia, rede social, áudio) define como o dia inteiro flui."',
+    '"Repare: as pessoas que admiramos não esperaram se sentir prontas. Começaram tortas mesmo."',
+    '"Bom dia! Hoje desafio: 1h sem celular ao acordar. Quem topa?"',
+  ],
+  morningPoll: [
+    '"Vocês acordam com despertador ou natural? ⏰ Despertador / Sozinho"',
+    '"Primeira coisa ao acordar: café ou água? ☕💧"',
+    '"Treinam de manhã ou à noite? 🏃 Manhã / Noite"',
+    '"Olham celular nos primeiros 10 min? 📱 Sim / Resisto"',
+    '"Tomam café da manhã ou só almoçam? 🍳 Café / Pulo"',
+    '"Vocês planejam o dia? 📋 Sempre / Quase nunca"',
+    '"Acordam felizes ou em modo zumbi? 😴😄"',
+  ],
+  reel: [
+    '"3 coisas que ninguém te conta sobre [seu nicho]"',
+    'POV: o erro que custou caro pra eu aprender essa lição',
+    '"Comigo é assim — me conta nos comentários se é igual com você"',
+    'Antes e depois: a transformação que ninguém percebeu',
+    'Tutorial rápido em 30 segundos: passo a passo',
+    '"Resolvi testar [tendência] por uma semana — esse foi o resultado"',
+    'Reagindo ao meu próprio conteúdo de 1 ano atrás',
+  ],
+  reelEngagement: [
+    'Pergunte: "Concordam ou discordam? Quero ouvir vocês nos comentários!"',
+    'Caixinha: "Me conta sua maior dúvida sobre o tema do vídeo"',
+    'Responda os 3 comentários mais polêmicos em vídeo curto',
+    'Crie enquete sobre um tema que apareceu no Reels',
+    'Reposte stories de seguidores marcando seu vídeo',
+    'Pergunte: "Querem parte 2? Manda 🔥 nos comentários"',
+    'Provoque debate saudável: "Tô errada(o) em pensar assim?"',
+  ],
+  valueStories: [
+    'Story 1: o problema | Story 2: por que acontece | Story 3: a solução',
+    'Compartilhe 1 ferramenta gratuita que você usa todo dia',
+    'Mostre os bastidores: como você planeja seu conteúdo',
+    'Faça uma sequência tipo "O que aprendi essa semana"',
+    'Pergunta + resposta: aborde 1 dúvida real dos seguidores',
+    'Mini case: um resultado real que aconteceu com você ou seguidor',
+    'Lista rápida: "3 coisas que mudaria se começasse do zero"',
+  ],
+  lifestyleStory: [
+    'Cozinhando o jantar com música de fundo',
+    'Momento leitura: o livro que está mudando sua visão',
+    'Passeio noturno com vista da cidade',
+    'Skincare + chá + série favorita',
+    'Conversa profunda com amigo(a) por chamada',
+    'Organizando a semana com agenda + café',
+    'Diário noturno: 3 coisas pelas quais foi grato hoje',
+  ],
+  feedPost: [
+    'Carrossel: "5 lições que eu queria ter aprendido antes"',
+    'Foto + legenda profunda: "O dia que mudou minha trajetória"',
+    'Post com prova social: depoimento ou print real',
+    'Carrossel comparativo: "O que dizem vs. o que realmente é"',
+    'Foto autêntica + reflexão pessoal sobre o momento',
+    'Infográfico: "O passo a passo que ninguém te conta"',
+    'Carrossel: "Erros que você pode evitar — aprendi do jeito difícil"',
+  ],
+};
+
 function getTaskExamples(taskKey: string, pillar: string): string[] {
-  return taskExamples[pillar]?.[taskKey] || taskExamples['principal']?.[taskKey] || [];
+  const specific = taskExamples[pillar]?.[taskKey] || taskExamples['principal']?.[taskKey] || [];
+  const generic = genericExamplesBank[taskKey] || [];
+  // Pilar primeiro + banco genérico (descartando duplicatas exatas)
+  const seen = new Set<string>();
+  return [...specific, ...generic].filter((s) => { if (seen.has(s)) return false; seen.add(s); return true; });
+}
+
+// Pequeno hash determinístico (djb2) pra dar offsets distintos por chave de tarefa.
+function strHash(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/**
+ * Retorna uma janela rotativa de `count` exemplos baseada no dia + chave da tarefa.
+ * Mesma entrada → mesma saída (determinístico). Dia muda → conjunto muda.
+ * Cada tarefa tem offset próprio (via hash) pra que dois blocos no mesmo dia
+ * não comecem do mesmo índice.
+ */
+export function pickExamplesForDay(all: string[], day: number, taskKey: string, count = 5): string[] {
+  if (!all || all.length === 0) return [];
+  if (all.length <= count) return all;
+  const offset = (strHash(taskKey) + (day - 1) * 2) % all.length;
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(all[(offset + i) % all.length]);
+  return out;
 }
 
 export function getCliffhangerOptions(day: number): string[] {
