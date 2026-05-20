@@ -1,52 +1,105 @@
-## Diagnóstico
 
-O teste com `naoexiste-teste-123@gmail.com` mostrou toast de sucesso porque a estratégia de sonda via `signInWithPassword` não funciona: o GoTrue retorna `"Invalid login credentials"` tanto para senha errada quanto para email inexistente (é proteção anti-enumeração nativa). O frontend interpreta isso como "email existe", chama `resetPasswordForEmail`, e o GoTrue responde 200 sem enviar nada (porque o usuário não existe).
+## Objetivo
 
-Não é problema do Studio nem da VPS — o backend está correto. O frontend é que precisa de um caminho real pra checar existência.
+1. Toast verde correto ("Email enviado!") em vez do fallback genérico — corrigindo `check-email-exists`.
+2. Email de recuperação chegando com remetente **Vyral Lab** e template novo com identidade visual da marca.
 
-## Solução
+---
 
-Criar uma edge function `check-email-exists` no Supabase self-hosted que usa a `SUPABASE_SERVICE_ROLE_KEY` pra consultar `auth.users` direto e responde `{ exists: true|false }`.
+## Parte 1 — Fix `check-email-exists` (Lovable)
 
-O frontend chama essa function antes do `resetPasswordForEmail`.
+**Diagnóstico:** No self-hosted, o PostgREST não expõe o schema `auth`, então `admin.schema('auth').from('users')` falha silenciosamente → catch retorna `exists: true, fallback: true` → toast mostra a versão genérica.
 
-## Passos
+**Solução:** Criar RPC SECURITY DEFINER em `public` e chamar via `supabase.rpc`.
 
-### 1. Edge function `check-email-exists`
-- Endpoint POST, recebe `{ email }`.
-- CORS aberto pra `app.vyrallab.online` e preview Lovable.
-- Usa `createClient` com `SUPABASE_SERVICE_ROLE_KEY` (já configurada no self-hosted) e roda:
-  ```
-  SELECT 1 FROM auth.users WHERE lower(email) = lower($1) LIMIT 1
-  ```
-- Retorna `{ exists: boolean }` com status 200.
-- Sem autenticação (público) — só revela um booleano e já existe o trade-off aceito de enumeração.
+### 1a. Migration (SQL pra rodar no Studio self-hosted)
 
-### 2. Atualizar `src/pages/Auth.tsx`
-- Trocar o `handleForgotPassword`: remover a sonda `signInWithPassword`.
-- Chamar `supabase.functions.invoke('check-email-exists', { body: { email } })`.
-- Se `exists === false` → mostrar "Não encontramos uma conta..." + botão "Criar conta".
-- Se `exists === true` → seguir com `resetPasswordForEmail` e toast de sucesso.
-- Se a function falhar (rede, 5xx) → fallback: chamar `resetPasswordForEmail` mesmo assim com mensagem genérica "Se o email existir, enviamos o link" pra não travar o usuário.
+```sql
+CREATE OR REPLACE FUNCTION public.email_exists(p_email text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM auth.users
+    WHERE lower(email) = lower(p_email)
+  );
+$$;
 
-### 3. Deploy no self-hosted (bloco copia-e-cola pra VPS)
-Como o backend é self-hosted, edge functions Lovable não chegam lá automaticamente. Vou entregar o código + comando:
-
-```bash
-cd /root/app
-git pull
-./scripts/deploy-selfhost.sh check-email-exists
-# ou
-docker compose restart functions
+REVOKE ALL ON FUNCTION public.email_exists(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.email_exists(text) TO anon, authenticated, service_role;
 ```
 
-## Fora deste plano
+### 1b. Edge function `check-email-exists/index.ts`
 
-- Template `recovery.html` novo — continua pendente upload manual no Studio (separado, já foi gerado antes).
-- Outros templates (signup, magic_link, etc.) — fica pra depois.
-- Mudar o "From name" do GoTrue — separado.
+Trocar a query `schema('auth').from('users')` por `admin.rpc('email_exists', { p_email: target })`. Mantém o mesmo contrato de resposta (`{ exists, fallback? }`).
 
-## Resultado esperado após implementar
+### 1c. Auth.tsx
 
-- Email inexistente → toast vermelho + botão "Criar conta".
-- Email existente → toast verde + email chega (com template antigo até você subir o `recovery.html` novo).
+Sem mudança — o frontend já espera `{ exists: boolean, fallback?: boolean }`.
+
+---
+
+## Parte 2 — Sender name "Vyral Lab" (VPS, GoTrue env)
+
+Editar `~/supabase/docker/.env`:
+
+```
+GOTRUE_SMTP_SENDER_NAME=Vyral Lab
+```
+
+(se a var atual for `SMTP_SENDER_NAME`, atualizar essa também; ambas funcionam dependendo da versão do GoTrue)
+
+Depois: `docker compose up -d --force-recreate auth` no diretório `~/supabase/docker`.
+
+---
+
+## Parte 3 — Template novo `recovery.html` (Vyral Lab)
+
+Criar HTML standalone com a identidade da marca:
+
+- Fundo branco (#ffffff) — regra de email
+- Card com glassmorphism leve (borda sutil purple/violet)
+- Logo Vyral Lab no topo (URL pública do logo já hospedado)
+- Heading serif "Redefina sua senha"
+- Texto curto explicando que recebeu pq alguém pediu reset
+- Botão CTA roxo/violet (gradient simulado via background-color sólido com fallback)
+- Variável GoTrue: `{{ .ConfirmationURL }}`
+- Aviso "se não foi você, ignore este email"
+- Footer com "Vyral Lab — Sua jornada de 30 dias começa aqui"
+
+Entrego o arquivo `recovery.html` finalizado pra você subir no **Studio → Storage → bucket `emails` → pasta `emails/` → Replace `recovery.html`**.
+
+Nada de mexer em `MAILER_TEMPLATES_*` — já tá apontando pro arquivo certo.
+
+---
+
+## Bloco copia-e-cola final (VPS)
+
+No fim da resposta de execução, vou entregar:
+
+```bash
+# 1. Atualizar env e reiniciar GoTrue
+cd ~/supabase/docker
+# editar .env e setar GOTRUE_SMTP_SENDER_NAME=Vyral Lab
+docker compose up -d --force-recreate auth
+
+# 2. Deploy do check-email-exists corrigido
+cd /root/app
+git pull origin main
+./scripts/deploy-selfhost.sh check-email-exists
+```
+
+E você sobe o `recovery.html` manualmente pelo Studio Storage.
+
+---
+
+## Detalhes técnicos
+
+- **RPC vs query direta:** RPC SECURITY DEFINER funciona em qualquer setup (Lovable Cloud OU self-hosted), independente das exposições do PostgREST. Mais portável.
+- **Por que `GRANT EXECUTE TO anon`:** o frontend chama com a anon key. Sem `verify_jwt`, a function precisa que a RPC seja chamável pelo role anônimo.
+- **Sender name no .env, não no docker-compose:** essa var não é secret nem precisa estar exposta no `environment:` do compose, fica direto no `.env` que o GoTrue lê.
+- **Template no Storage, não no .env:** templates HTML grandes não cabem em env var; GoTrue já tá configurado pra puxar do Storage via `MAILER_TEMPLATES_RECOVERY=...recovery.html`.
+
