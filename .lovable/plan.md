@@ -1,113 +1,58 @@
+## Objetivo
 
-## O que consegui extrair da referência (zkdelivery.site)
+Substituir a animação atual do `RealtimeTracker` por uma versão cíclica e coerente — como na referência ZK Delivery — onde a animação caminha sozinha do primeiro ao último círculo, com pulsos, check verdes nos passos concluídos e traços que preenchem progressivamente. Tudo cabendo na largura sem rolagem horizontal, inclusive no mobile.
 
-Fiz scrape completo da página + screenshot + inspeção do HTML. Aqui está o DNA visual dela, destilado:
+## Comportamento de animação
 
-### Tipografia
-- **Inter** (400/500/600/700/800) — UI, headlines e CTAs
-- **Roboto** (400/500/700) — corpo de texto secundário
-- Headlines **enormes e bold (800)**, sem serifa, com **palavra-chave em gradiente laranja→vermelho** (ex.: "favorita")
-- Eyebrow labels: pequenas, uppercase, espaçamento de letra largo, em cima de cada H2
+Estado interno `activeIndex` controlado por `setInterval` (ex.: a cada 1.6s avança 1; ao chegar no último, espera ~2s e reinicia em 0).
 
-### Paleta (dark-first)
-- Background: preto azulado profundo (`#0a0510` → `#1a0a1f`) com **orbs/blurs sutis** flutuando
-- Primária: laranja vibrante `#e54d15` → vermelho `#ff3838` (gradiente)
-- Accents nos ícones de etapas: amarelo, azul-neon, laranja, roxo, ciano, verde — cada passo do tracker tem cor própria
-- Cards: gradiente escuro com **borda fina + glow interno**
+Para cada passo, três estados visuais:
 
-### Padrões de layout (o que importa)
-1. **Nav flutuante no topo** — pílula central com itens, item ativo preenchido; à direita "Entrar" outline + CTA sólido com seta
-2. **Hero split assimétrico**:
-   - Esquerda: chip eyebrow (ícone + texto + ícone) → headline gigante 3 linhas com palavra em gradiente → parágrafo curto → segundo parágrafo claro → **dois CTAs lado a lado** (primário sólido com glow / secundário ghost) → link "Entenda como funciona →" → **social proof** (4 avatares empilhados + "+1.000 usuários ativos" + 5 estrelas + "4.9/5")
-   - Direita: **mockup de celular flutuante** com glow neon ao redor + **cards de notificação flutuando fora do telefone** (pedido confirmado, saiu para entrega)
-   - Background: imagens de produto (pizza/sushi/açaí) borradas e espalhadas como decoração
-3. **"Como Funciona" — 3 passos numerados** em cards horizontais com número grande em gradiente
-4. **Tracker em tempo real** — pipeline horizontal com 6 ícones coloridos, barras de conexão, **estado ativo com pulse + duplo anel de glow neon** (essa é a animação que você destacou)
-5. **Showcase do app** — mockup grande + 3-4 features ao redor com ícone+título+descrição curta
-6. **Marquee de categorias** — pílulas rolando infinitamente em duas linhas (direções opostas)
-7. **Comparativo "Nós vs Concorrência"** — duas colunas grandes, com cor "ruim" (laranja apagado) vs cor "boa" (verde/primária)
-8. **Bloco de pricing** em duas colunas (cliente/parceiro)
-9. **Footer CTA** com headline + botão grande
+- **Passado** (`i < activeIndex`): círculo com `ring` colorido sólido, ícone na cor do passo, badge verde de check (CheckCircle2) no canto superior direito, label em branco/70.
+- **Ativo** (`i === activeIndex`): círculo com `ring` duplo + halo pulsante (`animate-pulse-neon`), ícone vibrante, label em branco e em negrito, leve `scale-110`.
+- **Futuro** (`i > activeIndex`): círculo opaco (opacity 50), sem check, label em branco/40.
 
-### Efeitos
-- Smooth scroll (Lenis)
-- **Pulse neon** em estados ativos (boxShadow animado)
-- **Gradient text** em palavras-chave de headlines
-- Blurred orbs no fundo (purple/orange) que se movem suavemente
-- Hover lift nos cards
+Traços entre passos viram uma barra `bg-white/10` com um preenchimento `bg-gradient-to-r from-primary to-accent` cuja largura é animada via Framer Motion:
+- 0% se `i >= activeIndex`
+- 100% se `i < activeIndex`
+- Para o traço imediatamente após o ativo (`i === activeIndex`), animar de 0→100% durante o tempo que o passo fica ativo (preenchimento progressivo, como na referência).
 
----
+Texto inferior "Status atual: <label do ativo>" troca conforme `activeIndex` muda, com `AnimatePresence` (fade curto).
 
-## Plano de aplicação no Influlab
+## Sem scroll horizontal
 
-Vou portar a **estrutura, hierarquia, ritmo e efeitos** da ZK para a landing do Influlab, **mantendo o conteúdo atual** (Influência digital, Matriz, Análise Visceral, etc.). Não é cópia 1:1 — é o "vocabulário visual" aplicado ao seu produto.
+Trocar o layout de `flex overflow-x-auto` por **CSS Grid** com `grid-template-columns: repeat(6, minmax(0,1fr))` para os círculos + labels, e os traços renderizados em uma camada absoluta atrás ou via grid intercalado.
 
-### Fase 0 — Decisão de cor (preciso de você)
-A ZK é laranja-neon sobre preto. Seu app hoje é roxo/violeta sobre claro+escuro. Três caminhos:
+Esquema:
 
-- **A. Manter roxo do Influlab** — porto só layout/animações/tipografia. Identidade preservada.
-- **B. Trocar para laranja-neon estilo ZK** — mudança total de paleta. Mais ousado, mas perde sua marca.
-- **C. Híbrido — roxo neon sobre preto profundo** — pega a *energia* da ZK (dark moody + glow + gradiente quente) mas o gradiente vira `violeta→magenta` em vez de `laranja→vermelho`.
+```text
+[ico] -- [ico] -- [ico] -- [ico] -- [ico] -- [ico]
+ lbl     lbl     lbl     lbl     lbl     lbl
+```
 
-(Vou pedir essa escolha via pergunta visual depois do plano aprovado.)
+Implementação prática: grid de 11 colunas (6 ícones + 5 traços), `gap` pequeno, traços com `flex-1` ou `w-full` dentro da própria coluna. Mobile encolhe ícones para `w-11 h-11`, labels com `text-[10px] leading-tight` e `break-words` para "Aguardando confirmação" tipo "Análise Visceral" caberem em 2 linhas.
 
-### Fase 1 — Tokens & base
-- `src/index.css`: adicionar variantes "neon" dos tokens existentes (`--primary-glow`, `--accent-glow`), gradient da palavra-chave do hero, shadows com glow forte, background orbs
-- Confirmar fontes: Inter já está. Avaliar swap do `Playfair Display` por **Inter 800** nos headlines (a ZK não usa serif — headlines bold sans causam o impacto)
-- `tailwind.config.ts`: keyframe `pulse-neon` (boxShadow animado, dois anéis), `marquee` (translateX infinito), `float-slow`
+Em telas <380px, reduzir gap e ícones mais ainda; nenhum `overflow-x-auto`.
 
-### Fase 2 — Landing reestruturada (componente por componente)
-Arquivos em `src/pages/Landing.tsx` e `src/components/landing/`:
+## Arquivos afetados
 
-1. **Nav flutuante** — pílula no topo com `Início / Como Funciona / Recursos / FAQ` + "Entrar" ghost + "Começar Grátis" sólido com glow
-2. **Hero (refatorar `HeroMockup.tsx`)** — split assimétrico com:
-   - Chip eyebrow ("✨ Sua estratégia digital com IA ⭐")
-   - H1 800 com "**influência**" (ou "matriz", "estratégia") em gradient
-   - Dois CTAs lado a lado
-   - Social proof: avatares + contagem + rating
-   - À direita: mockup de iPhone com a tela do app + cards flutuantes ("Tarefa concluída", "Nova matriz pronta")
-   - Background: orbs roxo+rosa borrados + ícones do app espalhados
-3. **`FeatureBar.tsx`** → vira **"Como Funciona" em 3 passos numerados** (Onboarding → IA gera matriz → Execute o plano)
-4. **Novo: `RealtimeTracker.tsx`** — pipeline horizontal "Dia 1 → 7 → 14 → 21 → 30" com ícones coloridos e **pulse neon no dia atual** (a animação que você quer)
-5. **Showcase do app** — mockup grande + 4 features (Análise Visceral, Tarefas Diárias, Scripts, Ferramentas)
-6. **Marquee de nichos** — fitness, beleza, moda, etc. rolando em loop
-7. **Comparativo** (`ComparisonTable.tsx` existente já cobre isso — só re-skin)
-8. **Pricing** — duas colunas (Mensal R$47 / Anual R$297 com destaque)
-9. **`GuaranteeBlock.tsx` + CTA final** — manter, reskinar
-10. **FAQ + Footer**
+- `src/components/landing/RealtimeTracker.tsx` — reescrita completa:
+  - `useState` + `useEffect` com `setInterval` para `activeIndex`
+  - Grid responsivo (sem scroll)
+  - Badge `CheckCircle2` nos passados
+  - Framer Motion nos traços (largura animada) e no label "Status atual"
+- `src/index.css` — opcional: ajustar `@keyframes pulse-neon` se o brilho atual estiver discreto demais (deixar pulso mais visível com 2 anéis: um inner ring + outer glow soft).
+- Nenhuma mudança em outras seções da Landing.
 
-### Fase 3 — Microinterações
-- Lenis para smooth scroll (`@studio-freight/lenis`)
-- Framer Motion: stagger de entrada por seção (já tem em vários cards)
-- Pulse neon nas CTAs primárias quando entram em viewport
-- Hover lift + glow nos cards de feature
+## Pontos técnicos
 
-### Fase 4 — QA visual
-- Testar mobile (375px) — mockup vira full-width, cards empilham, marquee continua
-- Verificar contraste WCAG no modo escolhido
-- Confirmar que rotas internas (/onboarding, /matriz etc.) **não foram tocadas** — só landing
+- Cleanup do `setInterval` no unmount.
+- Respeitar `prefers-reduced-motion`: se ativo, congelar em `activeIndex = 2` sem ciclar.
+- Manter a paleta atual de cores por passo (amber, fuchsia, violet, sky, emerald, pink).
+- Sem novas dependências (framer-motion e lucide-react já estão no projeto).
 
----
+## Validação pós-implementação
 
-## O que NÃO vou tocar
-- Rotas autenticadas (`/`, `/matriz`, `/tarefas`, etc.)
-- Lógica de auth, paywall, edge functions
-- Backend / SQL / Asaas
-- Conteúdo de copy do app interno
-
-## Arquivos afetados (estimativa)
-- `src/index.css` (tokens + keyframes)
-- `tailwind.config.ts` (animações)
-- `src/pages/Landing.tsx` (orquestração)
-- `src/components/landing/*` (refator de 6-8 arquivos + 2 novos: `RealtimeTracker.tsx`, `NichesMarquee.tsx`)
-- `index.html` (preload Inter 800; remover Playfair se aprovado)
-
-## Tempo estimado
-~2 a 3 turnos de execução, dependendo do tamanho dos refatores e quantos componentes você quer que eu adapte numa rodada.
-
----
-
-**Depois que você aprovar este plano**, eu pergunto via *visual choice*:
-1. Qual direção de cor (A/B/C acima)
-2. Se quer manter o serif (Playfair) nos headlines ou ir 100% sans (Inter 800) como a ZK
-3. Se quer que eu também já adapte mobile na primeira rodada ou faça desktop primeiro
+- Visual em 1147px (viewport atual), 768px e 375px — confirmar que nenhum scroll horizontal aparece.
+- Confirmar que o ciclo reinicia suavemente.
+- Confirmar contraste do label ativo vs futuro.
