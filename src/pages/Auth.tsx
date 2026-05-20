@@ -102,23 +102,7 @@ const Auth = () => {
     }
   };
 
-  const Shell = ({ children }: { children: React.ReactNode }) => (
-    <div className="landing-dark min-h-screen flex flex-col relative overflow-hidden">
-      <InAppBrowserBanner />
-      {/* Background orbs */}
-      <div className="neon-orb" style={{ width: 420, height: 420, background: 'hsl(270 90% 55%)', top: -120, left: -120 }} />
-      <div className="neon-orb" style={{ width: 380, height: 380, background: 'hsl(322 85% 55%)', bottom: -140, right: -100 }} />
 
-      <div className="relative z-10 flex-1 flex flex-col items-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-12">
-        <img
-          src={logo}
-          alt="Vyral Lab"
-          className="h-12 sm:h-14 w-auto drop-shadow-[0_0_24px_rgba(168,85,247,0.55)]"
-        />
-        {children}
-      </div>
-    </div>
-  );
 
   if (showConfirmation) {
     return (
@@ -230,5 +214,24 @@ const Auth = () => {
     </Shell>
   );
 };
+
+// Declarado fora do componente para não ser recriado a cada render
+// (caso contrário, o React desmonta os inputs a cada tecla e perde o foco).
+const Shell = ({ children }: { children: React.ReactNode }) => (
+  <div className="landing-dark min-h-screen flex flex-col relative overflow-hidden">
+    <InAppBrowserBanner />
+    <div className="neon-orb" style={{ width: 420, height: 420, background: 'hsl(270 90% 55%)', top: -120, left: -120 }} />
+    <div className="neon-orb" style={{ width: 380, height: 380, background: 'hsl(322 85% 55%)', bottom: -140, right: -100 }} />
+
+    <div className="relative z-10 flex-1 flex flex-col items-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-12">
+      <img
+        src={logo}
+        alt="Vyral Lab"
+        className="h-12 sm:h-14 w-auto drop-shadow-[0_0_24px_rgba(168,85,247,0.55)]"
+      />
+      {children}
+    </div>
+  </div>
+);
 
 export default Auth;
