@@ -17,7 +17,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useState, useEffect } from 'react';
 import { InstallVideoModal, INSTALL_VIDEO_SEEN_KEY } from '@/components/InstallVideoModal';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import logo from '@/assets/vyrallab-logo-horizontal.png';
+import logoDark from '@/assets/vyrallab-logo-horizontal.png';
+import logoLight from '@/assets/vyrallab-logo-light.png';
 
 
 const Index = () => {
