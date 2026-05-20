@@ -166,7 +166,7 @@ export function Navigation() {
       <motion.nav
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="landing-dark fixed bottom-0 left-0 right-0 z-50 bg-[hsl(265_50%_6%/0.85)] backdrop-blur-xl border-t border-white/10 px-1 py-2 pb-[env(safe-area-inset-bottom)] overflow-hidden md:top-0 md:bottom-auto md:border-t-0 md:border-b md:px-2 md:pb-2 md:pt-[env(safe-area-inset-top)]"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card/90 backdrop-blur-xl border-t border-border px-1 py-2 pb-[env(safe-area-inset-bottom)] overflow-hidden md:top-0 md:bottom-auto md:border-t-0 md:border-b md:px-2 md:pb-2 md:pt-[env(safe-area-inset-top)]"
       >
         <div className="flex justify-between items-center gap-0.5 w-full md:max-w-lg md:mx-auto md:gap-1 md:justify-around">
           {navItems.map(({ to, icon: Icon, label }) => (
@@ -176,7 +176,7 @@ export function Navigation() {
               className={({ isActive }) =>
                 `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
-                    ? 'neon-cta'
+                    ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
                 }`
               }
@@ -191,11 +191,12 @@ export function Navigation() {
               className={({ isActive }) =>
                 `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
-                    ? 'neon-cta'
+                    ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
                 }`
               }
             >
+
 
               <ShieldCheck size={20} />
               <span className="truncate max-w-full">Admin</span>
