@@ -91,12 +91,38 @@ export default {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
+        "pulse-neon": {
+          "0%, 100%": {
+            boxShadow:
+              "0 0 0 4px hsl(270 90% 65% / 0.18), 0 0 0 10px hsl(270 90% 65% / 0.08), 0 0 30px hsl(270 100% 70% / 0.55)",
+          },
+          "50%": {
+            boxShadow:
+              "0 0 0 6px hsl(270 90% 65% / 0.28), 0 0 0 14px hsl(270 90% 65% / 0.12), 0 0 48px hsl(322 100% 65% / 0.7)",
+          },
+        },
+        "marquee-x": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
+        },
+        "marquee-x-reverse": {
+          "0%": { transform: "translateX(-50%)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        "float-slow": {
+          "0%, 100%": { transform: "translateY(0) translateX(0)" },
+          "50%": { transform: "translateY(-14px) translateX(6px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "pulse-gold": "pulse-gold 2s ease-in-out infinite",
         shimmer: "shimmer 2s linear infinite",
+        "pulse-neon": "pulse-neon 2.4s ease-in-out infinite",
+        "marquee-x": "marquee-x 40s linear infinite",
+        "marquee-x-reverse": "marquee-x-reverse 40s linear infinite",
+        "float-slow": "float-slow 8s ease-in-out infinite",
       },
     },
   },
