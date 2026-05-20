@@ -235,6 +235,3 @@ const Shell = ({ children }: { children: React.ReactNode }) => (
 );
 
 export default Auth;
-
-
-export default Auth;
