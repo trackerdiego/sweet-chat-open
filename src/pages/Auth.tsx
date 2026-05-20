@@ -48,20 +48,24 @@ const Auth = () => {
     if (!email) { toast.error('Digite seu email'); return; }
     setLoading(true);
     try {
-      // Sonda: tenta login com senha inválida pra ver se o email existe.
-      // "Invalid login credentials" => email existe (só a senha tá errada).
-      // Outras mensagens (user not found etc.) => email não cadastrado.
-      const probePassword = '__probe_' + crypto.randomUUID();
-      const { error: probeError } = await supabase.auth.signInWithPassword({
-        email,
-        password: probePassword,
-      });
+      // Checa via edge function (consulta auth.users com service role)
+      let exists = true; // fallback seguro: assume que existe
+      let usedFallback = false;
+      try {
+        const { data, error } = await supabase.functions.invoke('check-email-exists', {
+          body: { email: email.trim().toLowerCase() },
+        });
+        if (error) {
+          usedFallback = true;
+        } else {
+          exists = !!data?.exists;
+          if (data?.fallback) usedFallback = true;
+        }
+      } catch {
+        usedFallback = true;
+      }
 
-      const msg = (probeError?.message || '').toLowerCase();
-      const rateLimited = msg.includes('rate') || msg.includes('too many');
-      const emailExists = msg.includes('invalid login') || msg.includes('invalid credentials');
-
-      if (!rateLimited && !emailExists) {
+      if (!exists && !usedFallback) {
         toast.error('Não encontramos uma conta com este email. Verifique se digitou corretamente ou crie uma nova conta.', {
           duration: 6000,
           action: {
@@ -75,12 +79,15 @@ const Auth = () => {
         return;
       }
 
-      // Email existe (ou estamos com rate-limit e seguimos o caminho seguro).
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
-      toast.success('Email de recuperação enviado! Verifique sua caixa de entrada (e o spam).');
+      toast.success(
+        usedFallback
+          ? 'Se este email estiver cadastrado, você receberá o link em até 1 minuto. Verifique também o spam.'
+          : 'Email de recuperação enviado! Verifique sua caixa de entrada (e o spam).'
+      );
       setIsForgotPassword(false);
     } catch (err: any) {
       toast.error(err.message || 'Erro ao enviar email');
