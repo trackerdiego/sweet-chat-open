@@ -1,97 +1,49 @@
-# Domínio no ar — próximos passos (backend mínimo + Asaas + QA)
+# Trocar email de suporte + ajustes no .env da VPS
 
-App já responde em `https://app.vyrallab.online/`. Falta destravar **3 frentes** pra ele funcionar 100% (login, checkout, links).
+## 1. Frontend (3 ocorrências de `suporte@influlab.pro`)
 
----
+| Arquivo | Linha | Mudança |
+|---|---|---|
+| `src/pages/Help.tsx` | 28 | `'suporte@influlab.pro'` → `'suporte@vyrallab.online'` |
+| `src/components/Navigation.tsx` | 55 | idem no `mailto:` |
+| `src/components/Navigation.tsx` | 281 | idem no texto `<strong>` |
 
-## 1. CORS / Allowed origins na VPS (ÚNICA mexida obrigatória no backend)
+`src/integrations/supabase/client.ts` **NÃO muda** — `api.influlab.pro` continua sendo a URL do seu backend self-hosted.
 
-Hoje o GoTrue só aceita redirect/origin de `app.influlab.pro`. Sem isso, signup/login/reset vão dar erro no `app.vyrallab.online`.
+## 2. Seu `.env` da VPS — o que adicionar/ajustar
 
-**Na VPS (`/root` ou onde estiver o stack):**
+Você me mandou só um pedaço do `.env` (imgproxy + TLS proxy + alguns secrets). As linhas que importam pro domínio novo são **`SITE_URL`**, **`ADDITIONAL_REDIRECT_URLS`** e **`GOTRUE_URI_ALLOW_LIST`** — que ficam mais acima no arquivo e você não colou.
 
-```bash
-cd ~/supabase/docker
+**Procure essas 3 chaves no seu `~/supabase/docker/.env` e deixe assim** (mantém o domínio antigo funcionando em paralelo):
 
-# editar .env
-nano .env
-```
-
-Garantir/atualizar estas duas linhas (preservando o que já existe, só adicionando o novo origin):
-
-```
+```env
 SITE_URL=https://app.influlab.pro
 ADDITIONAL_REDIRECT_URLS=https://app.vyrallab.online,https://app.vyrallab.online/*,https://app.influlab.pro,https://app.influlab.pro/*,http://localhost:5173
 GOTRUE_URI_ALLOW_LIST=https://app.vyrallab.online,https://app.vyrallab.online/*,https://app.influlab.pro,https://app.influlab.pro/*
 ```
 
-Manter `SITE_URL` em `app.influlab.pro` por enquanto — os templates de email continuam apontando pra lá e o usuário consegue logar pelos dois domínios (mesmo backend). Trocar `SITE_URL` só quando quiser desligar o domínio antigo.
+Se alguma dessas chaves **não existir** no seu .env, adicione na seção do auth/GoTrue.
+
+Do trecho que você colou, **nada precisa mudar**:
+- `IMGPROXY_AUTO_WEBP` ✅
+- `PROXY_DOMAIN` / `CERTBOT_EMAIL` ✅ (só usados se rodar Caddy/Nginx do template — você não usa, está no Cloudflare/Vercel)
+- `ASAAS_WEBHOOK_TOKEN` ✅
+- `EDGE_RUNTIME_*` ✅
+- `CRON_SECRET` ✅
+- `suporte@vyrallab.online` ← essa linha solta no final **deve ser apagada**, não é variável válida (não tem `CHAVE=valor`)
+
+## 3. Comando pra aplicar na VPS
 
 ```bash
+cd ~/supabase/docker
+nano .env   # ajustar SITE_URL/ADDITIONAL_REDIRECT_URLS/GOTRUE_URI_ALLOW_LIST + apagar linha solta
 docker compose up -d --force-recreate auth
 ```
 
-(Não precisa recriar Kong — CORS dele já é wildcard no setup padrão self-hosted. Se algum request falhar com erro CORS no console, aí recriamos o Kong também.)
+## 4. Ordem
 
-**Validação:** abrir `https://app.vyrallab.online/auth`, tentar cadastro novo + login. Deve funcionar.
-
----
-
-## 2. Asaas — URLs de retorno do checkout
-
-A `create-asaas-subscription` hoje passa `callback.successUrl` apontando pro front. Preciso varrer a function pra ver se está hardcoded ou se usa header `origin` do request (se for `origin`, **já funciona automaticamente** porque o navegador manda o origin novo).
-
-**Ações:**
-- Eu verifico `supabase/functions/create-asaas-subscription/index.ts` na hora de implementar
-- Se hardcoded: troco `app.influlab.pro` → `app.vyrallab.online` e redeploy via `./scripts/deploy-selfhost.sh create-asaas-subscription`
-- Se for `origin`: zero mudança
-
-**Painel Asaas:** o webhook continua em `https://api.influlab.pro/functions/v1/asaas-webhook` (backend não mudou). **Não mexer.**
-
----
-
-## 3. Varredura de strings `influlab.pro` no frontend
-
-Já confirmei antes que **não há hardcode** no frontend (tudo usa env/relativo). Mas vou refazer a varredura agora pra garantir, focando em:
-
-- `src/pages/Referral.tsx` (link de convite)
-- `index.html` (meta tags, og:url, canonical)
-- `public/manifest.json`
-- Copy/textos visíveis em landing
-
-Se aparecer algo, troco pra `app.vyrallab.online` e Vercel redeploya automático via GitHub.
-
----
-
-## 4. SEO / extras (opcional, dá pra fazer depois)
-
-- `public/robots.txt` — adicionar sitemap se aplicável
-- Google Search Console — adicionar propriedade `vyrallab.online`
-- `index.html` — atualizar `<title>` e `og:url` absolutos se houver
-
----
-
-## Ordem que vou executar quando você aprovar
-
-1. Varrer código do front e da `create-asaas-subscription` (read-only)
-2. Te entregar:
-   - Bloco copia-cola pra rodar na VPS (passo 1 acima)
-   - Lista exata de arquivos a alterar (se houver) com diff
-   - Comando de redeploy de edge function (se necessário)
-   - Passo a passo do que conferir no painel Asaas
-3. Você roda na VPS + confirma no Asaas
-4. Eu commito as mudanças de front (se houver) → Vercel auto-deploy
-5. Smoke test completo: signup → onboarding → checkout → webhook → premium
-
----
-
-## O que continua INTOCADO
-
-- Schema Postgres, RLS, triggers ✅
-- Secrets ✅
-- Webhook Asaas URL (`api.influlab.pro`) ✅
-- SMTP + templates de email ✅
-- `SITE_URL` do GoTrue (mantém `app.influlab.pro` por ora) ✅
-- Todas as outras edge functions ✅
+1. Você aprova → eu altero os 3 lugares no frontend (commit → Vercel auto-deploy)
+2. Você roda o bloco do passo 3 na VPS
+3. Smoke test: login em `app.vyrallab.online/auth` + clicar email de suporte em `/ajuda` (deve abrir `suporte@vyrallab.online`)
 
 Posso seguir?

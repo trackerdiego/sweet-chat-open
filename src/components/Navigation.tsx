@@ -52,7 +52,7 @@ export function Navigation() {
   // (ativo + sem fatura Pix pendente = Asaas debitando automático no cartão)
   const showSubscriptionHelp = isActive && !hasPendingPixInvoice && !!session?.user;
   const userEmail = session?.user?.email ?? '';
-  const supportMailto = `mailto:suporte@influlab.pro?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
+  const supportMailto = `mailto:suporte@vyrallab.online?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
 
   const handleResetNiche = async () => {
     const uid = session?.user?.id;
@@ -278,7 +278,7 @@ export function Navigation() {
           <AlertDialogHeader>
             <AlertDialogTitle>Precisa de ajuda com sua assinatura?</AlertDialogTitle>
             <AlertDialogDescription>
-              Para qualquer ajuste — pausar, alterar plano, atualizar dados de pagamento ou cancelar — envie um email para <strong>suporte@influlab.pro</strong>. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação.
+              Para qualquer ajuste — pausar, alterar plano, atualizar dados de pagamento ou cancelar — envie um email para <strong>suporte@vyrallab.online</strong>. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -25,7 +25,7 @@ import {
 import { VideoEmbed } from '@/components/landing/VideoEmbed';
 import { TUTORIALS, type TutorialTopic } from '@/data/tutorials';
 
-const SUPPORT_EMAIL = 'suporte@influlab.pro';
+const SUPPORT_EMAIL = 'suporte@vyrallab.online';
 const TUTORIAL_TOPICS: TutorialTopic[] = ['onboarding', 'matriz', 'scripts', 'tools', 'tarefas'];
 
 export default function Help() {
