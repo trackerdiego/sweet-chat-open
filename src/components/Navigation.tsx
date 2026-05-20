@@ -52,7 +52,7 @@ export function Navigation() {
   // (ativo + sem fatura Pix pendente = Asaas debitando automático no cartão)
   const showSubscriptionHelp = isActive && !hasPendingPixInvoice && !!session?.user;
   const userEmail = session?.user?.email ?? '';
-  const supportMailto = `mailto:suporte@influlab.pro?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
+  const supportMailto = `mailto:suporte@vyrallab.online?subject=${encodeURIComponent('Ajuda com minha assinatura')}&body=${encodeURIComponent(`Olá, preciso de ajuda com minha assinatura.\n\nMeu email cadastrado: ${userEmail}\n\nDescreva abaixo o que precisa:\n`)}`;
 
   const handleResetNiche = async () => {
     const uid = session?.user?.id;
