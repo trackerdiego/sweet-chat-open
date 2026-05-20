@@ -30,7 +30,16 @@ const queryClient = new QueryClient();
 function AppRoutes() {
   const { isAuthenticated, needsOnboarding, loading } = useUserProfile();
 
+  if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+    return (
+      <Routes>
+        <Route path="/reset-password" element={<ResetPassword />} />
+      </Routes>
+    );
+  }
+
   if (loading) {
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Carregando...</div>
