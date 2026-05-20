@@ -59,10 +59,10 @@ serve(async (req) => {
   const D3 = [
     (v: number) => ({ title: '⏳ Sua fatura vence em 3 dias', body: `R$ ${brl(v)} via Pix. Toque pra pagar agora e garantir seu acesso.` }),
     (v: number) => ({ title: '📅 Faltam 3 dias pra renovação', body: `R$ ${brl(v)} no Pix. Resolve em 1 minuto e nem pensa mais nisso.` }),
-    (v: number) => ({ title: '💜 Lembrete carinhoso', body: `Sua renovação do VyralLab (R$ ${brl(v)}) vence em 3 dias. Bora adiantar?` }),
+    (v: number) => ({ title: '💜 Lembrete carinhoso', body: `Sua renovação do Vyral Lab (R$ ${brl(v)}) vence em 3 dias. Bora adiantar?` }),
   ];
   const D1 = [
-    (v: number) => ({ title: '🚨 Sua fatura vence amanhã', body: `R$ ${brl(v)} via Pix. Não perca acesso ao VyralLab.` }),
+    (v: number) => ({ title: '🚨 Sua fatura vence amanhã', body: `R$ ${brl(v)} via Pix. Não perca acesso ao Vyral Lab.` }),
     (v: number) => ({ title: '⏰ Última chance sem urgência', body: `R$ ${brl(v)} no Pix amanhã. Resolve hoje e dorme tranquilo.` }),
     (v: number) => ({ title: '💡 Vence amanhã!', body: `R$ ${brl(v)} mantém sua matriz, IA e scripts liberados. Toque pra pagar.` }),
   ];
@@ -72,7 +72,7 @@ serve(async (req) => {
     (v: number) => ({ title: '🚨 Hoje é o dia', body: `Renova agora (R$ ${brl(v)}) e não perde o ritmo que você construiu.` }),
   ];
   const DP1 = [
-    (v: number) => ({ title: '😬 Sua assinatura venceu ontem', body: `Pague o Pix de R$ ${brl(v)} em segundos e recupera o acesso ao VyralLab.` }),
+    (v: number) => ({ title: '😬 Sua assinatura venceu ontem', body: `Pague o Pix de R$ ${brl(v)} em segundos e recupera o acesso ao Vyral Lab.` }),
     (v: number) => ({ title: '⏸️ Acesso pausado', body: `Sua fatura de R$ ${brl(v)} venceu ontem. Toque pra regularizar agora.` }),
     (v: number) => ({ title: '🔓 Ainda dá tempo!', body: `Renovação venceu ontem (R$ ${brl(v)}). Pix expira logo — pague pra voltar.` }),
   ];
