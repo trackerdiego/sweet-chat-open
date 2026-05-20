@@ -1,65 +1,52 @@
-## Parte 1 — Validar email antes de chamar `resetPasswordForEmail`
+Status do que já está feito:
 
-**Arquivo:** `src/pages/Auth.tsx` (função `handleForgotPassword`, linhas 46-62)
+1. Frontend da tela /auth
+- Já está implementada a validação antes do envio: o app tenta detectar se o email existe antes de chamar o reset de senha.
+- Se o email não existir, deveria aparecer uma mensagem dizendo que a conta não foi encontrada e oferecendo “Criar conta”.
+- Isso só vale onde o frontend novo estiver publicado. Se você testou em app.vyrallab.online e o deploy da Vercel ainda não pegou a alteração, vai continuar com o comportamento antigo.
 
-**Estratégia de validação:** chamar `supabase.auth.signInWithPassword({ email, password: '__probe_invalid_'+crypto.randomUUID() })` e ler o `error.message`:
+2. Template novo do email
+- O arquivo novo `recovery.html` já foi gerado e está disponível.
+- Ele ainda não altera automaticamente o Supabase self-hosted. Para mudar o email real, você precisa subir esse HTML no Storage self-hosted, substituindo o arquivo atual em `emails/emails/recovery.html`.
+- Sem esse upload manual, o email continuará chegando com o template antigo.
 
-- `"Invalid login credentials"` → email **existe** (senha errada). Prosseguir com `resetPasswordForEmail` e mostrar:
-  > "Email de recuperação enviado! Verifique sua caixa de entrada (e o spam)."
-- Mensagem contendo `"not found"` / `"user"` / qualquer outra → email **não cadastrado**. Mostrar:
-  > "Não encontramos uma conta com este email. Verifique se digitou corretamente ou crie uma nova conta."
-  
-  Também oferecer botão "Criar conta" que troca pra tela de signup pré-preenchida com o email.
+3. O que ainda pode estar falhando
+- O email pode não chegar por problema no Auth/SMTP/template path no self-hosted.
+- A validação de email pode não aparecer se você estiver testando no domínio publicado antes do deploy novo.
+- O reset pode estar sendo chamado, mas o email pode estar indo para spam ou usando ainda o template antigo.
 
-**Trade-off assumido (já confirmado):** essa abordagem permite enumeração de usuários — atacantes podem descobrir quais emails têm conta. Aceito em troca de UX mais clara.
+Plano para fechar o diagnóstico:
 
-**Rate-limit safety:** o GoTrue rate-limita o `signInWithPassword`. Se vier `"rate limit"`, fazer fallback pro comportamento atual (sempre mostrar "email enviado se existir") pra não travar o fluxo.
+1. Confirmar onde você testou
+- Verificar se foi no preview da Lovable ou no domínio `https://app.vyrallab.online`.
+- Se foi no domínio publicado, confirmar se a Vercel já recebeu a alteração do arquivo `src/pages/Auth.tsx`.
 
----
+2. Confirmar se o frontend novo está em produção
+- Testar a recuperação com um email inexistente.
+- Resultado esperado: aparecer mensagem “Não encontramos uma conta com este email...” e botão “Criar conta”.
+- Se aparecer mensagem genérica de envio, o domínio ainda está com frontend antigo.
 
-## Parte 2 — Novo template HTML `recovery.html` (Vyral Lab)
+3. Confirmar se o Supabase self-hosted enviou o email
+Rodar no VPS, em `~/supabase/docker`:
 
-Gerar arquivo novo `recovery.html` com:
+```bash
+docker compose logs --tail=200 auth | grep -Ei "recover|mailer|smtp|error|template|mentecomp|request completed"
+```
 
-**Branding atualizado:**
-- Header com gradiente roxo/violeta (paleta do app: `#7c3aed` → `#a855f7`)
-- Logo: `https://api.influlab.pro/storage/v1/object/public/emails/Novo%20Projeto%20(75).png` (URL fornecida)
-- Tamanho controlado (`max-width: 120px`, `height: auto`) e `alt="Vyral Lab"`
-- Nome da marca: **"Vyral Lab"** em todos os lugares (substitui "InfluLab")
-- Footer com `© 2026 Vyral Lab` + `app.vyrallab.online`
+4. Confirmar se o usuário existe no Auth self-hosted
+Trocar pelo email testado:
 
-**Conteúdo (PT-BR, tom amigável):**
-- H1: "Redefinir sua senha"
-- Parágrafo: "Recebemos uma solicitação para redefinir a senha da sua conta **Vyral Lab**. Clique no botão abaixo para criar uma nova senha."
-- Box de atenção: "⏰ Este link expira em **1 hora** por motivos de segurança."
-- CTA: botão roxo "Redefinir minha senha" → `{{ .ConfirmationURL }}`
-- Fallback: "Ou copie e cole este link no seu navegador:" + `{{ .ConfirmationURL }}` (quebra de linha com `word-break: break-all`)
-- Aviso final: "Se você não solicitou essa redefinição, ignore este email. Sua senha continua segura."
-- Preheader (texto invisível pra preview do inbox): "Redefina sua senha com segurança no Vyral Lab."
+```bash
+docker compose exec db psql -U postgres -d postgres -c "SELECT email, email_confirmed_at, created_at FROM auth.users WHERE lower(email) = lower('EMAIL_TESTADO');"
+```
 
-**Compatibilidade email:**
-- HTML em tabelas (não usa flex/grid moderno)
-- CSS inline em todos elementos críticos
-- Sem JS, sem `<style>` externo
-- `<meta name="viewport">` pra mobile
+5. Subir o template novo no Storage self-hosted
+- Baixar o arquivo `recovery.html` gerado.
+- No Studio self-hosted, abrir Storage → bucket `emails` → pasta `emails/`.
+- Substituir o arquivo `recovery.html` atual.
+- Testar recuperação novamente.
 
-**Variáveis GoTrue mantidas:** `{{ .ConfirmationURL }}`, `{{ .Email }}`, `{{ .SiteURL }}`.
-
-O arquivo será gravado em `/mnt/documents/recovery.html` pra você baixar e fazer upload no Studio self-hosted (bucket `emails/emails/recovery.html`, substituindo o atual). Não mexo no GoTrue nem no docker-compose — `MAILER_TEMPLATES_RECOVERY` já aponta pra esse caminho.
-
----
-
-## Bloco de deploy (final)
-
-Vou entregar:
-1. Edit no `src/pages/Auth.tsx` → commit/push do Vercel pega automático.
-2. Arquivo `recovery.html` no `/mnt/documents/` + instruções de **2 cliques no Studio**: abrir bucket `emails` → pasta `emails/` → upload (substituir) → testar pedindo recovery de novo.
-
-Sem mexer em `~/supabase/docker/.env`, sem `docker compose restart`, sem migration.
-
----
-
-## Fora do escopo
-
-- Outros 4 templates (confirmation, magic_link, email_change, invite) ficam pra depois — você pode pedir num próximo turno e eu replico o mesmo branding.
-- Mudar o "From name" no GoTrue (hoje vem como "InfluLab AI") — isso é env `GOTRUE_SMTP_SENDER_NAME` no `.env` do self-hosted, posso instruir se quiser.
+6. Se o email ainda não chegar
+- Revisar logs do container `auth` imediatamente após o teste.
+- Se o log mostrar status 200 em `/recover`, o Auth aceitou o pedido; o problema passa a ser SMTP/template/destino.
+- Se mostrar erro SMTP/template, corrigimos a variável ou o arquivo específico no self-hosted.
