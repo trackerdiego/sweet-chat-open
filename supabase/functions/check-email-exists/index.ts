@@ -26,18 +26,11 @@ serve(async (req) => {
 
     const target = email.trim().toLowerCase();
 
-    // Query direta em auth.users via schema('auth')
-    const { data, error } = await admin
-      .schema("auth" as any)
-      .from("users")
-      .select("id")
-      .ilike("email", target)
-      .limit(1)
-      .maybeSingle();
+    // RPC SECURITY DEFINER em public.email_exists — portável (Lovable Cloud e self-hosted)
+    const { data, error } = await admin.rpc("email_exists", { p_email: target });
 
     if (error) {
-      console.error("check-email-exists query error:", error.message);
-      // Fallback: assume existe pra não travar UX.
+      console.error("check-email-exists rpc error:", error.message);
       return new Response(
         JSON.stringify({ exists: true, fallback: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
