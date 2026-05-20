@@ -208,11 +208,11 @@ export function Navigation() {
               <span className="truncate max-w-full">Config</span>
               {wallet.coins_balance > 0 && (
                 <span
-                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shadow-md shadow-primary/40"
-                  style={{ background: 'linear-gradient(135deg, hsl(270 95% 65%), hsl(322 90% 60%))' }}
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-primary-foreground text-[10px] font-semibold flex items-center justify-center shadow-md shadow-primary/40 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]"
                 >
                   {wallet.coins_balance > 999 ? '999+' : wallet.coins_balance}
                 </span>
+
               )}
 
             </DropdownMenuTrigger>
