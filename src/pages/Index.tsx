@@ -137,7 +137,7 @@ const Index = () => {
           </p>
           <div className="space-y-1">
             <h1 className="font-serif text-3xl font-bold text-foreground">
-              Olá, <span className="neon-text">{displayName}</span> 👑
+              Olá, <span className="bg-clip-text text-transparent bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]">{displayName}</span> 👑
             </h1>
             <p className="text-muted-foreground text-sm">Sua jornada de influência continua</p>
           </div>
@@ -185,7 +185,7 @@ const Index = () => {
                 </p>
               </div>
             </div>
-            <Button size="sm" onClick={() => setCheckoutOpen(true)} className="neon-cta shrink-0">
+            <Button size="sm" onClick={() => setCheckoutOpen(true)} className="shrink-0 text-primary-foreground bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))] shadow-md shadow-primary/30 hover:brightness-110">
               Assinar
             </Button>
           </motion.div>

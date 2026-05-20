@@ -43,7 +43,7 @@ export function StreakCounter({ streak }: StreakCounterProps) {
           <div
             key={days}
             className={`flex flex-col items-center gap-1.5 flex-1 py-3 rounded-xl transition-all ${
-              reached ? 'neon-cta' : 'bg-muted/30 text-muted-foreground'
+              reached ? 'text-primary-foreground bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))] shadow-md shadow-primary/30' : 'bg-muted/30 text-muted-foreground'
             }`}
           >
             <Icon size={18} />
