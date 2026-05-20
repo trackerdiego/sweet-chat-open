@@ -1,31 +1,35 @@
-## Aplicar estilo da landing (dark neon) à tela de Auth
+## Aplicar estilo neon dark no Painel principal
 
-Replicar a identidade visual `.landing-dark` (fundo roxo escuro, orbs flutuantes, neon-card, neon-cta, gradient text, logo Vyral Lab) na tela `/auth`, mantendo toda a lógica (login, signup, esqueci senha, confirmação, referral) intacta.
+Replicar o visual da landing/login (`landing-dark`, `neon-orb`, `neon-card`, `neon-cta`, `neon-text`, logo horizontal com glow roxo) na tela `/` (Index.tsx) e na navegação principal.
 
-### Mudanças visuais em `src/pages/Auth.tsx`
+### Arquivos afetados
 
-1. **Wrapper raiz** ganha `className="landing-dark min-h-screen ..."` para herdar todos os tokens dark da landing.
-2. **Background**: substitui o `gradient-header` (header roxo claro arredondado) por:
-   - Fundo radial roxo (já vem do `.landing-dark`)
-   - Dois `neon-orb` absolutos (um roxo, um magenta) borrados ao fundo para o glow característico
-3. **Logo**: trocar `influlab-logo.png` por `vyrallab-logo-horizontal.png` (mesma da nav), centralizada no topo com `drop-shadow` neon roxo, sem o header colorido.
-4. **Títulos** ("Boas-vindas de volta", "Crie sua conta", "Recuperar senha", "Verifique seu email"):
-   - Usar a palavra-chave em `neon-text` (gradient roxo→magenta)
-   - Cor base `text-foreground` (branco no dark)
-5. **Card do formulário**: trocar `glass-card` por `neon-card` (borda roxa sutil + hover glow).
-6. **Chip de referral**: trocar por `neon-chip` com ícone `Gift`.
-7. **Inputs**: já herdam tokens do `.landing-dark` (background/border/foreground escuros) — sem mudança de markup, só validar contraste do placeholder.
-8. **Botão principal** ("Entrar" / "Criar Conta" / "Enviar link" / "Já confirmei"): trocar `gold-gradient text-primary-foreground` por `neon-cta` (gradient roxo→magenta com halo).
-9. **Links secundários** ("Criar conta", "Fazer login", "Esqueci minha senha", "Voltar ao login"): cor `text-primary-glow` com hover underline.
-10. **Ícone do estado de confirmação**: círculo com `bg-primary/15 border border-primary/40` e ícone em `text-primary-glow` no lugar do `bg-primary/10`.
-11. **Banner InAppBrowserBanner**: mantém no topo, sem alteração.
+**1. `src/pages/Index.tsx`** — dashboard logado
+- Wrapper: adicionar `landing-dark` no container raiz
+- Header: trocar `gradient-header` por fundo escuro com 1–2 `neon-orb` posicionados e gradiente radial sutil roxo
+- Substituir saudação "Olá, {name} 👑" para usar `neon-text` no nome
+- Botões ghost do header (ajuda/sair): manter ícones, ajustar hover para `hover:bg-white/5`
+- Card "Plano Gratuito": trocar `glass-card` por `neon-card`, ícone Crown com `bg-primary/15 border-primary/40`, botão "Assinar" passa de `gold-gradient` para `neon-cta`
+- Card "descrição pendente": `neon-card` com tom de aviso (manter amber mas sobre fundo escuro), botão outline com borda neon
+- Card de hoje (Link to /script): `neon-card` com hover glow, barra de progresso usando `bg-gradient-to-r from-primary to-[hsl(var(--primary-glow))]` no lugar de `gold-gradient`
+- Skeleton inicial: ajustar fundo do header skeleton pro novo esquema
 
-### Sem mudanças
+**2. `src/components/Navigation.tsx`** — bottom nav / top nav
+- Fundo: `bg-[hsl(var(--background))]/80 backdrop-blur` com borda `border-white/10`
+- Item ativo: trocar `gold-gradient + text-primary-foreground` por `neon-cta` (gradiente roxo→magenta + halo)
+- Badge de coins: trocar `bg-primary` por gradiente neon
+- Manter toda a lógica (dropdowns, dialogs, push, reset perfil, ajuda assinatura) intacta
 
-- Nenhuma alteração de lógica, validação, hooks, chamadas Supabase, fluxo de referral, redirects, ou tipos.
-- Nenhuma alteração em outros componentes/páginas.
-- Sem novos arquivos.
+**3. Subcomponentes do painel** (ajustes mínimos pra harmonizar com fundo escuro)
+- `MonthlyProgress`, `StreakCounter`, `MindsetPulse`, `WeeklyView`: trocar `glass-card` interno por `neon-card` quando aplicável; barras/acentos passam a usar `--primary` + `--primary-glow` no lugar de `gold-gradient`
+- Sem mudanças de layout ou conteúdo, só tokens visuais
 
-### Resultado
+### Fora do escopo
 
-Tela `/auth` com a mesma identidade dark/neon da landing: fundo roxo profundo com orbs, logo Vyral Lab no topo com glow, card translúcido com borda roxa, CTA neon roxo→magenta, títulos com palavra em gradient.
+- Nenhuma mudança em lógica, hooks (`useInfluencer`, `useUserStrategies`, `useUserUsage`, `useSubscription`), Supabase, rotas, CheckoutModal, InstallVideoModal
+- Não mexer em `index.css` (tokens `landing-dark`, `neon-*` já existem da landing)
+- Não tocar nas demais páginas (Matrix, Script, Tools, Tasks, Wallet, Admin, etc.) — se você quiser estender depois, peço confirmação separada
+
+### Pontos a confirmar
+1. Quer que eu inclua **todas** as sub-páginas do app logado (Matrix, Script, Tasks, Tools, Wallet, Help, Onboarding, Renew) no mesmo esquema, ou só o Painel + Navigation por enquanto?
+2. O `gold-gradient` aparece em vários lugares do app — substituo globalmente por neon ou só nos pontos do Painel/Nav?
