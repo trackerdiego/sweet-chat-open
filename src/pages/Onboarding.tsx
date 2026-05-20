@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, X, Users, Brain, LayoutGrid, UserCircle } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { HelpButton } from '@/components/HelpButton';
+import logoDark from '@/assets/vyrallab-logo-horizontal.png';
 
 const contentStyles = [
   { id: 'casual', label: 'Casual', description: 'Leve e descontraído, como conversa entre amigos', emoji: '😊' },
@@ -155,7 +156,7 @@ const Onboarding = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <div className="gradient-header px-4 pt-10 pb-12 rounded-b-3xl text-center">
-          <span className="font-serif text-xl font-bold text-primary">Vyral Lab</span>
+          <img src={logoDark} alt="Vyral Lab" className="h-9 w-auto mx-auto" />
           <p className="text-white/60 text-sm mt-1">Personalizando sua experiência</p>
         </div>
         <div className="flex-1 flex flex-col items-center px-4 -mt-6 pb-10">
@@ -340,7 +341,7 @@ const Onboarding = () => {
         <div className="absolute right-3 top-[max(1rem,env(safe-area-inset-top))]">
           <HelpButton topic="onboarding" />
         </div>
-        <span className="font-serif text-xl font-bold text-primary">Vyral Lab</span>
+        <img src={logoDark} alt="Vyral Lab" className="h-9 w-auto mx-auto" />
         <p className="text-white/60 text-sm mt-1">Configure seu perfil</p>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-6">

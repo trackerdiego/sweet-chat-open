@@ -1,45 +1,29 @@
-## Rebrand visual: Influlab → Vyral Lab
+## Auth claro + logo correto nas telas de onboarding
 
-Trocar todas as ocorrências **visíveis ao usuário** de "Influlab" / "InfluLab" para **"Vyral Lab"**. Manter intactos: domínio `app.influlab.pro`, email `suporte@influlab.pro`, chaves de `localStorage` (`influlab.*`), nomes de variáveis internas e arquivos de memória/edge functions (não aparecem na UI).
+### 1. `src/pages/Auth.tsx` — converter para tema claro
+- Remover `landing-dark` do `<Shell>` (deixar de forçar tema escuro).
+- Remover os dois `<div class="neon-orb">` (efeito neon do fundo escuro).
+- Trocar `neon-card` → `glass-card` (3 ocorrências: confirmação, esqueci senha, formulário principal).
+- Trocar `neon-cta` → `gold-gradient text-primary-foreground` (3 botões).
+- Trocar `neon-chip` (badge de indicação) → versão clara: `inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary px-3 py-1 text-xs font-medium`.
+- Substituir cor `text-[hsl(var(--primary-glow))]` por `text-primary` (3 links: "Esqueci senha", "Voltar ao login", "Criar conta/Fazer login").
+- Ícone do email no card de confirmação: `text-[hsl(var(--primary-glow))]` → `text-primary`.
+- `neon-text` (spans dentro dos h1) → `text-primary`.
+- Importar `logoLight` (`@/assets/vyrallab-logo-light.png`) e usar no `<img>` do Shell.
+- Ajustar `drop-shadow` do logo (sombra roxa neon não combina com fundo claro): trocar por `drop-shadow-sm` ou remover.
 
-### Arquivos a alterar
+### 2. `src/pages/ResetPassword.tsx` — usar logo branco
+- Substituir os dois wordmarks `<span class="font-serif text-2xl font-bold text-primary">Vyral Lab</span>` (linhas 50 e 63) por `<img src={logoLight} alt="Vyral Lab" class="h-10 w-auto mx-auto" />`.
+- Importar `logoLight`.
 
-**Meta / PWA**
-- `index.html` — `<title>`, `meta description`, `meta author`, `og:title`, `og:description`, `twitter:title`, `twitter:description` → "Vyral Lab - Sua Matriz de Influência"
-- `public/manifest.json` — `name` e `short_name` → "Vyral Lab"
-
-**Landing (`src/pages/Landing.tsx`)**
-- `alt` dos avatares (linhas 34-38): "Criador/Criadora Vyral Lab"
-- FAQ (127, 128): trocar "InfluLab" por "Vyral Lab"
-- `alt` do mockup (242), parágrafo (333), seção depoimentos (384)
-- Cards de plano (442, 479): "Vyral Lab Pro"
-- Footer (572): "© {ano} Vyral Lab. Todos os direitos reservados."
-
-**Outros componentes da landing**
-- `ComparisonTable.tsx` — título "Por que Vyral Lab e não outra coisa?" e header "Vyral Lab" (linha 36). Chave `influlab` do objeto `rows` permanece (interno).
-- `GuaranteeBlock.tsx` — "Teste o Vyral Lab por 7 dias."
-- `ProductDemoVideo.tsx` — "Veja o Vyral Lab em ação" e `title="Demo Vyral Lab"`
-- `VideoTestimonialsGrid.tsx` — texto descritivo
-
-**Páginas internas**
-- `Onboarding.tsx` (158, 343) — wordmark "Vyral Lab"
-- `ResetPassword.tsx` (50, 63) — wordmark "Vyral Lab"
-- `Referral.tsx` (40) — `navigator.share` title "Vyral Lab"
-- `Tools.tsx` (417) — explicação do compartilhamento Instagram
-
-**Componentes de instalação**
-- `InstallBanner.tsx` (59) — "Adicione o Vyral Lab à tela de início"
-- `InstallInstructionsModal.tsx` (61, 104) — "link do Vyral Lab" e "Instale o Vyral Lab no seu celular"
-- `InstallVideoModal.tsx` (48) — "seu Vyral Lab vira app"
+### 3. `src/pages/Onboarding.tsx` — usar logo escuro no header roxo
+- O header (`.gradient-header`) tem fundo roxo gradiente → a logo **escura/original** (otimizada para fundo escuro) é a correta.
+- Substituir os dois wordmarks `<span class="font-serif text-xl font-bold text-primary">Vyral Lab</span>` (linhas 158 e 343) por `<img src={logoDark} alt="Vyral Lab" class="h-9 w-auto mx-auto" />`.
+- Importar `logoDark` de `@/assets/vyrallab-logo-horizontal.png`.
 
 ### Não alterar
-- `Help.tsx` linha 28 — `SUPPORT_EMAIL = 'suporte@influlab.pro'` (email real)
-- `Navigation.tsx` linhas 55, 108, 281 — email de suporte e chave de localStorage
-- `Referral.tsx` linha 7 — `SHARE_BASE` (URL do app)
-- `InstallVideoModal.tsx` linha 6 — `SEEN_KEY` localStorage
-- `Onboarding.tsx` linhas 79, 96 — `localStorage.removeItem('influlab.onboardingRunId')`
-- Edge functions, hooks (`useOnboardingRun`, `useUserProfile`, `useAppTheme`), `supabase/client.ts`, arquivos `.md` e `.lovable/*` — não visíveis ao usuário
-- Logo já foi substituída em mensagem anterior
+- `Landing.tsx` — continua escuro (já usa `landing-dark`).
+- `Onboarding.tsx` body — já é claro por padrão; só o header roxo recebe a logo escura.
+- Index.tsx — toggle de tema já implementado.
 
-### Pergunta
-O email de suporte `suporte@influlab.pro` continua o mesmo, ou também migra para um domínio Vyral Lab (ex.: `suporte@vyrallab.com`)? Se mudar, me passe o novo email.
+Posso aplicar?
