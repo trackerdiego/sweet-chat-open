@@ -16,13 +16,13 @@ export function MonthlyProgress({ completedDays, totalDays }: MonthlyProgressPro
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="glass-card p-6 flex flex-col items-center gap-4"
+      className="neon-card p-6 flex flex-col items-center gap-4"
     >
       <div className="flex items-center gap-2">
-        <div className="gradient-icon-bg purple">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/15 border border-primary/40 text-[hsl(var(--primary-glow))]">
           <TrendingUp size={18} />
         </div>
-        <h3 className="font-serif text-lg font-semibold">Progresso do Mês</h3>
+        <h3 className="font-serif text-lg font-semibold text-foreground">Progresso do Mês</h3>
       </div>
 
       <div className="relative w-28 h-28">
@@ -30,10 +30,11 @@ export function MonthlyProgress({ completedDays, totalDays }: MonthlyProgressPro
           <circle cx="50" cy="50" r="45" fill="none" stroke="hsl(var(--muted))" strokeWidth="6" />
           <defs>
             <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="hsl(258, 60%, 55%)" />
-              <stop offset="100%" stopColor="hsl(280, 70%, 45%)" />
+              <stop offset="0%" stopColor="hsl(270, 95%, 65%)" />
+              <stop offset="100%" stopColor="hsl(322, 90%, 60%)" />
             </linearGradient>
           </defs>
+
           <motion.circle
             cx="50" cy="50" r="45" fill="none"
             stroke="url(#progressGradient)"
