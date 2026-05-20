@@ -1,38 +1,98 @@
-import { useEffect } from 'react';
+import { useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Share, Plus, MoreVertical, Smartphone } from 'lucide-react';
 
-const WISTIA_ID = 'e9u6kg4om8';
 const SEEN_KEY = 'influlab.installVideoSeen';
-
-function ensureWistiaScripts() {
-  if (typeof document === 'undefined') return;
-  if (!document.querySelector('script[data-wistia-player]')) {
-    const s = document.createElement('script');
-    s.src = 'https://fast.wistia.com/player.js';
-    s.async = true;
-    s.setAttribute('data-wistia-player', '1');
-    document.head.appendChild(s);
-  }
-  if (!document.querySelector(`script[data-wistia-media="${WISTIA_ID}"]`)) {
-    const s = document.createElement('script');
-    s.src = `https://fast.wistia.com/embed/${WISTIA_ID}.js`;
-    s.async = true;
-    s.type = 'module';
-    s.setAttribute('data-wistia-media', WISTIA_ID);
-    document.head.appendChild(s);
-  }
-}
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+type Platform = 'ios' | 'android' | 'other';
+
+function detectPlatform(): Platform {
+  if (typeof navigator === 'undefined') return 'other';
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  return 'other';
+}
+
+function InlineIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-flex items-center justify-center align-middle h-7 w-7 mx-1 rounded-md border border-border bg-muted text-foreground"
+    >
+      {children}
+    </span>
+  );
+}
+
+function IOSContent() {
+  return (
+    <div className="space-y-5">
+      <p className="text-[15px] leading-relaxed text-foreground">
+        Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
+        <br />
+        Toque em <strong>Compartilhar</strong>
+        <InlineIcon><Share className="h-4 w-4" /></InlineIcon>
+        e depois em <strong>Adicionar à Tela de Início</strong>
+        <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
+      </p>
+
+      {/* Mockup da barra inferior do Safari */}
+      <div className="rounded-2xl bg-muted/40 border border-border p-3 flex items-center justify-center">
+        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted-foreground/20 text-foreground text-sm font-medium">
+          <span className="opacity-70">aA</span>
+          <span>app.vyrallab.online</span>
+          <Share className="h-4 w-4 text-primary" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AndroidContent() {
+  return (
+    <div className="space-y-5">
+      <p className="text-[15px] leading-relaxed text-foreground">
+        Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
+        <br />
+        Toque no menu
+        <InlineIcon><MoreVertical className="h-4 w-4" /></InlineIcon>
+        no canto superior direito e depois em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>
+        <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
+      </p>
+
+      {/* Mockup da barra superior do Chrome */}
+      <div className="rounded-2xl bg-muted/40 border border-border p-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted-foreground/20 text-foreground text-sm font-medium flex-1 truncate">
+          <span className="truncate">app.vyrallab.online</span>
+        </div>
+        <div className="h-9 w-9 rounded-full bg-muted-foreground/20 flex items-center justify-center">
+          <MoreVertical className="h-5 w-5 text-primary" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OtherContent() {
+  return (
+    <div className="space-y-3 text-center">
+      <Smartphone className="h-10 w-10 text-primary mx-auto" />
+      <p className="text-sm text-muted-foreground">
+        Abra o <strong>Vyral Lab</strong> no seu celular para instalar como app na tela inicial.
+      </p>
+    </div>
+  );
+}
+
 export function InstallVideoModal({ open, onOpenChange }: Props) {
-  useEffect(() => {
-    if (open) ensureWistiaScripts();
-  }, [open]);
+  const platform = useMemo(() => detectPlatform(), []);
 
   const handleDontShowAgain = () => {
     try { localStorage.setItem(SEEN_KEY, '1'); } catch {}
@@ -41,7 +101,7 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[380px] p-4 sm:p-6">
+      <DialogContent className="max-w-[400px] p-5 sm:p-6">
         <DialogHeader className="space-y-1.5 text-center">
           <DialogTitle className="font-serif text-xl">📲 Adicione à tela inicial</DialogTitle>
           <DialogDescription className="text-xs">
@@ -49,14 +109,13 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div
-          className="relative mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl bg-charcoal/60 ring-1 ring-white/10"
-          style={{ aspectRatio: '9 / 16' }}
-        >
-          <wistia-player media-id={WISTIA_ID} aspect="0.5625" style={{ display: 'block', width: '100%', height: '100%' }} />
+        <div className="pt-2">
+          {platform === 'ios' && <IOSContent />}
+          {platform === 'android' && <AndroidContent />}
+          {platform === 'other' && <OtherContent />}
         </div>
 
-        <div className="flex flex-col gap-2 pt-1">
+        <div className="flex flex-col gap-2 pt-3">
           <Button
             onClick={handleDontShowAgain}
             className="gold-gradient text-primary-foreground"
