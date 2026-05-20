@@ -1,77 +1,54 @@
-# Limpeza total: InfluLab → Vyral Lab nos emails
+O log fechou o diagnóstico: IPv4 e templates estão OK; agora o erro real é SMTP/TLS:
 
-O `.env` que você colou mostra que ainda tem resquícios do InfluLab em dois lugares:
-
-1. **Subjects (assuntos)** — todos dizem "InfluLab" / "InfluLab AI"
-2. **Templates HTML no Storage** (bucket `emails/emails/`) — são os antigos do InfluLab
-
-O `SMTP_SENDER_NAME` já está como "Vyral Lab AI" ✅ (se quiser só "Vyral Lab" sem o "AI", a gente ajusta).
-
----
-
-## Parte 1 — Atualizar subjects no `.env`
-
-Trocar no `~/supabase/docker/.env`:
-
-```
-MAILER_SUBJECTS_INVITE="Você foi convidado para a Vyral Lab"
-MAILER_SUBJECTS_CONFIRMATION="Confirme seu e-mail - Vyral Lab"
-MAILER_SUBJECTS_RECOVERY="Recuperação de senha - Vyral Lab"
-MAILER_SUBJECTS_MAGIC_LINK="Seu link de acesso - Vyral Lab"
-MAILER_SUBJECTS_EMAIL_CHANGE="Confirme a alteração do seu e-mail - Vyral Lab"
+```text
+tls: first record does not look like a TLS handshake
 ```
 
-E, se você confirmar, também:
+Isso significa que o Auth está tentando abrir conexão TLS direta, mas a porta configurada está respondendo SMTP em texto puro. O aviso de `GOTRUE_MAILER_EXTERNAL_HOSTS` não é o causador do 500.
+
+Plano de correção:
+
+1. Confirmar a configuração SMTP atual sem expor senha:
+
+```bash
+cd ~/supabase/docker
+
+echo "SMTP_HOST=$SMTP_HOST"
+echo "SMTP_PORT=$SMTP_PORT"
+echo "SMTP_USER=$SMTP_USER"
+echo "SMTP_ADMIN_EMAIL=$SMTP_ADMIN_EMAIL"
+echo "SMTP_SENDER_NAME=$SMTP_SENDER_NAME"
+
+docker exec supabase-auth sh -lc 'env | grep -E "GOTRUE_SMTP_HOST|GOTRUE_SMTP_PORT|GOTRUE_SMTP_USER|GOTRUE_SMTP_ADMIN_EMAIL|GOTRUE_SMTP_SENDER_NAME|GOTRUE_SMTP_SECURE|SMTP" | grep -v PASS'
 ```
-SMTP_SENDER_NAME=Vyral Lab
+
+2. Testar qual modo o servidor realmente aceita:
+
+```bash
+echo "=== 465 implicit TLS ==="
+timeout 8 openssl s_client -connect mail.vyrallab.online:465 -servername mail.vyrallab.online </dev/null 2>&1 | head -25
+
+echo "=== 587 STARTTLS ==="
+timeout 8 openssl s_client -starttls smtp -connect mail.vyrallab.online:587 -servername mail.vyrallab.online </dev/null 2>&1 | head -25
 ```
-(remover o "AI" — me diga se prefere manter "Vyral Lab AI")
 
-Depois: `cd ~/supabase/docker && docker compose up -d --force-recreate auth`
+3. Aplicar a configuração conforme o resultado:
 
----
+- Se o teste `587 STARTTLS` mostrar certificado/handshake OK, use `SMTP_PORT=587`.
+- Se o teste `465 implicit TLS` mostrar certificado/handshake OK, use `SMTP_PORT=465`.
+- Se `465` mostrar banner `220 ...` antes de TLS, essa porta está em modo texto e não serve para TLS implícito no Auth.
 
-## Parte 2 — Criar os 5 templates HTML novos (Vyral Lab)
+4. Depois de ajustar o `.env`, recriar o Auth:
 
-Vou gerar 5 arquivos standalone, todos com a mesma identidade visual (fundo branco, card glassmorphism sutil, headline serifada, CTA roxo `#7c3aed`, footer minimalista) que já usamos no `recovery.html`:
+```bash
+cd ~/supabase/docker
+docker compose up -d --force-recreate auth
+```
 
-| Arquivo | Variável GoTrue | Conteúdo |
-|---|---|---|
-| `confirmation.html` | `{{ .ConfirmationURL }}` | Confirmar e-mail no cadastro |
-| `recovery.html` | `{{ .ConfirmationURL }}` | Redefinir senha (já entregue antes — vou re-entregar atualizado) |
-| `invite.html` | `{{ .ConfirmationURL }}` | Convite para a plataforma |
-| `magic_link.html` | `{{ .ConfirmationURL }}` | Login sem senha |
-| `email_change.html` | `{{ .ConfirmationURL }}`, `{{ .Email }}`, `{{ .NewEmail }}` | Confirmar troca de e-mail |
+5. Testar novamente o reset de senha e capturar só o request novo se falhar:
 
-Vou entregar os 5 arquivos em `/mnt/documents/` para você **substituir manualmente** no Studio self-hosted:
+```bash
+docker logs supabase-auth --since 3m 2>&1 | grep -iE "Error sending recovery email|tls|smtp|x509|refused|timeout|request_id|status":
+```
 
-Storage → bucket `emails` → pasta `emails/` → upload por cima (substituir os 5 antigos com o MESMO nome).
-
-Depois do upload **não precisa reiniciar o GoTrue** — ele lê o template a cada envio (cache curto).
-
----
-
-## Parte 3 — Validação
-
-Depois de aplicar:
-
-1. **Recuperação de senha** (já testado, vai chegar com template novo)
-2. **Cadastro novo** → como `ENABLE_EMAIL_AUTOCONFIRM=true`, o `confirmation.html` só dispara se você desligar o autoconfirm. Quer testar? Posso te dar o comando, mas é opcional.
-3. **Magic link / invite / email change** → testar pela tela de admin quando precisar.
-
----
-
-## Detalhes técnicos
-
-- Templates ficam no bucket público `emails`, path `emails/<nome>.html` — URL pública é a mesma que você já tem no `.env`, então **não precisa mexer nas variáveis `MAILER_TEMPLATES_*`**, só sobrescrever os arquivos.
-- GoTrue baixa o template via HTTP a cada envio (com cache curto). Após substituir os arquivos no Storage, o próximo email já sai com o novo HTML.
-- Todos usam Georgia (serif) no heading e system-ui no corpo — sem fontes externas (evita bloqueio em clients de email).
-- Botão CTA: `#7c3aed` (purple-600), fallback link em texto, aviso de segurança e footer Vyral Lab.
-
----
-
-## O que falta você me confirmar antes de eu gerar os arquivos
-
-1. **Sender name final**: `Vyral Lab` ou manter `Vyral Lab AI`?
-2. **Subjects** do bloco acima estão OK ou quer ajustar algum?
-3. Posso gerar os 5 HTMLs de uma vez?
+Observação: como já salvamos o playbook anterior na memória, este novo achado deve ser acrescentado depois: quando aparecer `tls: first record does not look like a TLS handshake`, a causa provável é porta/protocolo SMTP incompatível, não template nem DNS IPv6.
