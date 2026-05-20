@@ -40,7 +40,7 @@ export function FloatingNav({ onPlansClick }: { onPlansClick: () => void }) {
       <div className="container max-w-6xl mx-auto flex items-center justify-between gap-3">
         {/* Logo */}
         <div className="nav-pill flex items-center px-3 py-2 shrink-0">
-          <img src={logoHorizontal} alt="InfluLab" className="h-6 w-auto" />
+          <img src={logoHorizontal} alt="InfluLab" className="h-6 w-auto brightness-0 invert" />
         </div>
 
         {/* Center pill (desktop only) */}
