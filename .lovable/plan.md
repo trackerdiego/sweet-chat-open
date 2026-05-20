@@ -1,54 +1,56 @@
-O log fechou o diagnóstico: IPv4 e templates estão OK; agora o erro real é SMTP/TLS:
+Achei a causa raiz exata.
 
-```text
-tls: first record does not look like a TLS handshake
+O banner cru na porta 465 retornou:
+
+```
+421 Too many concurrent SMTP connections; please try again later.
 ```
 
-Isso significa que o Auth está tentando abrir conexão TLS direta, mas a porta configurada está respondendo SMTP em texto puro. O aviso de `GOTRUE_MAILER_EXTERNAL_HOSTS` não é o causador do 500.
+Isso é **texto puro**, não handshake TLS. O servidor Saturno na 465 está rate-limitando conexões concorrentes e, quando isso acontece, ele responde em texto antes do handshake TLS — exatamente os bytes que o GoTrue leu como "first record does not look like a TLS handshake". O `openssl` funcionou nas tentativas isoladas porque pegou a janela em que havia slot livre, mas em produção o Auth cai no 421.
 
-Plano de correção:
+A porta **587 com STARTTLS funcionou limpa** e o certificado é o mesmo. Solução: trocar para 587 + STARTTLS.
 
-1. Confirmar a configuração SMTP atual sem expor senha:
+## Correção (copia e cola na VPS)
 
 ```bash
 cd ~/supabase/docker
 
-echo "SMTP_HOST=$SMTP_HOST"
-echo "SMTP_PORT=$SMTP_PORT"
-echo "SMTP_USER=$SMTP_USER"
-echo "SMTP_ADMIN_EMAIL=$SMTP_ADMIN_EMAIL"
-echo "SMTP_SENDER_NAME=$SMTP_SENDER_NAME"
+cp .env .env.bak-smtp-$(date +%s)
 
-docker exec supabase-auth sh -lc 'env | grep -E "GOTRUE_SMTP_HOST|GOTRUE_SMTP_PORT|GOTRUE_SMTP_USER|GOTRUE_SMTP_ADMIN_EMAIL|GOTRUE_SMTP_SENDER_NAME|GOTRUE_SMTP_SECURE|SMTP" | grep -v PASS'
-```
+# Troca porta 465 -> 587 e garante STARTTLS
+sed -i 's/^SMTP_PORT=465$/SMTP_PORT=587/' .env
 
-2. Testar qual modo o servidor realmente aceita:
+# Se já existir SMTP_SECURE no .env, força false; senão, adiciona logo após SMTP_PORT
+if grep -q '^SMTP_SECURE=' .env; then
+  sed -i 's/^SMTP_SECURE=.*/SMTP_SECURE=false/' .env
+else
+  sed -i '/^SMTP_PORT=/a SMTP_SECURE=false' .env
+fi
 
-```bash
-echo "=== 465 implicit TLS ==="
-timeout 8 openssl s_client -connect mail.vyrallab.online:465 -servername mail.vyrallab.online </dev/null 2>&1 | head -25
+echo "=== confere ==="
+grep -E "^(SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_ADMIN_EMAIL|SMTP_SENDER_NAME|SMTP_SECURE)=" .env
 
-echo "=== 587 STARTTLS ==="
-timeout 8 openssl s_client -starttls smtp -connect mail.vyrallab.online:587 -servername mail.vyrallab.online </dev/null 2>&1 | head -25
-```
-
-3. Aplicar a configuração conforme o resultado:
-
-- Se o teste `587 STARTTLS` mostrar certificado/handshake OK, use `SMTP_PORT=587`.
-- Se o teste `465 implicit TLS` mostrar certificado/handshake OK, use `SMTP_PORT=465`.
-- Se `465` mostrar banner `220 ...` antes de TLS, essa porta está em modo texto e não serve para TLS implícito no Auth.
-
-4. Depois de ajustar o `.env`, recriar o Auth:
-
-```bash
-cd ~/supabase/docker
 docker compose up -d --force-recreate auth
+
+echo "=== espera subir ==="
+for i in $(seq 1 20); do
+  docker exec supabase-auth sh -lc 'pgrep -f auth >/dev/null' 2>/dev/null && break
+  sleep 1
+done
+
+echo "=== confirma no container ==="
+docker exec supabase-auth sh -lc 'env | grep -E "GOTRUE_SMTP_(HOST|PORT|USER|ADMIN_EMAIL|SENDER_NAME|SECURE)"'
 ```
 
-5. Testar novamente o reset de senha e capturar só o request novo se falhar:
+Depois pede reset de senha de novo e roda:
 
 ```bash
-docker logs supabase-auth --since 3m 2>&1 | grep -iE "Error sending recovery email|tls|smtp|x509|refused|timeout|request_id|status":
+docker logs supabase-auth --since 2m 2>&1 \
+  | grep -iE "recover|smtp|tls|x509|refused|timeout|421|status\":5" | tail -30
 ```
 
-Observação: como já salvamos o playbook anterior na memória, este novo achado deve ser acrescentado depois: quando aparecer `tls: first record does not look like a TLS handshake`, a causa provável é porta/protocolo SMTP incompatível, não template nem DNS IPv6.
+Resultados possíveis:
+
+- **Email chega** → resolvido. Salvo na memória que SMTP do Saturno é 587/STARTTLS e a porta 465 deles tem rate-limit que quebra TLS implícito.
+- **Aparece 421 ainda na 587** → o limite é por conta SMTP, não por porta. Aí a saída é abrir ticket no Saturno pedindo aumento de limite simultâneo OU mudar pra outro provedor SMTP (SendGrid/Mailgun/Resend).
+- **Aparece outro erro** (auth 535, 530, etc.) → me cola que eu resolvo no mesmo formato.
