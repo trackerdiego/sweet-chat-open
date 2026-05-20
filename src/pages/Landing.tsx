@@ -31,11 +31,11 @@ import avatar4 from "@/assets/avatars/avatar-4.png";
 import avatar5 from "@/assets/avatars/avatar-5.png";
 
 const heroAvatars = [
-  { src: avatar1, alt: "Criador InfluLab" },
-  { src: avatar2, alt: "Criadora InfluLab" },
-  { src: avatar3, alt: "Criadores InfluLab" },
-  { src: avatar4, alt: "Criador InfluLab" },
-  { src: avatar5, alt: "Criadora InfluLab" },
+  { src: avatar1, alt: "Criador Vyral Lab" },
+  { src: avatar2, alt: "Criadora Vyral Lab" },
+  { src: avatar3, alt: "Criadores Vyral Lab" },
+  { src: avatar4, alt: "Criador Vyral Lab" },
+  { src: avatar5, alt: "Criadora Vyral Lab" },
 ];
 
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
@@ -124,8 +124,8 @@ const benefits = [
 
 const faqs = [
   { question: "Funciona para qualquer nicho?", answer: "Sim! No onboarding você informa seu nicho (Fitness, Beleza, Moda, Educação, Lifestyle, etc.) e a IA personaliza 100% do conteúdo para o seu mercado específico." },
-  { question: "Preciso ter muitos seguidores?", answer: "Não. O InfluLab foi feito tanto para quem está começando quanto para quem já tem audiência e quer escalar. A estratégia se adapta ao seu estágio atual." },
-  { question: "É diferente do ChatGPT?", answer: "Completamente. O ChatGPT é genérico. O InfluLab usa uma metodologia proprietária de análise visceral que mapeia os gatilhos emocionais reais da sua audiência e cria estratégias baseadas em psicologia de persuasão." },
+  { question: "Preciso ter muitos seguidores?", answer: "Não. O Vyral Lab foi feito tanto para quem está começando quanto para quem já tem audiência e quer escalar. A estratégia se adapta ao seu estágio atual." },
+  { question: "É diferente do ChatGPT?", answer: "Completamente. O ChatGPT é genérico. O Vyral Lab usa uma metodologia proprietária de análise visceral que mapeia os gatilhos emocionais reais da sua audiência e cria estratégias baseadas em psicologia de persuasão." },
   { question: "Posso cancelar quando quiser?", answer: "Sim, sem multa e sem burocracia. Você pode cancelar sua assinatura a qualquer momento direto no app e mantém acesso até o fim do período já pago." },
   { question: "Qual a diferença entre o plano mensal e o anual?", answer: "O plano mensal custa R$47/mês. O anual custa R$297 à vista — equivalente a R$24,75/mês, uma economia de R$267 por ano (47% off). Mesmas funcionalidades, mesmo acesso ilimitado." },
   { question: "Em quanto tempo vejo resultados?", answer: "Muitos usuários relatam aumento de engajamento já na primeira semana seguindo a estratégia. Os 30 dias completos trazem uma transformação significativa na sua presença digital." },
@@ -239,7 +239,7 @@ export default function Landing() {
 
                 <img
                   src={heroIllustration}
-                  alt="InfluLab — Estratégia para todos os nichos"
+                  alt="Vyral Lab — Estratégia para todos os nichos"
                   className="w-full max-w-md mx-auto drop-shadow-2xl animate-float-slow"
                 />
 
@@ -330,7 +330,7 @@ export default function Landing() {
             E se uma IA criasse <span className="neon-text">tudo</span> em minutos?
           </h2>
           <p className="text-white/60 text-lg max-w-xl mx-auto leading-relaxed">
-            O InfluLab analisa seu nicho, mapeia gatilhos emocionais e gera 30 dias completos — scripts, hooks e storytelling prontos.
+            O Vyral Lab analisa seu nicho, mapeia gatilhos emocionais e gera 30 dias completos — scripts, hooks e storytelling prontos.
           </p>
         </div>
       </Section>
@@ -381,7 +381,7 @@ export default function Landing() {
             Quem usa, <span className="neon-text">transforma</span>
           </h2>
           <p className="text-white/55 mb-10 max-w-lg mx-auto">
-            Veja o que criadores estão dizendo sobre o InfluLab.
+            Veja o que criadores estão dizendo sobre o Vyral Lab.
           </p>
           <div className="grid sm:grid-cols-3 gap-4">
             {[
@@ -439,7 +439,7 @@ export default function Landing() {
               <Card className="neon-card relative overflow-hidden flex flex-col border-0">
                 <CardContent className="p-7 text-center flex flex-col flex-1">
                   <span className="neon-chip mb-3 self-center">Mensal</span>
-                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">InfluLab Pro</h3>
+                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">Vyral Lab Pro</h3>
                   <p className="text-white/50 text-sm mb-6">Pague mês a mês</p>
                   <div className="mb-6 space-y-2">
                     <div className="flex items-baseline justify-center gap-1">
@@ -476,7 +476,7 @@ export default function Landing() {
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-white px-2.5 py-1 rounded-full mb-3 self-center">
                     <Crown className="h-3.5 w-3.5" /> Mais escolhido • 47% off
                   </span>
-                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">InfluLab Pro</h3>
+                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">Vyral Lab Pro</h3>
                   <p className="text-white/50 text-sm mb-6">Pague 1x no ano e economize</p>
                   <div className="mb-6 space-y-2">
                     <div className="flex items-baseline justify-center gap-1">
@@ -569,7 +569,7 @@ export default function Landing() {
       {/* ─── Footer ─── */}
       <footer className="border-t border-white/10 py-8 px-4">
         <div className="container max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/40">
-          <p>© {new Date().getFullYear()} InfluLab. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} Vyral Lab. Todos os direitos reservados.</p>
           <p className="neon-text font-semibold">Feito com IA para criadores</p>
         </div>
       </footer>

@@ -58,7 +58,7 @@ function InAppSteps({ onCopyLink }: { onCopyLink?: () => void }) {
           1
         </div>
         <div className="flex flex-col gap-2 pt-1">
-          <p className="text-base leading-snug">Copie o link do InfluLab</p>
+          <p className="text-base leading-snug">Copie o link do Vyral Lab</p>
           {onCopyLink && (
             <Button onClick={onCopyLink} size="sm" className="w-fit">
               <Copy className="h-4 w-4 mr-2" /> Copiar link
@@ -101,7 +101,7 @@ function ModalBody({ mode, onCopyLink, intro }: Pick<Props, 'mode' | 'onCopyLink
 export function InstallInstructionsModal({ open, onOpenChange, mode, onCopyLink, intro, title, description }: Props) {
   const isMobile = useIsMobile();
 
-  const finalTitle = title ?? 'Instale o InfluLab no seu celular';
+  const finalTitle = title ?? 'Instale o Vyral Lab no seu celular';
   const finalDescription = description ?? (mode === 'safari'
     ? 'Siga os passos abaixo para adicionar o app à sua tela inicial'
     : 'Para instalar, você precisa abrir no Safari primeiro');

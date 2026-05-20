@@ -24,7 +24,7 @@ export function ComparisonTable() {
     <section className="py-20 px-4 bg-charcoal">
       <div className="container max-w-4xl mx-auto">
         <h2 className="font-serif text-2xl sm:text-3xl font-bold text-center mb-3 text-white" style={{ textWrap: "balance" }}>
-          Por que InfluLab e não outra coisa?
+          Por que Vyral Lab e não outra coisa?
         </h2>
         <p className="text-white/50 text-center mb-10 max-w-lg mx-auto">
           Comparado às alternativas, a diferença fica clara.
@@ -33,7 +33,7 @@ export function ComparisonTable() {
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm">
           <div className="grid grid-cols-4 text-center text-xs sm:text-sm font-semibold uppercase tracking-wider text-white/60 border-b border-white/10 bg-white/5">
             <div className="p-3 text-left">Recurso</div>
-            <div className="p-3 text-primary">InfluLab</div>
+            <div className="p-3 text-primary">Vyral Lab</div>
             <div className="p-3">ChatGPT</div>
             <div className="p-3">Sozinho</div>
           </div>

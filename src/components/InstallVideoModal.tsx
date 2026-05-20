@@ -45,7 +45,7 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
         <DialogHeader className="space-y-1.5 text-center">
           <DialogTitle className="font-serif text-xl">📲 Adicione à tela inicial</DialogTitle>
           <DialogDescription className="text-xs">
-            Em 30 segundos seu InfluLab vira app — push, acesso rápido e tela cheia.
+            Em 30 segundos seu Vyral Lab vira app — push, acesso rápido e tela cheia.
           </DialogDescription>
         </DialogHeader>
 

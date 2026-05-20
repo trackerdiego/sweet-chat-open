@@ -43,7 +43,7 @@ export function VideoTestimonialsGrid() {
             Veja com seus próprios olhos
           </h2>
           <p className="text-white/50 max-w-lg mx-auto">
-            Criadores reais contando como o InfluLab transformou o conteúdo deles.
+            Criadores reais contando como o Vyral Lab transformou o conteúdo deles.
           </p>
         </div>
 

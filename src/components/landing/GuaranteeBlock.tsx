@@ -12,7 +12,7 @@ export function GuaranteeBlock() {
             Risco zero por 7 dias
           </h3>
           <p className="text-muted-foreground max-w-lg mx-auto leading-relaxed">
-            Teste o InfluLab por 7 dias. Se você não amar a estratégia que a IA
+            Teste o Vyral Lab por 7 dias. Se você não amar a estratégia que a IA
             criar pra você, devolvemos 100% do seu dinheiro — sem perguntas, sem
             burocracia.
           </p>

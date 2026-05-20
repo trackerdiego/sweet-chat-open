@@ -414,7 +414,7 @@ const Tools = () => {
         description="O recurso de colar o link do Reel/TikTok funciona dentro do app instalado. Siga os passos abaixo:"
         intro={
           <>
-            <strong>Por que?</strong> Pra puxar o vídeo direto da rede social, o Instagram exige que você compartilhe do app deles pro nosso. Isso só é possível com o InfluLab instalado na tela de início. Depois é só abrir o Reel → tocar em <strong>Compartilhar</strong> → escolher <strong>InfluLab</strong>.
+            <strong>Por que?</strong> Pra puxar o vídeo direto da rede social, o Instagram exige que você compartilhe do app deles pro nosso. Isso só é possível com o Vyral Lab instalado na tela de início. Depois é só abrir o Reel → tocar em <strong>Compartilhar</strong> → escolher <strong>Vyral Lab</strong>.
           </>
         }
       />

@@ -37,7 +37,7 @@ export default function Referral() {
   const shareTg = () => window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Olha esse app pra creators 👇')}`, '_blank');
   const shareNative = async () => {
     if (navigator.share) {
-      try { await navigator.share({ title: 'InfluLab', text: message, url: link }); } catch {}
+      try { await navigator.share({ title: 'Vyral Lab', text: message, url: link }); } catch {}
     } else copy();
   };
 
