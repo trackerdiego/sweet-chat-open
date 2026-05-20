@@ -55,8 +55,9 @@ const Index = () => {
 
   if (strategiesLoading && strategies.length === 0) {
     return (
-      <div className="landing-dark min-h-screen pb-24 md:pt-20 relative overflow-hidden">
-        <div className="neon-orb" style={{ width: 380, height: 380, background: 'hsl(270 90% 55%)', top: -140, left: -120 }} />
+      <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+        {isDark && <div className="neon-orb" style={{ width: 380, height: 380, background: 'hsl(270 90% 55%)', top: -140, left: -120 }} />}
+
         <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10">
           <div className="max-w-lg mx-auto space-y-3">
             <Skeleton className="h-5 w-32 bg-white/10" />
