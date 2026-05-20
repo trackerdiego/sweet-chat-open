@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Loader2, Mail, ArrowLeft, Gift } from 'lucide-react';
-import logo from '@/assets/influlab-logo.png';
+import logo from '@/assets/vyrallab-logo-horizontal.png';
 import { InAppBrowserBanner } from '@/components/InAppBrowserBanner';
 
 const REF_STORAGE_KEY = 'pending_ref';
@@ -30,10 +30,9 @@ const Auth = () => {
     if (!code) return;
     if (fromUrl) {
       localStorage.setItem(REF_STORAGE_KEY, fromUrl);
-      setIsLogin(false); // assume signup quando vem de link de indicação
+      setIsLogin(false);
     }
     setRefCode(code);
-    // Resolve nome do dono do código (best-effort)
     (async () => {
       const { data: codeRow } = await (supabase.from as any)('referral_codes')
         .select('user_id').eq('code', code).maybeSingle();
@@ -43,7 +42,6 @@ const Auth = () => {
       if (profile?.display_name) setRefOwnerName(profile.display_name);
     })();
   }, []);
-
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +79,6 @@ const Auth = () => {
         });
         if (error) throw error;
 
-        // Registra indicação se houver código pendente. Best-effort, não bloqueia signup.
         if (refCode && data.session) {
           try {
             await supabase.functions.invoke('register-referral', { body: { code: refCode } });
@@ -105,125 +102,132 @@ const Auth = () => {
     }
   };
 
+  const Shell = ({ children }: { children: React.ReactNode }) => (
+    <div className="landing-dark min-h-screen flex flex-col relative overflow-hidden">
+      <InAppBrowserBanner />
+      {/* Background orbs */}
+      <div className="neon-orb" style={{ width: 420, height: 420, background: 'hsl(270 90% 55%)', top: -120, left: -120 }} />
+      <div className="neon-orb" style={{ width: 380, height: 380, background: 'hsl(322 85% 55%)', bottom: -140, right: -100 }} />
+
+      <div className="relative z-10 flex-1 flex flex-col items-center px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-12">
+        <img
+          src={logo}
+          alt="Vyral Lab"
+          className="h-12 sm:h-14 w-auto drop-shadow-[0_0_24px_rgba(168,85,247,0.55)]"
+        />
+        {children}
+      </div>
+    </div>
+  );
+
   if (showConfirmation) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <InAppBrowserBanner />
-        <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-          <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
-          <h1 className="font-serif text-2xl font-bold text-white mt-4">Verifique seu email ✉️</h1>
-        </div>
-        <div className="flex-1 flex items-start justify-center px-4 -mt-8">
-          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
-            <div className="glass-card p-8 text-center space-y-5">
-              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <Mail size={32} className="text-primary" />
-              </div>
-              <h2 className="text-xl font-bold text-foreground">Confirme seu email</h2>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Enviamos um link de confirmação para <strong className="text-foreground">{email}</strong>.
-              </p>
-              <div className="bg-muted/50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">💡 <strong>Não encontrou?</strong> Verifique sua pasta de spam.</p>
-              </div>
-              <Button onClick={() => { setShowConfirmation(false); setIsLogin(true); setPassword(''); }} className="w-full gold-gradient text-primary-foreground">
-                <ArrowLeft size={16} /> Já confirmei, fazer login
-              </Button>
+      <Shell>
+        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm mt-10">
+          <div className="neon-card p-8 text-center space-y-5">
+            <div className="mx-auto w-16 h-16 rounded-full bg-primary/15 border border-primary/40 flex items-center justify-center">
+              <Mail size={32} className="text-[hsl(var(--primary-glow))]" />
             </div>
-          </motion.div>
-        </div>
-      </div>
+            <h2 className="font-serif text-2xl font-bold text-foreground">
+              Confirme seu <span className="neon-text">email</span>
+            </h2>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              Enviamos um link de confirmação para <strong className="text-foreground">{email}</strong>.
+            </p>
+            <div className="bg-secondary/60 border border-border rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">💡 <strong>Não encontrou?</strong> Verifique sua pasta de spam.</p>
+            </div>
+            <Button onClick={() => { setShowConfirmation(false); setIsLogin(true); setPassword(''); }} className="w-full neon-cta">
+              <ArrowLeft size={16} /> Já confirmei, fazer login
+            </Button>
+          </div>
+        </motion.div>
+      </Shell>
     );
   }
 
   if (isForgotPassword) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <InAppBrowserBanner />
-        <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-          <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
-          <h1 className="font-serif text-2xl font-bold text-white mt-4">Recuperar senha 🔑</h1>
-          <p className="text-white/60 text-sm mt-1">Digite seu email para receber o link</p>
+      <Shell>
+        <div className="text-center mt-6 mb-6">
+          <h1 className="font-serif text-3xl font-bold text-foreground">
+            Recuperar <span className="neon-text">senha</span>
+          </h1>
+          <p className="text-muted-foreground text-sm mt-2">Digite seu email para receber o link</p>
         </div>
-        <div className="flex-1 flex items-start justify-center px-4 -mt-8">
-          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
-            <form onSubmit={handleForgotPassword} className="glass-card p-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
-              </div>
-              <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
-                {loading && <Loader2 size={16} className="animate-spin" />}
-                Enviar link de recuperação
-              </Button>
-            </form>
-            <p className="text-center text-sm text-muted-foreground mt-4">
-              <button onClick={() => setIsForgotPassword(false)} className="text-primary font-medium hover:underline">Voltar ao login</button>
-            </p>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <InAppBrowserBanner />
-      <div className="gradient-header px-4 pt-12 pb-16 rounded-b-3xl text-center">
-        <img src={logo} alt="InfluLab" className="h-12 w-auto mx-auto" />
-        <h1 className="font-serif text-2xl font-bold text-white mt-4">
-          {isLogin ? 'Boas-vindas de volta' : 'Crie sua conta'} 👑
-        </h1>
-        <p className="text-white/60 text-sm mt-1">
-          {isLogin ? 'Entre para acessar seu painel' : 'Comece sua jornada de 30 dias'}
-        </p>
-      </div>
-      <div className="flex-1 flex items-start justify-center px-4 -mt-8">
         <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
-          {refCode && !isLogin && (
-            <div className="mb-3 glass-card p-3 flex items-center gap-2 text-sm">
-              <Gift size={16} className="text-primary shrink-0" />
-              <span className="text-foreground">
-                {refOwnerName ? <>Você foi convidado por <strong>{refOwnerName}</strong> 🎁</> : 'Você foi convidado para o InfluLab 🎁'}
-              </span>
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="glass-card p-6 space-y-4">
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="displayName">Seu nome</Label>
-                <Input id="displayName" type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Como podemos te chamar?" required />
-              </div>
-            )}
+          <form onSubmit={handleForgotPassword} className="neon-card p-6 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Senha</Label>
-                {isLogin && (
-                  <button type="button" onClick={() => setIsForgotPassword(true)} className="text-xs text-primary hover:underline">
-                    Esqueci minha senha
-                  </button>
-                )}
-              </div>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="off" minLength={6} required />
-            </div>
-            <Button type="submit" className="w-full gold-gradient text-primary-foreground" disabled={loading}>
+            <Button type="submit" className="w-full neon-cta" disabled={loading}>
               {loading && <Loader2 size={16} className="animate-spin" />}
-              {isLogin ? 'Entrar' : 'Criar Conta'}
+              Enviar link de recuperação
             </Button>
           </form>
           <p className="text-center text-sm text-muted-foreground mt-4">
-            {isLogin ? 'Não tem conta?' : 'Já tem conta?'}{' '}
-            <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-medium hover:underline">
-              {isLogin ? 'Criar conta' : 'Fazer login'}
-            </button>
+            <button onClick={() => setIsForgotPassword(false)} className="text-[hsl(var(--primary-glow))] font-medium hover:underline">Voltar ao login</button>
           </p>
         </motion.div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <div className="text-center mt-6 mb-6">
+        <h1 className="font-serif text-3xl font-bold text-foreground">
+          {isLogin ? <>Boas-vindas de <span className="neon-text">volta</span></> : <>Crie sua <span className="neon-text">conta</span></>}
+        </h1>
+        <p className="text-muted-foreground text-sm mt-2">
+          {isLogin ? 'Entre para acessar seu painel' : 'Comece sua jornada de 30 dias'}
+        </p>
       </div>
-    </div>
+      <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
+        {refCode && !isLogin && (
+          <div className="mb-3 neon-chip w-full justify-center">
+            <Gift size={14} />
+            <span>
+              {refOwnerName ? <>Convidado por <strong>{refOwnerName}</strong> 🎁</> : 'Convidado para o Vyral Lab 🎁'}
+            </span>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="neon-card p-6 space-y-4">
+          {!isLogin && (
+            <div className="space-y-2">
+              <Label htmlFor="displayName">Seu nome</Label>
+              <Input id="displayName" type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Como podemos te chamar?" required />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" autoComplete="off" required />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Senha</Label>
+              {isLogin && (
+                <button type="button" onClick={() => setIsForgotPassword(true)} className="text-xs text-[hsl(var(--primary-glow))] hover:underline">
+                  Esqueci minha senha
+                </button>
+              )}
+            </div>
+            <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="off" minLength={6} required />
+          </div>
+          <Button type="submit" className="w-full neon-cta" disabled={loading}>
+            {loading && <Loader2 size={16} className="animate-spin" />}
+            {isLogin ? 'Entrar' : 'Criar Conta'}
+          </Button>
+        </form>
+        <p className="text-center text-sm text-muted-foreground mt-4">
+          {isLogin ? 'Não tem conta?' : 'Já tem conta?'}{' '}
+          <button onClick={() => setIsLogin(!isLogin)} className="text-[hsl(var(--primary-glow))] font-medium hover:underline">
+            {isLogin ? 'Criar conta' : 'Fazer login'}
+          </button>
+        </p>
+      </motion.div>
+    </Shell>
   );
 };
 
