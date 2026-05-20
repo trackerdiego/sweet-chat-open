@@ -46,7 +46,7 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   console.log('[sw] Push received');
-  let data = { title: 'Influlab', body: 'Você tem uma nova notificação!' };
+  let data = { title: 'VyralLab', body: 'Você tem uma nova notificação!' };
   if (event.data) {
     try { data = event.data.json(); } catch (e) { data.body = event.data.text(); }
   }
@@ -57,7 +57,7 @@ self.addEventListener('push', (event) => {
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' },
   };
-  event.waitUntil(self.registration.showNotification(data.title || 'Influlab', options));
+  event.waitUntil(self.registration.showNotification(data.title || 'VyralLab', options));
 });
 
 self.addEventListener('notificationclick', (event) => {
