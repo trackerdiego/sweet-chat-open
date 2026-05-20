@@ -56,7 +56,7 @@ export function InstallBanner() {
             {isIOS ? <Share className="h-5 w-5 shrink-0" /> : <Download className="h-5 w-5 shrink-0" />}
             <span className="text-sm font-semibold">
               {isIOS
-                ? 'Adicione o InfluLab à tela de início'
+                ? 'Adicione o Vyral Lab à tela de início'
                 : 'Instale o app para melhor experiência'}
             </span>
           </div>

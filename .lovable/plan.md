@@ -1,45 +1,45 @@
-## Toggle de tema claro/escuro no app interno
+## Rebrand visual: Influlab → Vyral Lab
 
-### Comportamento
-- Botão de toggle (ícone sol/lua) no header do Painel (`Index.tsx`), ao lado dos botões de ajuda/sair.
-- Estado persistido em `localStorage` (`influlab.theme` = `"dark"` | `"light"`). Default: **claro** (volta ao visual original legível); usuário escolhe escuro se quiser.
-- Aplicado globalmente no app autenticado: tudo dentro de rotas logadas (Painel, Matriz, Script, Tarefas, Ferramentas, Carteira, etc.) e a `Navigation` respeitam o tema.
-- `/auth` e `/landing` continuam **sempre escuras** (identidade da marca pública, sem toggle).
+Trocar todas as ocorrências **visíveis ao usuário** de "Influlab" / "InfluLab" para **"Vyral Lab"**. Manter intactos: domínio `app.influlab.pro`, email `suporte@influlab.pro`, chaves de `localStorage` (`influlab.*`), nomes de variáveis internas e arquivos de memória/edge functions (não aparecem na UI).
 
-### Implementação
+### Arquivos a alterar
 
-**1. Novo hook `src/hooks/useAppTheme.ts`**
-- Lê/escreve `localStorage.influlab.theme`.
-- Aplica/remove a classe `landing-dark` em `document.documentElement` via `useEffect`.
-- Expõe `{ theme, toggle, setTheme }`.
-- Inicialização síncrona (lazy state) pra evitar flash.
+**Meta / PWA**
+- `index.html` — `<title>`, `meta description`, `meta author`, `og:title`, `og:description`, `twitter:title`, `twitter:description` → "Vyral Lab - Sua Matriz de Influência"
+- `public/manifest.json` — `name` e `short_name` → "Vyral Lab"
 
-**2. `src/pages/Index.tsx`**
-- Remover `landing-dark` do wrapper raiz (vai vir do `<html>`).
-- Adicionar botão toggle no header (ícone `Sun`/`Moon` do lucide), entre `HelpCircle` e `LogOut`.
-- Orbs neon só aparecem quando `theme === 'dark'`.
+**Landing (`src/pages/Landing.tsx`)**
+- `alt` dos avatares (linhas 34-38): "Criador/Criadora Vyral Lab"
+- FAQ (127, 128): trocar "InfluLab" por "Vyral Lab"
+- `alt` do mockup (242), parágrafo (333), seção depoimentos (384)
+- Cards de plano (442, 479): "Vyral Lab Pro"
+- Footer (572): "© {ano} Vyral Lab. Todos os direitos reservados."
 
-**3. `src/components/Navigation.tsx`**
-- Remover `landing-dark` hard-coded e o fundo escuro fixo.
-- Trocar por classes condicionais: no claro usa `bg-card border-border` + item ativo `gold-gradient`; no escuro mantém `bg-[hsl(265_50%_6%/0.85)]` + `neon-cta`.
-- Lê o hook `useAppTheme`.
+**Outros componentes da landing**
+- `ComparisonTable.tsx` — título "Por que Vyral Lab e não outra coisa?" e header "Vyral Lab" (linha 36). Chave `influlab` do objeto `rows` permanece (interno).
+- `GuaranteeBlock.tsx` — "Teste o Vyral Lab por 7 dias."
+- `ProductDemoVideo.tsx` — "Veja o Vyral Lab em ação" e `title="Demo Vyral Lab"`
+- `VideoTestimonialsGrid.tsx` — texto descritivo
 
-**4. Subcomponentes do Painel** (`MonthlyProgress`, `StreakCounter`, `MindsetPulse`, `WeeklyView`)
-- Hoje estão com `neon-card` + cores neon hard-coded. Como `neon-card` só é estilizado dentro de `.landing-dark`, no modo claro ele vira um div sem estilo.
-- Solução: trocar `neon-card` por `glass-card` e remover refs diretas a `hsl(var(--primary-glow))`. Como esses componentes ficam dentro do wrapper que tem `landing-dark` no modo escuro, o `glass-card` (que já usa tokens `--card`, `--border`) automaticamente se adapta — no escuro fica com fundo escuro, no claro com fundo claro. Mesma lógica pros ícones (`text-primary` em vez de `text-[hsl(var(--primary-glow))]`).
-- Barras de progresso e milestones: usar gradiente baseado em `--primary` → `--accent` (esses tokens já mudam entre claro e escuro automaticamente via `landing-dark` override).
+**Páginas internas**
+- `Onboarding.tsx` (158, 343) — wordmark "Vyral Lab"
+- `ResetPassword.tsx` (50, 63) — wordmark "Vyral Lab"
+- `Referral.tsx` (40) — `navigator.share` title "Vyral Lab"
+- `Tools.tsx` (417) — explicação do compartilhamento Instagram
 
-**5. `src/pages/Auth.tsx` e `src/pages/Landing.tsx`**
-- Sem mudança. Continuam `landing-dark` fixo.
+**Componentes de instalação**
+- `InstallBanner.tsx` (59) — "Adicione o Vyral Lab à tela de início"
+- `InstallInstructionsModal.tsx` (61, 104) — "link do Vyral Lab" e "Instale o Vyral Lab no seu celular"
+- `InstallVideoModal.tsx` (48) — "seu Vyral Lab vira app"
 
-### Tokens
-- Não criar tokens novos. Reusar `--primary`, `--accent`, `--card`, `--border`, `--muted` (já definidos em `:root` claro e `.landing-dark` escuro).
-- Gradiente "neon/gold": usar `linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))` — funciona nos dois temas (roxo→magenta no escuro, roxo→roxo no claro).
+### Não alterar
+- `Help.tsx` linha 28 — `SUPPORT_EMAIL = 'suporte@influlab.pro'` (email real)
+- `Navigation.tsx` linhas 55, 108, 281 — email de suporte e chave de localStorage
+- `Referral.tsx` linha 7 — `SHARE_BASE` (URL do app)
+- `InstallVideoModal.tsx` linha 6 — `SEEN_KEY` localStorage
+- `Onboarding.tsx` linhas 79, 96 — `localStorage.removeItem('influlab.onboardingRunId')`
+- Edge functions, hooks (`useOnboardingRun`, `useUserProfile`, `useAppTheme`), `supabase/client.ts`, arquivos `.md` e `.lovable/*` — não visíveis ao usuário
+- Logo já foi substituída em mensagem anterior
 
-### Fora do escopo
-- Nenhuma mudança em lógica, hooks de dados, Supabase, rotas.
-- Não tocar em `Landing`, `Auth`, ou nas edge functions.
-- Sem tema "auto/sistema" — só toggle manual binário (pode ser adicionado depois se quiser).
-
-### Pergunta antes de implementar
-Default inicial: **claro** (parto do que você disse — escuro está difícil de ler) ou **escuro** (mantém o visual atual e o usuário escolhe trocar)?
+### Pergunta
+O email de suporte `suporte@influlab.pro` continua o mesmo, ou também migra para um domínio Vyral Lab (ex.: `suporte@vyrallab.com`)? Se mudar, me passe o novo email.
