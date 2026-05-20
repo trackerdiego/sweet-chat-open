@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import logoHorizontal from "@/assets/influlab-logo-horizontal.png";
 import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,9 +20,7 @@ import {
   ArrowRight,
   Crown,
   Star,
-  BarChart3,
   Brain,
-  Layers,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import heroIllustration from "@/assets/hero-illustration.png";
@@ -40,28 +37,34 @@ const heroAvatars = [
   { src: avatar4, alt: "Criador InfluLab" },
   { src: avatar5, alt: "Criadora InfluLab" },
 ];
+
 import { LandingFeatureBar } from "@/components/landing/FeatureBar";
 import { InAppBrowserBanner } from "@/components/InAppBrowserBanner";
 import { StatsBar } from "@/components/landing/StatsBar";
 import { HowItWorks } from "@/components/landing/HowItWorks";
-
 import { ComparisonTable } from "@/components/landing/ComparisonTable";
 import { GuaranteeBlock } from "@/components/landing/GuaranteeBlock";
+import { FloatingNav } from "@/components/landing/FloatingNav";
+import { RealtimeTracker } from "@/components/landing/RealtimeTracker";
+import { NichesMarquee } from "@/components/landing/NichesMarquee";
 
 function Section({
   children,
   className = "",
   delay = 0,
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
   delay?: number;
+  id?: string;
 }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, amount: 0.2 });
   return (
     <motion.section
       ref={ref}
+      id={id}
       initial={{ opacity: 0, y: 20, filter: "blur(4px)" }}
       animate={isInView ? { opacity: 1, y: 0, filter: "blur(0px)" } : {}}
       transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
@@ -86,10 +89,10 @@ const painPoints = [
       "Aquela sensação de abrir o celular e não ter a menor ideia do que criar. O bloqueio criativo vira rotina.",
   },
   {
-     icon: "😔",
-     title: "Vê outros crescendo e você parado(a)",
-     description:
-       "Outros criadores com menos talento crescem rápido. Você se pergunta: 'O que eles têm que eu não tenho?'",
+    icon: "😔",
+    title: "Vê outros crescendo e você parado(a)",
+    description:
+      "Outros criadores com menos talento crescem rápido. Você se pergunta: 'O que eles têm que eu não tenho?'",
   },
   {
     icon: "🔥",
@@ -100,42 +103,12 @@ const painPoints = [
 ];
 
 const features = [
-  {
-    icon: Target,
-    title: "Matriz de 30 Dias",
-    description:
-      "IA cria uma estratégia personalizada de conteúdo para 30 dias baseada no SEU nicho, audiência e estilo.",
-  },
-  {
-    icon: FileText,
-    title: "Scripts Prontos",
-    description:
-      "Roteiros completos para cada dia com hooks que prendem, storytelling que conecta e CTAs que convertem.",
-  },
-  {
-    icon: Calendar,
-    title: "Guia Diário",
-    description:
-      "Todo dia você sabe exatamente o que fazer, postar e falar. Sem dúvida, sem bloqueio criativo.",
-  },
-  {
-    icon: Wrench,
-    title: "Ferramentas IA",
-    description:
-      "Analise padrões de virais, desconstrua hooks e adapte conteúdos que já funcionaram para o seu nicho.",
-  },
-  {
-    icon: Mic,
-    title: "Transcrição Inteligente",
-    description:
-      "Envie vídeos ou áudios virais e a IA transcreve automaticamente para você analisar e adaptar.",
-  },
-  {
-    icon: Sparkles,
-    title: "Análise Visceral",
-    description:
-      "A IA mapeia as dores, desejos e gatilhos emocionais da sua audiência para criar conteúdo que toca na alma.",
-  },
+  { icon: Target, title: "Matriz de 30 Dias", description: "IA cria uma estratégia personalizada de conteúdo para 30 dias baseada no SEU nicho, audiência e estilo." },
+  { icon: FileText, title: "Scripts Prontos", description: "Roteiros completos para cada dia com hooks que prendem, storytelling que conecta e CTAs que convertem." },
+  { icon: Calendar, title: "Guia Diário", description: "Todo dia você sabe exatamente o que fazer, postar e falar. Sem dúvida, sem bloqueio criativo." },
+  { icon: Wrench, title: "Ferramentas IA", description: "Analise padrões de virais, desconstrua hooks e adapte conteúdos que já funcionaram para o seu nicho." },
+  { icon: Mic, title: "Transcrição Inteligente", description: "Envie vídeos ou áudios virais e a IA transcreve automaticamente para você analisar e adaptar." },
+  { icon: Brain, title: "Análise Visceral", description: "A IA mapeia as dores, desejos e gatilhos emocionais da sua audiência para criar conteúdo que toca na alma." },
 ];
 
 const benefits = [
@@ -150,90 +123,33 @@ const benefits = [
 ];
 
 const faqs = [
-  {
-    question: "Funciona para qualquer nicho?",
-    answer:
-      "Sim! No onboarding você informa seu nicho (Fitness, Beleza, Moda, Educação, Lifestyle, etc.) e a IA personaliza 100% do conteúdo para o seu mercado específico.",
-  },
-  {
-    question: "Preciso ter muitos seguidores?",
-    answer:
-      "Não. O InfluLab foi feito tanto para quem está começando quanto para quem já tem audiência e quer escalar. A estratégia se adapta ao seu estágio atual.",
-  },
-  {
-    question: "É diferente do ChatGPT?",
-    answer:
-      "Completamente. O ChatGPT é genérico. O InfluLab usa uma metodologia proprietária de análise visceral que mapeia os gatilhos emocionais reais da sua audiência e cria estratégias baseadas em psicologia de persuasão.",
-  },
-  {
-    question: "Posso cancelar quando quiser?",
-    answer:
-      "Sim, sem multa e sem burocracia. Você pode cancelar sua assinatura a qualquer momento direto no app e mantém acesso até o fim do período já pago.",
-  },
-  {
-    question: "Qual a diferença entre o plano mensal e o anual?",
-    answer:
-      "O plano mensal custa R$47/mês. O anual custa R$297 à vista — equivalente a R$24,75/mês, uma economia de R$267 por ano (47% off). Mesmas funcionalidades, mesmo acesso ilimitado.",
-  },
-   {
-     question: "Em quanto tempo vejo resultados?",
-     answer:
-       "Muitos usuários relatam aumento de engajamento já na primeira semana seguindo a estratégia. Os 30 dias completos trazem uma transformação significativa na sua presença digital.",
-   },
-  {
-     question: "O conteúdo gerado é único ou copiado?",
-     answer:
-       "100% único. A IA cria conteúdo original baseado no seu perfil, estilo e audiência. Nenhum outro criador terá o mesmo conteúdo que você.",
-   },
+  { question: "Funciona para qualquer nicho?", answer: "Sim! No onboarding você informa seu nicho (Fitness, Beleza, Moda, Educação, Lifestyle, etc.) e a IA personaliza 100% do conteúdo para o seu mercado específico." },
+  { question: "Preciso ter muitos seguidores?", answer: "Não. O InfluLab foi feito tanto para quem está começando quanto para quem já tem audiência e quer escalar. A estratégia se adapta ao seu estágio atual." },
+  { question: "É diferente do ChatGPT?", answer: "Completamente. O ChatGPT é genérico. O InfluLab usa uma metodologia proprietária de análise visceral que mapeia os gatilhos emocionais reais da sua audiência e cria estratégias baseadas em psicologia de persuasão." },
+  { question: "Posso cancelar quando quiser?", answer: "Sim, sem multa e sem burocracia. Você pode cancelar sua assinatura a qualquer momento direto no app e mantém acesso até o fim do período já pago." },
+  { question: "Qual a diferença entre o plano mensal e o anual?", answer: "O plano mensal custa R$47/mês. O anual custa R$297 à vista — equivalente a R$24,75/mês, uma economia de R$267 por ano (47% off). Mesmas funcionalidades, mesmo acesso ilimitado." },
+  { question: "Em quanto tempo vejo resultados?", answer: "Muitos usuários relatam aumento de engajamento já na primeira semana seguindo a estratégia. Os 30 dias completos trazem uma transformação significativa na sua presença digital." },
+  { question: "O conteúdo gerado é único ou copiado?", answer: "100% único. A IA cria conteúdo original baseado no seu perfil, estilo e audiência. Nenhum outro criador terá o mesmo conteúdo que você." },
 ];
 
 export default function Landing() {
   const navigate = useNavigate();
   const scrollToPlanos = () =>
-    document
-      .getElementById("planos")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("planos")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="landing-dark min-h-screen bg-background text-foreground overflow-x-hidden">
       <InAppBrowserBanner />
-      {/* ─── Nav ─── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm pt-[env(safe-area-inset-top)]">
-        <div className="container max-w-6xl mx-auto flex items-center justify-between py-3 px-[max(1rem,env(safe-area-inset-left))]">
-          <div className="flex items-center gap-2">
-            <img src={logoHorizontal} alt="InfluLab" className="h-9 w-auto" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/auth")}
-              className="text-charcoal hover:text-primary hover:bg-gray-100"
-            >
-              Entrar
-            </Button>
-            <Button
-              size="sm"
-              onClick={scrollToPlanos}
-              className="bg-primary hover:bg-primary/90"
-            >
-              Assinar agora
-            </Button>
-          </div>
-        </div>
-      </nav>
+      <FloatingNav onPlansClick={scrollToPlanos} />
 
       {/* ─── Hero ─── */}
-      <section className="relative min-h-[90vh] flex items-center overflow-hidden bg-charcoal">
-        {/* Background gradient shapes */}
-        <div className="absolute inset-0">
-          <div className="absolute top-0 right-0 w-[60%] h-full bg-gradient-to-bl from-primary/30 via-accent/15 to-transparent" />
-          <div className="absolute bottom-0 left-0 w-[40%] h-[60%] bg-gradient-to-tr from-primary/10 to-transparent" />
-          <div className="absolute top-20 left-[20%] w-72 h-72 rounded-full bg-primary/8 blur-[100px]" />
-          <div className="absolute bottom-20 right-[15%] w-96 h-96 rounded-full bg-accent/10 blur-[120px]" />
-        </div>
+      <section id="inicio" className="relative min-h-[100vh] flex items-center overflow-hidden pt-28 pb-16">
+        {/* Background orbs */}
+        <div className="neon-orb w-[520px] h-[520px] -top-32 -left-32 bg-primary/40" />
+        <div className="neon-orb w-[480px] h-[480px] top-1/3 -right-32 bg-accent/35" />
+        <div className="neon-orb w-[320px] h-[320px] bottom-0 left-1/3 bg-primary/25 animate-float-slow" />
 
-        <div className="container max-w-6xl mx-auto px-4 pt-24 pb-16 relative z-10">
+        <div className="container max-w-6xl mx-auto px-4 relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
             {/* Left — Copy */}
             <motion.div
@@ -242,42 +158,49 @@ export default function Landing() {
               transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               className="text-left"
             >
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/15 rounded-full px-3 py-1 mb-6 border border-primary/20">
+              <span className="neon-chip mb-6">
                 <Sparkles className="h-3.5 w-3.5" />
-                Powered by IA Visceral
+                A IA por trás dos criadores que crescem
+                <Star className="h-3.5 w-3.5 fill-current" />
               </span>
+
               <h1
-                className="font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.08] tracking-tight text-white mb-5"
+                className="font-sans font-extrabold text-5xl sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight text-white mb-6"
                 style={{ textWrap: "balance" }}
               >
-                Pare de postar no escuro.{" "}
-                <span className="text-primary">Sua estratégia de 30 dias</span>{" "}
-                começa aqui.
+                Sua estratégia<br />
+                de <span className="neon-text">influência</span>,<br />
+                pronta em minutos
               </h1>
-              <p
-                className="text-white/65 text-lg sm:text-xl max-w-xl mb-8 leading-relaxed"
-                style={{ textWrap: "pretty" }}
-              >
-                A IA que entende a alma da sua audiência e cria uma estratégia
-                completa de conteúdo — do hook ao CTA — personalizada pro seu
-                nicho.
+
+              <p className="text-white/70 text-lg sm:text-xl max-w-xl mb-4 leading-relaxed font-medium">
+                Mais rápido, mais profundo e do jeito que sua audiência precisa.
               </p>
-              <div className="flex flex-col sm:flex-row items-start gap-3">
+              <p className="text-white/55 text-base max-w-xl mb-8 leading-relaxed">
+                Em poucos cliques, a IA monta uma matriz completa de 30 dias — scripts, hooks, storytelling e CTAs — personalizada para o seu nicho.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 mb-6">
                 <Button
                   size="lg"
                   onClick={scrollToPlanos}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
+                  className="neon-cta rounded-full px-7 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                 >
-                  Assinar agora
-                  <ArrowRight className="h-4 w-4 ml-1" />
+                  Começar agora
+                  <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
-                <span className="text-xs text-white/40 self-center">
-                  Cancele quando quiser • Suporte humano
-                </span>
+                <Button
+                  size="lg"
+                  variant="ghost"
+                  onClick={() => document.getElementById("como-funciona")?.scrollIntoView({ behavior: "smooth" })}
+                  className="rounded-full px-6 py-6 text-base font-semibold text-white/85 hover:text-white hover:bg-white/10 border border-white/15"
+                >
+                  Como funciona
+                </Button>
               </div>
 
-              {/* Hero social proof */}
-              <div className="mt-6 flex items-center gap-3">
+              {/* Social proof */}
+              <div className="mt-2 flex items-center gap-4">
                 <div className="flex -space-x-2">
                   {heroAvatars.map((a, i) => (
                     <img
@@ -285,57 +208,97 @@ export default function Landing() {
                       src={a.src}
                       alt={a.alt}
                       loading="lazy"
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-charcoal"
+                      className="w-9 h-9 rounded-full object-cover ring-2 ring-background"
                     />
                   ))}
                 </div>
-                <div className="text-xs text-white/60">
-                  <div className="flex gap-0.5 mb-0.5">
+                <div className="text-xs text-white/70">
+                  <div className="font-semibold text-white">+1.200 criadores ativos</div>
+                </div>
+                <div className="hidden sm:flex items-center gap-1.5 pl-4 border-l border-white/15">
+                  <div className="flex gap-0.5">
                     {[...Array(5)].map((_, j) => (
-                      <Star key={j} className="h-3 w-3 fill-primary text-primary" />
+                      <Star key={j} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                     ))}
                   </div>
-                  <span className="text-white/50">+1.200 criadores ativos</span>
+                  <span className="text-sm text-white/80 font-semibold">4.9/5</span>
                 </div>
               </div>
             </motion.div>
 
-            {/* Right — Mockup */}
+            {/* Right — Mockup with floating cards */}
             <motion.div
               initial={{ opacity: 0, x: 30, filter: "blur(6px)" }}
               animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-              transition={{
-                duration: 0.8,
-                delay: 0.2,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-              className="flex justify-center lg:block"
+              transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="relative flex justify-center lg:justify-end"
             >
-              <img src={heroIllustration} alt="InfluLab - Estratégia para todos os nichos" className="w-full max-w-lg mx-auto drop-shadow-2xl" />
+              <div className="relative">
+                {/* Glow halo behind mockup */}
+                <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/40 to-accent/30 blur-3xl -z-10 scale-90" />
+
+                <img
+                  src={heroIllustration}
+                  alt="InfluLab — Estratégia para todos os nichos"
+                  className="w-full max-w-md mx-auto drop-shadow-2xl animate-float-slow"
+                />
+
+                {/* Floating card — Top */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.8 }}
+                  className="absolute -left-4 sm:-left-10 top-10 neon-card p-3 pr-5 flex items-center gap-3 shadow-2xl"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-white">Matriz gerada</p>
+                    <p className="text-[10px] text-white/55">30 dias prontos</p>
+                  </div>
+                </motion.div>
+
+                {/* Floating card — Bottom */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1 }}
+                  className="absolute -right-2 sm:-right-6 bottom-16 neon-card p-3 pr-5 flex items-center gap-3 shadow-2xl"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-white">Tarefa concluída</p>
+                    <p className="text-[10px] text-white/55">+1 dia de streak</p>
+                  </div>
+                </motion.div>
+              </div>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* ─── Stats Bar ─── */}
       <StatsBar />
-
-      {/* ─── Feature Bar ─── */}
       <LandingFeatureBar />
 
+      {/* ─── Realtime Tracker ─── */}
+      <RealtimeTracker />
+
       {/* ─── Pain Points ─── */}
-      <Section className="py-20 px-4 bg-charcoal">
+      <Section className="py-20 px-4">
         <div className="container max-w-4xl mx-auto">
-          <h2
-            className="font-serif text-2xl sm:text-3xl font-bold text-center mb-3 text-white"
-            style={{ textWrap: "balance" }}
-          >
-            Se identificou com alguma dessas?
-          </h2>
-           <p className="text-white/50 text-center mb-10 max-w-lg mx-auto">
-             Você não está só. Milhares de criadores de conteúdo passam por isso
-             todos os dias.
-           </p>
+          <div className="text-center mb-10">
+            <span className="neon-chip mb-4">Você se reconhece?</span>
+            <h2 className="font-sans font-extrabold text-3xl sm:text-4xl text-white tracking-tight mb-3"
+                style={{ textWrap: "balance" }}>
+              Posta todo dia, mas ninguém <span className="neon-text">vê</span>
+            </h2>
+            <p className="text-white/55 max-w-lg mx-auto">
+              Milhares de criadores passam por isso. A boa notícia: tem solução.
+            </p>
+          </div>
           <div className="grid sm:grid-cols-2 gap-4">
             {painPoints.map((pain, i) => (
               <motion.div
@@ -343,23 +306,13 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 16, filter: "blur(4px)" }}
                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 viewport={{ once: true, amount: 0.2 }}
-                transition={{
-                  duration: 0.5,
-                  delay: i * 0.08,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
+                transition={{ duration: 0.5, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
               >
-                <Card className="border-white/10 bg-white/5 hover:bg-white/8 transition-colors h-full backdrop-blur-sm">
-                  <CardContent className="p-5">
-                    <span className="text-2xl mb-2 block">{pain.icon}</span>
-                    <h3 className="font-semibold text-base mb-1.5 text-white">
-                      {pain.title}
-                    </h3>
-                    <p className="text-sm text-white/50 leading-relaxed">
-                      {pain.description}
-                    </p>
-                  </CardContent>
-                </Card>
+                <div className="neon-card p-5 h-full transition">
+                  <span className="text-2xl mb-2 block">{pain.icon}</span>
+                  <h3 className="font-semibold text-base mb-1.5 text-white">{pain.title}</h3>
+                  <p className="text-sm text-white/55 leading-relaxed">{pain.description}</p>
+                </div>
               </motion.div>
             ))}
           </div>
@@ -367,34 +320,31 @@ export default function Landing() {
       </Section>
 
       {/* ─── Solution Transition ─── */}
-      <Section className="py-20 px-4 bg-background">
+      <Section className="py-20 px-4">
         <div className="container max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-5">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/15 mb-5 step-pulse">
             <Zap className="h-7 w-7 text-primary" />
           </div>
-          <h2
-            className="font-serif text-2xl sm:text-3xl font-bold mb-4"
-            style={{ textWrap: "balance" }}
-          >
-            E se uma IA criasse toda a sua estratégia em minutos?
+          <h2 className="font-sans font-extrabold text-3xl sm:text-4xl text-white tracking-tight mb-4"
+              style={{ textWrap: "balance" }}>
+            E se uma IA criasse <span className="neon-text">tudo</span> em minutos?
           </h2>
-          <p className="text-muted-foreground text-lg max-w-xl mx-auto leading-relaxed">
-            O InfluLab analisa seu nicho, mapeia os gatilhos emocionais da sua
-            audiência e gera um plano completo de 30 dias — com scripts, hooks e
-            storytelling prontos para usar.
+          <p className="text-white/60 text-lg max-w-xl mx-auto leading-relaxed">
+            O InfluLab analisa seu nicho, mapeia gatilhos emocionais e gera 30 dias completos — scripts, hooks e storytelling prontos.
           </p>
         </div>
       </Section>
 
       {/* ─── Features Grid ─── */}
-      <Section className="py-20 px-4 bg-charcoal">
+      <Section className="py-20 px-4" id="recursos">
         <div className="container max-w-5xl mx-auto">
-          <h2
-            className="font-serif text-2xl sm:text-3xl font-bold text-center mb-12 text-white"
-            style={{ textWrap: "balance" }}
-          >
-            Tudo que você precisa para dominar seu nicho
-          </h2>
+          <div className="text-center mb-12">
+            <span className="neon-chip mb-4">Recursos</span>
+            <h2 className="font-sans font-extrabold text-3xl sm:text-4xl text-white tracking-tight"
+                style={{ textWrap: "balance" }}>
+              Tudo pra dominar o seu <span className="neon-text">nicho</span>
+            </h2>
+          </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {features.map((feat, i) => (
               <motion.div
@@ -402,228 +352,191 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 16, filter: "blur(4px)" }}
                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 viewport={{ once: true, amount: 0.2 }}
-                transition={{
-                  duration: 0.5,
-                  delay: i * 0.07,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
+                transition={{ duration: 0.5, delay: i * 0.07, ease: [0.16, 1, 0.3, 1] }}
               >
-                <Card className="border-white/10 bg-white/5 hover:bg-white/8 transition-colors h-full backdrop-blur-sm group">
-                  <CardContent className="p-5">
-                    <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-primary/20 mb-3 group-hover:bg-primary/30 transition-colors">
-                      <feat.icon className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-base mb-1.5 text-white">
-                      {feat.title}
-                    </h3>
-                    <p className="text-sm text-white/50 leading-relaxed">
-                      {feat.description}
-                    </p>
-                  </CardContent>
-                </Card>
+                <div className="neon-card p-5 h-full group transition">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/30 to-accent/30 mb-3 group-hover:scale-110 transition-transform">
+                    <feat.icon className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="font-semibold text-base mb-1.5 text-white">{feat.title}</h3>
+                  <p className="text-sm text-white/55 leading-relaxed">{feat.description}</p>
+                </div>
               </motion.div>
             ))}
           </div>
         </div>
       </Section>
 
+      {/* ─── Niches Marquee ─── */}
+      <NichesMarquee />
+
       {/* ─── How It Works ─── */}
-      <HowItWorks />
+      <div id="como-funciona"><HowItWorks /></div>
 
       {/* ─── Social Proof ─── */}
-      <Section className="py-20 px-4 bg-background">
+      <Section className="py-20 px-4">
         <div className="container max-w-4xl mx-auto text-center">
-          <h2 className="font-serif text-2xl sm:text-3xl font-bold mb-3">
-            Quem usa, transforma
+          <span className="neon-chip mb-4">Depoimentos</span>
+          <h2 className="font-sans font-extrabold text-3xl sm:text-4xl text-white tracking-tight mb-3">
+            Quem usa, <span className="neon-text">transforma</span>
           </h2>
-           <p className="text-muted-foreground mb-10 max-w-lg mx-auto">
-             Veja o que criadores de conteúdo estão dizendo sobre o InfluLab.
+          <p className="text-white/55 mb-10 max-w-lg mx-auto">
+            Veja o que criadores estão dizendo sobre o InfluLab.
           </p>
           <div className="grid sm:grid-cols-3 gap-4">
             {[
-              {
-                name: "Camila R.",
-                niche: "Fitness",
-                quote:
-                  "Em 2 semanas meu engajamento triplicou. Nunca mais fiquei sem saber o que postar.",
-              },
-              {
-                name: "Juliana M.",
-                niche: "Beleza",
-                quote:
-                  "Os scripts são absurdos de bons. Parece que a IA lê a mente das minhas seguidoras.",
-              },
-              {
-                name: "Fernanda S.",
-                niche: "Lifestyle",
-                quote:
-                  "Antes eu levava horas planejando. Agora tenho 30 dias prontos em 5 minutos.",
-              },
+              { name: "Camila R.", niche: "Fitness", quote: "Em 2 semanas meu engajamento triplicou. Nunca mais fiquei sem saber o que postar." },
+              { name: "Juliana M.", niche: "Beleza", quote: "Os scripts são absurdos de bons. Parece que a IA lê a mente das minhas seguidoras." },
+              { name: "Fernanda S.", niche: "Lifestyle", quote: "Antes eu levava horas planejando. Agora tenho 30 dias prontos em 5 minutos." },
             ].map((t, i) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.2 }}
-                transition={{
-                  duration: 0.5,
-                  delay: i * 0.1,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
               >
-                <Card className="border-border/60 h-full text-left hover:shadow-md transition-shadow">
-                  <CardContent className="p-5">
-                    <div className="flex gap-0.5 mb-3">
-                      {[...Array(5)].map((_, j) => (
-                        <Star
-                          key={j}
-                          className="h-3.5 w-3.5 fill-primary text-primary"
-                        />
-                      ))}
+                <div className="neon-card p-5 h-full text-left">
+                  <div className="flex gap-0.5 mb-3">
+                    {[...Array(5)].map((_, j) => (
+                      <Star key={j} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="text-sm text-white/85 mb-3 leading-relaxed italic">"{t.quote}"</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-semibold text-white">
+                      {t.name.charAt(0)}
                     </div>
-                    <p className="text-sm text-foreground mb-3 leading-relaxed italic">
-                      "{t.quote}"
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-semibold text-primary">
-                        {t.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">{t.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.niche}
-                        </p>
-                      </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">{t.name}</p>
+                      <p className="text-xs text-white/50">{t.niche}</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </motion.div>
             ))}
           </div>
         </div>
       </Section>
 
-      {/* ─── Comparison Table ─── */}
       <ComparisonTable />
 
       {/* ─── Pricing ─── */}
       <div id="planos" className="scroll-mt-20">
-      <Section className="py-24 px-4 bg-charcoal">
-        <div className="container max-w-3xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="font-serif text-3xl md:text-4xl font-bold text-white mb-2">Escolha seu plano</h2>
-            <p className="text-white/60 text-sm">Mesmo acesso completo nos dois. Cancele quando quiser.</p>
-          </div>
+        <Section className="py-24 px-4 relative overflow-hidden">
+          <div className="neon-orb w-[500px] h-[500px] -top-24 left-1/2 -translate-x-1/2 bg-primary/25" />
+          <div className="container max-w-3xl mx-auto relative z-10">
+            <div className="text-center mb-10">
+              <span className="neon-chip mb-4">Planos</span>
+              <h2 className="font-sans font-extrabold text-3xl md:text-5xl text-white tracking-tight mb-2">
+                Escolha seu <span className="neon-text">plano</span>
+              </h2>
+              <p className="text-white/60 text-sm">Mesmo acesso completo nos dois. Cancele quando quiser.</p>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-            {/* Card Mensal */}
-            <Card className="border-white/10 bg-white/5 backdrop-blur-sm relative overflow-hidden flex flex-col">
-              <CardContent className="p-7 text-center flex flex-col flex-1">
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white/70 bg-white/5 rounded-full px-3 py-1 mb-3 border border-white/10 self-center">
-                  Mensal
-                </span>
-                <h3 className="font-serif text-2xl font-bold mb-1 text-white">InfluLab Pro</h3>
-                <p className="text-white/50 text-sm mb-6">Pague mês a mês</p>
-                <div className="mb-6 space-y-2">
-                  <div className="flex items-baseline justify-center gap-1">
-                    <span className="text-sm text-white/50">R$</span>
-                    <span className="text-5xl font-bold tracking-tight text-white">47</span>
-                    <span className="text-white/50 text-sm">/mês</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+              {/* Mensal */}
+              <Card className="neon-card relative overflow-hidden flex flex-col border-0">
+                <CardContent className="p-7 text-center flex flex-col flex-1">
+                  <span className="neon-chip mb-3 self-center">Mensal</span>
+                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">InfluLab Pro</h3>
+                  <p className="text-white/50 text-sm mb-6">Pague mês a mês</p>
+                  <div className="mb-6 space-y-2">
+                    <div className="flex items-baseline justify-center gap-1">
+                      <span className="text-sm text-white/50">R$</span>
+                      <span className="text-5xl font-extrabold tracking-tight text-white">47</span>
+                      <span className="text-white/50 text-sm">/mês</span>
+                    </div>
+                    <p className="text-xs text-white/50">Cobrado todo mês • cancele quando quiser</p>
                   </div>
-                  <p className="text-xs text-white/50">Cobrado todo mês • cancele quando quiser</p>
-                </div>
+                  <ul className="text-left space-y-2.5 mb-8 flex-1">
+                    {benefits.map((b, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-white/60 shrink-0 mt-0.5" />
+                        <span className="text-white/80">{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => navigate("/auth?plan=monthly")}
+                    className="w-full rounded-full border-white/25 bg-transparent text-white hover:bg-white/10 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
+                  >
+                    Assinar mensal <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </CardContent>
+              </Card>
 
-                <ul className="text-left space-y-2.5 mb-8 flex-1">
-                  {benefits.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="h-4 w-4 text-white/60 shrink-0 mt-0.5" />
-                      <span className="text-white/75">{b}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate("/auth?plan=monthly")}
-                  className="w-full border-white/20 bg-transparent text-white hover:bg-white/10 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
-                >
-                  Assinar mensal
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Card Anual (destaque) */}
-            <Card className="border-primary/30 shadow-2xl shadow-primary/15 relative overflow-hidden bg-white/5 backdrop-blur-sm flex flex-col">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
-              <CardContent className="p-7 text-center flex flex-col flex-1">
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-primary-foreground px-2.5 py-1 rounded-full mb-3 self-center">
-                  <Crown className="h-3.5 w-3.5" />
-                  Mais escolhido • 47% off
-                </span>
-                <h3 className="font-serif text-2xl font-bold mb-1 text-white">InfluLab Pro</h3>
-                <p className="text-white/50 text-sm mb-6">Pague 1x no ano e economize</p>
-                <div className="mb-6 space-y-2">
-                  <div className="flex items-baseline justify-center gap-1">
-                    <span className="text-sm text-white/50">R$</span>
-                    <span className="text-5xl font-bold tracking-tight text-white">297</span>
-                    <span className="text-white/50 text-sm">/ano</span>
+              {/* Anual destaque */}
+              <Card className="neon-card relative overflow-hidden flex flex-col border-0 shadow-2xl"
+                    style={{ boxShadow: "var(--shadow-neon)" }}>
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent" />
+                <CardContent className="p-7 text-center flex flex-col flex-1">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-white px-2.5 py-1 rounded-full mb-3 self-center">
+                    <Crown className="h-3.5 w-3.5" /> Mais escolhido • 47% off
+                  </span>
+                  <h3 className="font-sans font-extrabold text-2xl mb-1 text-white">InfluLab Pro</h3>
+                  <p className="text-white/50 text-sm mb-6">Pague 1x no ano e economize</p>
+                  <div className="mb-6 space-y-2">
+                    <div className="flex items-baseline justify-center gap-1">
+                      <span className="text-sm text-white/50">R$</span>
+                      <span className="text-5xl font-extrabold tracking-tight text-white">297</span>
+                      <span className="text-white/50 text-sm">/ano</span>
+                    </div>
+                    <p className="text-xs text-white/70">
+                      Equivale a <span className="font-semibold text-white">R$24,75/mês</span>
+                      <span className="neon-text font-medium"> • economize R$267</span>
+                    </p>
+                    <p className="text-xs text-white/40">
+                      <span className="line-through text-white/30">R$564/ano</span> se pago mensalmente
+                    </p>
                   </div>
-                  <p className="text-xs text-white/70">
-                    Equivale a <span className="font-semibold text-white">R$24,75/mês</span>
-                    <span className="text-primary font-medium"> • economize R$267</span>
-                  </p>
-                  <p className="text-xs text-white/40">
-                    <span className="line-through text-white/30">R$564/ano</span> se pago mensalmente
-                  </p>
-                </div>
-
-                <ul className="text-left space-y-2.5 mb-8 flex-1">
-                  {benefits.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                      <span className="text-white/80">{b}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  size="lg"
-                  onClick={() => navigate("/auth?plan=yearly")}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
-                >
-                  Assinar plano anual
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </Button>
-                <p className="text-xs text-white/40 mt-3">
-                  Acesso imediato • Cancele a qualquer momento
-                </p>
-              </CardContent>
-            </Card>
+                  <ul className="text-left space-y-2.5 mb-8 flex-1">
+                    {benefits.map((b, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <span className="text-white/85">{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    size="lg"
+                    onClick={() => navigate("/auth?plan=yearly")}
+                    className="neon-cta w-full rounded-full py-6 text-base font-semibold active:scale-[0.97] transition-transform"
+                  >
+                    Assinar plano anual <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                  <p className="text-xs text-white/40 mt-3">Acesso imediato • Cancele a qualquer momento</p>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
-      </Section>
+        </Section>
       </div>
 
-      {/* ─── Guarantee ─── */}
       <GuaranteeBlock />
 
       {/* ─── FAQ ─── */}
-      <Section className="py-20 px-4 bg-background">
+      <Section id="faq" className="py-20 px-4">
         <div className="container max-w-2xl mx-auto">
-          <h2 className="font-serif text-2xl sm:text-3xl font-bold text-center mb-8">
-            Perguntas frequentes
-          </h2>
+          <div className="text-center mb-8">
+            <span className="neon-chip mb-4">FAQ</span>
+            <h2 className="font-sans font-extrabold text-3xl sm:text-4xl text-white tracking-tight">
+              Perguntas <span className="neon-text">frequentes</span>
+            </h2>
+          </div>
           <Accordion type="single" collapsible className="space-y-2">
             {faqs.map((faq, i) => (
               <AccordionItem
                 key={i}
                 value={`faq-${i}`}
-                className="border rounded-lg px-4 bg-card/80"
+                className="neon-card px-4 border-0"
               >
-                <AccordionTrigger className="text-sm font-medium text-left hover:no-underline">
+                <AccordionTrigger className="text-sm font-medium text-left text-white hover:no-underline">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground leading-relaxed">
+                <AccordionContent className="text-sm text-white/65 leading-relaxed">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
@@ -633,44 +546,33 @@ export default function Landing() {
       </Section>
 
       {/* ─── Final CTA ─── */}
-      <Section className="py-24 px-4 bg-charcoal relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-0 left-[30%] w-96 h-96 rounded-full bg-primary/10 blur-[120px]" />
-        </div>
+      <Section className="py-24 px-4 relative overflow-hidden">
+        <div className="neon-orb w-[600px] h-[600px] top-0 left-1/2 -translate-x-1/2 bg-primary/30" />
         <div className="container max-w-3xl mx-auto text-center relative z-10">
-          <h2
-            className="font-serif text-2xl sm:text-3xl font-bold mb-4 text-white"
-            style={{ textWrap: "balance" }}
-          >
-            Sua audiência está esperando. Você vai continuar postando no escuro?
+          <h2 className="font-sans font-extrabold text-3xl sm:text-5xl text-white tracking-tight mb-4"
+              style={{ textWrap: "balance" }}>
+            Sua audiência está <span className="neon-text">esperando</span>
           </h2>
-          <p className="text-white/50 mb-8 max-w-lg mx-auto">
-            Em 5 minutos você terá uma estratégia completa de 30 dias
-            personalizada para o seu nicho.
+          <p className="text-white/60 mb-8 max-w-lg mx-auto text-lg">
+            Em 5 minutos você terá uma estratégia completa de 30 dias personalizada pro seu nicho.
           </p>
           <Button
             size="lg"
             onClick={scrollToPlanos}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 active:scale-[0.97] transition-transform"
+            className="neon-cta rounded-full px-8 py-7 text-lg font-semibold active:scale-[0.97] transition-transform"
           >
-            Assinar agora
-            <ArrowRight className="h-4 w-4 ml-1" />
+            Começar agora <ArrowRight className="h-5 w-5 ml-2" />
           </Button>
         </div>
       </Section>
 
       {/* ─── Footer ─── */}
-      <footer className="border-t border-white/10 py-8 px-4 bg-charcoal">
+      <footer className="border-t border-white/10 py-8 px-4">
         <div className="container max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/40">
-          <div className="flex items-center gap-2">
-            <img src={logoHorizontal} alt="InfluLab" className="h-5 w-auto" />
-          </div>
-          <p>
-            © {new Date().getFullYear()} InfluLab. Todos os direitos reservados.
-          </p>
+          <p>© {new Date().getFullYear()} InfluLab. Todos os direitos reservados.</p>
+          <p className="neon-text font-semibold">Feito com IA para criadores</p>
         </div>
       </footer>
-
     </div>
   );
 }
