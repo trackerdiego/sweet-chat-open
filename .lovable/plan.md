@@ -1,44 +1,107 @@
-## TL;DR
+## Objetivo
 
-Fiz a auditoria dos 6 templates (`signup`, `magic-link`, `recovery`, `invite`, `email-change`, `reauthentication`). **Só o `recovery` tinha o bug** porque é o único fluxo que precisa de uma tela dedicada (`/reset-password`) com a sessão já ativa. Os outros caem em rotas que já funcionam em qualquer estado de auth. Mesmo assim dá pra blindar o app com um pequeno reforço preventivo.
+Renovar todo o sistema de push notifications: rebrand pra **VyralLab**, mais diversidade/criatividade nas copies, novo bloco diário de **insight** + provas sociais, e ampliar a janela de lembrete de Pix pra incluir **D+1 (1 dia após vencer)** — só pra quem paga por Pix.
 
-## Análise por template
+---
 
-| Template | Para onde redireciona | Estado da sessão | Rota destino existe? | Status |
-|---|---|---|---|---|
-| `signup` | `window.location.origin` (`/`) | autenticado | `/` → `<Index />` (auth) ou `<Landing />` (unauth) | ok |
-| `magic-link` | `SITE_URL` (`/`) | autenticado | `/` → `<Index />` | ok |
-| `recovery` | `${origin}/reset-password` | autenticado (PASSWORD_RECOVERY) | `/reset-password` (corrigido na rodada anterior) | ok |
-| `email-change` | `SITE_URL` (`/`) | autenticado | `/` → `<Index />` | ok |
-| `invite` | `SITE_URL` (`/`) | autenticado, sem senha | `/` — mas usuário precisaria setar senha | n/a (app não usa convites hoje) |
-| `reauthentication` | usa OTP de 6 dígitos, sem URL | — | — | ok |
+## 1. Rebrand: Influlab → VyralLab
 
-Conclusão: nenhum bug latente nos demais fluxos no estado atual do app. O recovery era especial porque ele é o único que precisa renderizar uma tela específica (formulário de nova senha) **antes** dos guards de onboarding/access kickarem.
+Substituir em todos os pontos de copy enviada ao usuário:
 
-## Reforço preventivo (opcional, recomendado)
+- `supabase/functions/scheduled-push/index.ts` (3 ocorrências em NEW_USER e FREE_INACTIVE)
+- `supabase/functions/notify-pix-due-soon/index.ts` (1 ocorrência)
+- `supabase/functions/send-push/index.ts` → `mailto:push@influlab.app` vira `mailto:push@vyrallab.online` (campo `sub` do JWT VAPID, visível só pros push servers)
+- `public/sw-push.js` → fallback title "Influlab" vira "VyralLab" (cache name `influlab-v1` fica — trocar invalidaria service workers instalados sem ganho)
 
-Pra não cair na mesma armadilha no futuro se algum dia adicionarmos `/accept-invite`, `/confirm-email`, etc., generalizar a "lista branca" de rotas públicas em `App.tsx`:
+---
 
-```tsx
-const PUBLIC_AUTH_ROUTES = ['/reset-password'];
-// futuramente: '/accept-invite', '/confirm-email-change', etc.
+## 2. Banco de copies expandido (mais diversidade)
 
-if (typeof window !== 'undefined' && PUBLIC_AUTH_ROUTES.includes(window.location.pathname)) {
-  return (
-    <Routes>
-      <Route path="/reset-password" element={<ResetPassword />} />
-      {/* adicionar novas rotas aqui conforme criarmos os templates */}
-    </Routes>
-  );
-}
+Cada segmento ganha mais variações e tom mais variado (motivacional, estratégico, prova social, curiosidade, urgência leve). Meta: dobrar o pool atual (~6 por bloco) pra **~12 por bloco** em cada segmento, evitando repetição percebida em uma semana.
+
+Categorias de tom misturadas em cada pool:
+
+- **Motivacional** — "Você tá mais perto do que pensa…"
+- **Estratégico/dica curta** — "Hook do dia: comece com uma pergunta que dói"
+- **Prova social genérica** — "+340 creators aumentaram engajamento essa semana usando a matriz"
+- **Curiosidade/cliffhanger** — "3 erros que matam alcance no Reels — abre pra ver"
+- **CTA direto** — "Sua estratégia de hoje tá pronta. Bora?"
+
+Provas sociais são **genéricas e atemporais** (sem números reais de DB nesta fase — números fixos plausíveis ou frases sem número tipo "centenas de creators…"). Marcar com comentário `// social-proof generic` pra futura troca por dados reais.
+
+---
+
+## 3. Novo bloco: **insight** (4º horário)
+
+Adiciona um quarto envio diário focado em **um insight prático + CTA**, separado dos blocos morning/afternoon/evening.
+
+```text
+morning   ~ 08h BR   tom: energizar, abrir o dia
+insight   ~ 13h BR   tom: 1 dica acionável + "abre o app pra aplicar"
+afternoon ~ 16h BR   tom: cobrar execução
+evening   ~ 20h BR   tom: fechar dia / planejar amanhã
 ```
 
-Mudança puramente estrutural — comportamento idêntico ao de hoje, só fica mais fácil estender. Sem mudanças em backend, edge functions ou templates.
+**Estrutura do insight** (exemplos):
+- Hook tip: "📝 Insight do dia: vídeo que não gera comentário não gera alcance. Abre o app e veja 5 hooks pro seu nicho."
+- Storytelling tip: "🎬 Storytelling rápido: comece pelo fim. Mostre o resultado antes do processo."
+- CTA tip: "🎯 CTA que converte: peça UMA ação. 'Salva esse post' funciona mais que 'curte e compartilha'."
+- Algoritmo tip: "📈 Reels com retenção >70% nos primeiros 3 segundos têm 4x mais alcance."
+- Prova social: "✨ +500 creators usaram a matriz essa semana. E você?"
 
-## Deploy
+Cada segmento (PREMIUM, FREE_EARLY, FREE_TRIAL_END, FREE_LOCKED, FREE_EXHAUSTED, FREE_INACTIVE, NEW_USER) ganha seu pool de insights, com CTA adequado (PREMIUM → `/tasks`, FREE_LOCKED → `/?upgrade=true`, etc.).
 
-Frontend Vercel (auto). Nada na VPS.
+### Mudanças técnicas pra suportar o novo bloco
 
-## Posso aplicar?
+- `type Block = 'morning' | 'afternoon' | 'evening' | 'insight'`
+- `getTimeBlock()` reconhece a faixa 12-14h BR como `insight` (mas continua aceitando override via `body.block` do cron)
+- Cada record `PREMIUM`/`FREE_*`/`NEW_USER` ganha chave `insight`
+- Tabela `push_send_log` já tem coluna `block text` — não precisa migração, só passa a aceitar o valor `'insight'`
+- Cron VPS ganha 1 entrada nova: `0 13 * * *` chamando `scheduled-push` com `{"block":"insight"}` (entregar no bloco copia-e-cola do deploy)
 
-Se quiser, aplico a refatoração agora. Se preferir deixar como está (a rota única já resolve), também ok — não há problema iminente.
+---
+
+## 4. Renovação Pix: adicionar **D+1** (1 dia após vencer)
+
+`supabase/functions/notify-pix-due-soon/index.ts` hoje cobre D-3, D-1, D-0. Adicionar:
+
+- **D+1** (1 dia depois do `due_date`): mensagem de urgência alta — "Sua assinatura venceu ontem. Pague em segundos pra recuperar acesso." → link `/renovar`
+- Filtro continua: só `billing_type IN ('PIX','UNDEFINED')` (cartão recorrente nunca recebe)
+- Idempotência: novo flag `d_plus_1: boolean` em `notifications_sent` dentro do JSON `next_invoice` (não precisa migração de schema, já é JSONB)
+- Janela máxima: só dispara D+1 se `days === -1` (não fica enviando indefinidamente)
+
+Copies (3-4 variações, escolha aleatória):
+
+- "Sua assinatura venceu ontem 😬 — pague o Pix em segundos e recupera o acesso"
+- "Acesso pausado: sua fatura venceu ontem. Toque pra regularizar"
+- "Ainda dá tempo! Sua renovação venceu ontem — Pix expira logo, pague agora"
+
+D-3, D-1, D-0 ganham 2-3 variações cada também (hoje é mensagem fixa).
+
+---
+
+## 5. Estrutura do código
+
+Mantém o arquivo único `scheduled-push/index.ts` (sem refatorar pra módulos — Deno edge function self-hosted, simples é melhor). Apenas:
+
+1. Move pools de copies pra constantes no topo, organizadas por `[segment][block]`
+2. Helper `pick<T>(arr)` continua igual
+3. Acrescenta validação: se o pool do `insight` estiver vazio pra um segmento, faz fallback pro pool `morning` daquele segmento
+
+---
+
+## Entregáveis
+
+- Editado: `supabase/functions/scheduled-push/index.ts` (rebrand + pools expandidos + bloco insight)
+- Editado: `supabase/functions/notify-pix-due-soon/index.ts` (D+1 + variações)
+- Editado: `supabase/functions/send-push/index.ts` (mailto VAPID)
+- Editado: `public/sw-push.js` (fallback title)
+- Bloco copia-e-cola pra VPS no final: `cd /root/app && git pull && ./scripts/deploy-selfhost.sh scheduled-push send-push notify-pix-due-soon` + linha de crontab nova pro bloco insight (13h BR = 16h UTC)
+
+---
+
+## Fora de escopo (perguntar depois se quiser)
+
+- Personalizar insight por nicho real do usuário via IA (caro, fica pra v2)
+- Prova social com números reais do DB (precisa endpoint de stats)
+- A/B test de copy (precisa coluna nova em `push_send_log`)
