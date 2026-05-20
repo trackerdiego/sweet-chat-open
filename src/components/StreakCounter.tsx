@@ -24,16 +24,16 @@ export function StreakCounter({ streak }: StreakCounterProps) {
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ delay: 0.2 }}
-      className="neon-card p-5 space-y-4"
+      className="glass-card p-5 space-y-4"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/15 border border-primary/40 text-[hsl(var(--primary-glow))]">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/15 border border-primary/40 text-primary">
             <Zap size={18} />
           </div>
           <h3 className="font-serif text-lg font-semibold text-foreground">Sequência</h3>
         </div>
-        <div className="flex items-center gap-1.5 text-[hsl(var(--primary-glow))] font-semibold text-sm">
+        <div className="flex items-center gap-1.5 text-primary font-semibold text-sm">
           {streak} {streak === 1 ? 'dia' : 'dias'}
         </div>
       </div>
@@ -43,7 +43,7 @@ export function StreakCounter({ streak }: StreakCounterProps) {
           <div
             key={days}
             className={`flex flex-col items-center gap-1.5 flex-1 py-3 rounded-xl transition-all ${
-              reached ? 'neon-cta' : 'bg-white/5 text-muted-foreground'
+              reached ? 'text-primary-foreground bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))] shadow-md shadow-primary/30' : 'bg-muted/30 text-muted-foreground'
             }`}
           >
             <Icon size={18} />
@@ -59,7 +59,7 @@ export function StreakCounter({ streak }: StreakCounterProps) {
         className="w-full flex items-center justify-center gap-2 pt-2 hover:opacity-80 transition-opacity"
         aria-label="Ver minha carteira de coins"
       >
-        <Coins size={16} className="text-[hsl(var(--primary-glow))]" />
+        <Coins size={16} className="text-primary" />
         <span className="font-semibold text-sm text-foreground">
           {wallet.coins_balance.toLocaleString('pt-BR')} {wallet.coins_balance === 1 ? 'coin' : 'coins'}
         </span>

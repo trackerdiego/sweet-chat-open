@@ -1,32 +1,45 @@
-## Fix: input do login perde foco a cada tecla
+## Toggle de tema claro/escuro no app interno
 
-### Causa
-Em `src/pages/Auth.tsx`, o componente `Shell` é declarado **dentro** da função `Auth`. A cada `setState` (cada tecla digitada → `setEmail`/`setPassword`), o React cria um novo tipo de componente `Shell`, desmonta toda a subárvore e remonta. Resultado: o `<Input>` é destruído a cada keystroke, perde foco e parece impossível de escrever.
+### Comportamento
+- Botão de toggle (ícone sol/lua) no header do Painel (`Index.tsx`), ao lado dos botões de ajuda/sair.
+- Estado persistido em `localStorage` (`influlab.theme` = `"dark"` | `"light"`). Default: **claro** (volta ao visual original legível); usuário escolhe escuro se quiser.
+- Aplicado globalmente no app autenticado: tudo dentro de rotas logadas (Painel, Matriz, Script, Tarefas, Ferramentas, Carteira, etc.) e a `Navigation` respeitam o tema.
+- `/auth` e `/landing` continuam **sempre escuras** (identidade da marca pública, sem toggle).
 
-### Correção
-Mover `Shell` para **fora** do componente `Auth` (declaração no escopo do módulo). Como ele usa apenas `children`, basta extrair — nenhum estado ou prop adicional necessário.
+### Implementação
 
-```tsx
-// Fora do componente Auth
-const Shell = ({ children }: { children: React.ReactNode }) => (
-  <div className="landing-dark min-h-screen flex flex-col relative overflow-hidden">
-    <InAppBrowserBanner />
-    <div className="neon-orb" style={{ ... }} />
-    <div className="neon-orb" style={{ ... }} />
-    <div className="relative z-10 ...">
-      <img src={logo} alt="Vyral Lab" className="..." />
-      {children}
-    </div>
-  </div>
-);
+**1. Novo hook `src/hooks/useAppTheme.ts`**
+- Lê/escreve `localStorage.influlab.theme`.
+- Aplica/remove a classe `landing-dark` em `document.documentElement` via `useEffect`.
+- Expõe `{ theme, toggle, setTheme }`.
+- Inicialização síncrona (lazy state) pra evitar flash.
 
-const Auth = () => {
-  // ... resto igual
-};
-```
+**2. `src/pages/Index.tsx`**
+- Remover `landing-dark` do wrapper raiz (vai vir do `<html>`).
+- Adicionar botão toggle no header (ícone `Sun`/`Moon` do lucide), entre `HelpCircle` e `LogOut`.
+- Orbs neon só aparecem quando `theme === 'dark'`.
 
-### Arquivos afetados
-- `src/pages/Auth.tsx` — apenas mover a declaração do `Shell`. Nenhuma outra mudança de lógica, estilo ou estrutura.
+**3. `src/components/Navigation.tsx`**
+- Remover `landing-dark` hard-coded e o fundo escuro fixo.
+- Trocar por classes condicionais: no claro usa `bg-card border-border` + item ativo `gold-gradient`; no escuro mantém `bg-[hsl(265_50%_6%/0.85)]` + `neon-cta`.
+- Lê o hook `useAppTheme`.
+
+**4. Subcomponentes do Painel** (`MonthlyProgress`, `StreakCounter`, `MindsetPulse`, `WeeklyView`)
+- Hoje estão com `neon-card` + cores neon hard-coded. Como `neon-card` só é estilizado dentro de `.landing-dark`, no modo claro ele vira um div sem estilo.
+- Solução: trocar `neon-card` por `glass-card` e remover refs diretas a `hsl(var(--primary-glow))`. Como esses componentes ficam dentro do wrapper que tem `landing-dark` no modo escuro, o `glass-card` (que já usa tokens `--card`, `--border`) automaticamente se adapta — no escuro fica com fundo escuro, no claro com fundo claro. Mesma lógica pros ícones (`text-primary` em vez de `text-[hsl(var(--primary-glow))]`).
+- Barras de progresso e milestones: usar gradiente baseado em `--primary` → `--accent` (esses tokens já mudam entre claro e escuro automaticamente via `landing-dark` override).
+
+**5. `src/pages/Auth.tsx` e `src/pages/Landing.tsx`**
+- Sem mudança. Continuam `landing-dark` fixo.
+
+### Tokens
+- Não criar tokens novos. Reusar `--primary`, `--accent`, `--card`, `--border`, `--muted` (já definidos em `:root` claro e `.landing-dark` escuro).
+- Gradiente "neon/gold": usar `linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))` — funciona nos dois temas (roxo→magenta no escuro, roxo→roxo no claro).
 
 ### Fora do escopo
-- Nada em hooks, Supabase, fluxo de referral, validações ou estilização neon.
+- Nenhuma mudança em lógica, hooks de dados, Supabase, rotas.
+- Não tocar em `Landing`, `Auth`, ou nas edge functions.
+- Sem tema "auto/sistema" — só toggle manual binário (pode ser adicionado depois se quiser).
+
+### Pergunta antes de implementar
+Default inicial: **claro** (parto do que você disse — escuro está difícil de ler) ou **escuro** (mantém o visual atual e o usuário escolhe trocar)?
