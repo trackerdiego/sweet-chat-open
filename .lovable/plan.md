@@ -1,58 +1,39 @@
 ## Objetivo
 
-Substituir a animação atual do `RealtimeTracker` por uma versão cíclica e coerente — como na referência ZK Delivery — onde a animação caminha sozinha do primeiro ao último círculo, com pulsos, check verdes nos passos concluídos e traços que preenchem progressivamente. Tudo cabendo na largura sem rolagem horizontal, inclusive no mobile.
+Deixar a seção "Funciona para qualquer nicho" (marquee) visualmente mais próxima da referência ZK Delivery: **cards maiores com imagem em destaque** (não emoji, não ícone minúsculo), no estilo dos cards de comida da referência.
 
-## Comportamento de animação
+## Estado atual
 
-Estado interno `activeIndex` controlado por `setInterval` (ex.: a cada 1.6s avança 1; ao chegar no último, espera ~2s e reinicia em 0).
+`src/components/landing/NichesMarquee.tsx` já usa `NicheIcon` (PNGs reais de `src/assets/niches/*.png`), porém:
+- Tamanho `size={18}` → minúsculo, parece ícone de chip
+- Layout é "pill" horizontal (`px-4 py-2 rounded-full`) com ícone + texto lado a lado
+- Resultado fica longe do visual da referência, onde cada item é um **card grande tipo "foto + legenda"**
 
-Para cada passo, três estados visuais:
+## Mudança proposta
 
-- **Passado** (`i < activeIndex`): círculo com `ring` colorido sólido, ícone na cor do passo, badge verde de check (CheckCircle2) no canto superior direito, label em branco/70.
-- **Ativo** (`i === activeIndex`): círculo com `ring` duplo + halo pulsante (`animate-pulse-neon`), ícone vibrante, label em branco e em negrito, leve `scale-110`.
-- **Futuro** (`i > activeIndex`): círculo opaco (opacity 50), sem check, label em branco/40.
+Refatorar `NichesMarquee.tsx` para renderizar cada nicho como um **card grande tipo "polaroid"**, igual à referência:
 
-Traços entre passos viram uma barra `bg-white/10` com um preenchimento `bg-gradient-to-r from-primary to-accent` cuja largura é animada via Framer Motion:
-- 0% se `i >= activeIndex`
-- 100% se `i < activeIndex`
-- Para o traço imediatamente após o ativo (`i === activeIndex`), animar de 0→100% durante o tempo que o passo fica ativo (preenchimento progressivo, como na referência).
-
-Texto inferior "Status atual: <label do ativo>" troca conforme `activeIndex` muda, com `AnimatePresence` (fade curto).
-
-## Sem scroll horizontal
-
-Trocar o layout de `flex overflow-x-auto` por **CSS Grid** com `grid-template-columns: repeat(6, minmax(0,1fr))` para os círculos + labels, e os traços renderizados em uma camada absoluta atrás ou via grid intercalado.
-
-Esquema:
-
-```text
-[ico] -- [ico] -- [ico] -- [ico] -- [ico] -- [ico]
- lbl     lbl     lbl     lbl     lbl     lbl
-```
-
-Implementação prática: grid de 11 colunas (6 ícones + 5 traços), `gap` pequeno, traços com `flex-1` ou `w-full` dentro da própria coluna. Mobile encolhe ícones para `w-11 h-11`, labels com `text-[10px] leading-tight` e `break-words` para "Aguardando confirmação" tipo "Análise Visceral" caberem em 2 linhas.
-
-Em telas <380px, reduzir gap e ícones mais ainda; nenhum `overflow-x-auto`.
-
-## Arquivos afetados
-
-- `src/components/landing/RealtimeTracker.tsx` — reescrita completa:
-  - `useState` + `useEffect` com `setInterval` para `activeIndex`
-  - Grid responsivo (sem scroll)
-  - Badge `CheckCircle2` nos passados
-  - Framer Motion nos traços (largura animada) e no label "Status atual"
-- `src/index.css` — opcional: ajustar `@keyframes pulse-neon` se o brilho atual estiver discreto demais (deixar pulso mais visível com 2 anéis: um inner ring + outer glow soft).
-- Nenhuma mudança em outras seções da Landing.
+- Card: `w-44 h-44 sm:w-52 sm:h-52` (quadrado), `rounded-2xl`, `neon-card` (mantém glassmorphism roxo)
+- Imagem do nicho (`NicheIcon`) ocupando a área toda: `size={140}` em mobile, `size={180}` em desktop, com `object-contain` e leve `drop-shadow`
+- Label sobreposto no canto inferior esquerdo: chip preto translúcido (`bg-black/50 backdrop-blur`) com texto branco bold (`text-sm font-bold`), no estilo da referência ("Sushi", "Pizza", "Hambúrguer"…)
+- Borda sutil roxa no hover/ativo (mantém DNA neon do nosso tema, não copia o laranja do ZK)
+- Gap entre cards aumenta para `gap-4 sm:gap-5`
+- Duas linhas continuam: uma rola para esquerda, outra para direita (mantém `animate-marquee-x` / `animate-marquee-x-reverse`)
+- Velocidade ajustada: como os cards são maiores, aumentar duração da animação para 50s para não passar voando
 
 ## Pontos técnicos
 
-- Cleanup do `setInterval` no unmount.
-- Respeitar `prefers-reduced-motion`: se ativo, congelar em `activeIndex = 2` sem ciclar.
-- Manter a paleta atual de cores por passo (amber, fuchsia, violet, sky, emerald, pink).
-- Sem novas dependências (framer-motion e lucide-react já estão no projeto).
+- `NicheIcon` já aceita `size` numérico e renderiza `<img>` com `object-contain` → só passar tamanho maior
+- Nenhuma alteração em `tailwind.config.ts` (keyframes `marquee-x` continuam servindo; só ajusto duração via classe utilitária inline `[animation-duration:50s]` ou trocando a animation)
+- Mascaramento lateral (`marquee-mask`) mantido
+- Sem mudança em outros componentes
+
+## Arquivo afetado
+
+- `src/components/landing/NichesMarquee.tsx` — reescrita do componente `Row` (item visual) e ajuste de espaçamento
 
 ## Validação pós-implementação
 
-- Visual em 1147px (viewport atual), 768px e 375px — confirmar que nenhum scroll horizontal aparece.
-- Confirmar que o ciclo reinicia suavemente.
-- Confirmar contraste do label ativo vs futuro.
+- Em 769px (viewport atual) e 375px: cards aparecem em tamanho generoso, com imagem nítida e label legível
+- Sem scroll horizontal da página (marquee corre dentro do próprio container com `overflow-hidden`)
+- Animação contínua suave nas duas direções
