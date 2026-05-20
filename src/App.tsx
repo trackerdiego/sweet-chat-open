@@ -30,13 +30,18 @@ const queryClient = new QueryClient();
 function AppRoutes() {
   const { isAuthenticated, needsOnboarding, loading } = useUserProfile();
 
-  if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+  // Rotas públicas que precisam renderizar ANTES de qualquer guard de auth/onboarding/access.
+  // Adicione aqui qualquer nova tela disparada por link de email do Supabase (recovery, invite, etc).
+  const PUBLIC_AUTH_ROUTES = ['/reset-password'];
+
+  if (typeof window !== 'undefined' && PUBLIC_AUTH_ROUTES.includes(window.location.pathname)) {
     return (
       <Routes>
         <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     );
   }
+
 
   if (loading) {
 

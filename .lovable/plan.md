@@ -1,41 +1,44 @@
-# Bug: reset-password some e cai em 404
+## TL;DR
 
-## Causa raiz
+Fiz a auditoria dos 6 templates (`signup`, `magic-link`, `recovery`, `invite`, `email-change`, `reauthentication`). **Só o `recovery` tinha o bug** porque é o único fluxo que precisa de uma tela dedicada (`/reset-password`) com a sessão já ativa. Os outros caem em rotas que já funcionam em qualquer estado de auth. Mesmo assim dá pra blindar o app com um pequeno reforço preventivo.
 
-Quando o usuário abre o link do email, o Supabase processa o token e cria uma sessão imediatamente (evento `PASSWORD_RECOVERY` = usuário autenticado). No `App.tsx` o `AppRoutes` tem 3 árvores de rota separadas por estado:
+## Análise por template
 
-- **não autenticado** → inclui `/reset-password` ✅
-- **needsOnboarding** → `*` → `Navigate to="/onboarding"` ❌
-- **autenticado** → não tem `/reset-password`, então `*` cai em `<NotFound />` ❌
+| Template | Para onde redireciona | Estado da sessão | Rota destino existe? | Status |
+|---|---|---|---|---|
+| `signup` | `window.location.origin` (`/`) | autenticado | `/` → `<Index />` (auth) ou `<Landing />` (unauth) | ok |
+| `magic-link` | `SITE_URL` (`/`) | autenticado | `/` → `<Index />` | ok |
+| `recovery` | `${origin}/reset-password` | autenticado (PASSWORD_RECOVERY) | `/reset-password` (corrigido na rodada anterior) | ok |
+| `email-change` | `SITE_URL` (`/`) | autenticado | `/` → `<Index />` | ok |
+| `invite` | `SITE_URL` (`/`) | autenticado, sem senha | `/` — mas usuário precisaria setar senha | n/a (app não usa convites hoje) |
+| `reauthentication` | usa OTP de 6 dígitos, sem URL | — | — | ok |
 
-Por isso o form aparece por ~1s (enquanto `useUserProfile` ainda está com `loading=true`) e logo depois o re-render manda pra NotFound (a "tela com 404" que o user viu).
+Conclusão: nenhum bug latente nos demais fluxos no estado atual do app. O recovery era especial porque ele é o único que precisa renderizar uma tela específica (formulário de nova senha) **antes** dos guards de onboarding/access kickarem.
 
-## Correção
+## Reforço preventivo (opcional, recomendado)
 
-Renderizar `/reset-password` **antes** de qualquer gating de auth/onboarding, em qualquer estado.
-
-### Mudança em `src/App.tsx` (única edição)
-
-No topo do `AppRoutes`, antes do `if (loading)`, adicionar:
+Pra não cair na mesma armadilha no futuro se algum dia adicionarmos `/accept-invite`, `/confirm-email`, etc., generalizar a "lista branca" de rotas públicas em `App.tsx`:
 
 ```tsx
-if (window.location.pathname === '/reset-password') {
+const PUBLIC_AUTH_ROUTES = ['/reset-password'];
+// futuramente: '/accept-invite', '/confirm-email-change', etc.
+
+if (typeof window !== 'undefined' && PUBLIC_AUTH_ROUTES.includes(window.location.pathname)) {
   return (
     <Routes>
       <Route path="/reset-password" element={<ResetPassword />} />
+      {/* adicionar novas rotas aqui conforme criarmos os templates */}
     </Routes>
   );
 }
 ```
 
-Assim a tela de nova senha não é interrompida nem pelo loading, nem pelo guard de autenticação, nem pelo onboarding.
-
-## Observações
-
-- Não precisa mexer em `ResetPassword.tsx` — já trata `type=recovery` e `PASSWORD_RECOVERY` corretamente.
-- Após salvar a nova senha o `navigate('/')` continua funcionando: já está autenticado e o roteamento normal assume.
-- Nada no backend / Supabase precisa mudar. É bug 100% de frontend.
+Mudança puramente estrutural — comportamento idêntico ao de hoje, só fica mais fácil estender. Sem mudanças em backend, edge functions ou templates.
 
 ## Deploy
 
-Frontend roda no Vercel (auto-deploy do GitHub). Nada pra rodar na VPS.
+Frontend Vercel (auto). Nada na VPS.
+
+## Posso aplicar?
+
+Se quiser, aplico a refatoração agora. Se preferir deixar como está (a rota única já resolve), também ok — não há problema iminente.
