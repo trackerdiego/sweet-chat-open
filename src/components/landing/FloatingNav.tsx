@@ -39,14 +39,14 @@ export function FloatingNav({ onPlansClick }: { onPlansClick: () => void }) {
     <nav className="fixed top-3 left-0 right-0 z-50 px-2 sm:px-3 pt-[env(safe-area-inset-top)] max-w-full">
       <div className="container max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3 min-w-0">
         {/* Logo */}
-        <div className="nav-pill flex items-center px-2.5 sm:px-3 py-1.5 sm:py-2 shrink-0">
+        <div className="flex items-center shrink-0">
           <img
             src={logoHorizontal}
             alt="Vyral Lab"
-            className="h-7 sm:h-9 w-auto"
+            className="h-10 sm:h-12 w-auto drop-shadow-[0_0_20px_rgba(168,85,247,0.45)]"
           />
-
         </div>
+
 
         {/* Center pill (desktop only) */}
         <div className="nav-pill hidden lg:flex items-center px-2 py-1.5 min-w-0">
