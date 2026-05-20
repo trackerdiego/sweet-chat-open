@@ -25,14 +25,14 @@ const PREMIUM: Record<Block, ((d: number, s: number) => Msg)[]> = {
   morning: [
     (_d, s) => ({ title: '🔥 Streak de ' + s + ' dias!', body: 'Você é imparável. Bora manter esse ritmo!' }),
     (d) => ({ title: '👑 Dia ' + d + '/30 — Elite!', body: 'Poucos chegam tão longe. Seu público sente a diferença.' }),
-    (d) => ({ title: '☀️ Bom dia, creator premium!', body: 'Dia ' + d + ' te espera no VyralLab. Abre e domina.' }),
+    (d) => ({ title: '☀️ Bom dia, creator premium!', body: 'Dia ' + d + ' te espera no Vyral Lab. Abre e domina.' }),
     (_d, s) => ({ title: '💎 ' + s + ' dias de fogo!', body: 'Continua assim que o algoritmo recompensa consistência.' }),
     () => ({ title: '🚀 Ferramentas ilimitadas te esperam', body: 'Scripts, IA e matriz completa. Bora criar!' }),
     (d) => ({ title: '⚡ Dia ' + d + ' — sua estratégia tá pronta', body: 'Confere o plano de hoje e executa com tudo!' }),
     () => ({ title: '🌅 Manhã do creator de elite', body: '+300 criadores já abriram o app antes das 9. Bora junto?' }), // social-proof generic
     () => ({ title: '🎯 Foco da manhã', body: 'Decide AGORA o formato de hoje: Reel, story ou carrossel?' }),
     (d) => ({ title: '📅 Dia ' + d + ': sem improviso', body: 'Sua matriz pronta esperando. 2 min de leitura, 1 dia de tração.' }),
-    () => ({ title: '☕ Café + estratégia', body: 'Antes do scroll, abre o VyralLab. Diferença em 30 dias é absurda.' }),
+    () => ({ title: '☕ Café + estratégia', body: 'Antes do scroll, abre o Vyral Lab. Diferença em 30 dias é absurda.' }),
     (_d, s) => ({ title: '🏆 ' + s + ' dias direto. Isso é raro.', body: '93% dos creators desistem antes do 7º dia. Você não.' }), // social-proof generic
     () => ({ title: '⚡ Hook do dia', body: '"Você não precisa de mais conteúdo, precisa de melhor". Aplica isso hoje.' }),
   ],
@@ -90,7 +90,7 @@ const FREE_EARLY: Record<Block, ((d: number, s: number) => Msg)[]> = {
     (d) => ({ title: '💡 Dia ' + d + ': ideia fresca!', body: 'Confere as sugestões do dia e começa a criar.' }),
     () => ({ title: '🎬 Câmera, ação!', body: 'Seu conteúdo de hoje pode ser o que muda tudo. Bora!' }),
     () => ({ title: '🌅 Comece pelo mais fácil', body: '1 story respondendo 1 dúvida. Pronto, dia destravado.' }),
-    () => ({ title: '🚀 +200 creators começaram essa semana', body: 'Não fica pra trás. Abre o VyralLab.' }), // social-proof generic
+    () => ({ title: '🚀 +200 creators começaram essa semana', body: 'Não fica pra trás. Abre o Vyral Lab.' }), // social-proof generic
     () => ({ title: '🧠 Verdade dura', body: 'Quem grava todo dia 30 dias muda de patamar. Quem espera "inspiração", não.' }),
     (d) => ({ title: '🎯 Dia ' + d + ': missão simples', body: 'Abre o app, escolhe 1 tarefa, executa. 15 minutos.' }),
   ],
@@ -253,7 +253,7 @@ const FREE_INACTIVE: Record<Block, Msg[]> = {
     { title: '💪 Não desiste agora!', body: 'Um conteúdo hoje já te coloca de volta no jogo.' },
     { title: '🌅 O algoritmo esquece rápido', body: 'Mas seu público não. Volta a criar!' },
     { title: '✨ Sabe o que falta?', body: 'Só um clique pra voltar. Abre o app!' },
-    { title: '🚀 +200 voltaram essa semana', body: 'Te espera no VyralLab. Bora?' }, // social-proof generic
+    { title: '🚀 +200 voltaram essa semana', body: 'Te espera no Vyral Lab. Bora?' }, // social-proof generic
   ],
   insight: [
     { title: '💡 Insight pra você voltar', body: 'Quem retoma depois de uma pausa cresce mais rápido. Tem foco novo.' },
@@ -272,7 +272,7 @@ const FREE_INACTIVE: Record<Block, Msg[]> = {
   evening: [
     { title: '🌙 Antes de dormir...', body: 'Que tal planejar um conteúdo pra amanhã? Abre o app!' },
     { title: '💡 Ideia: volte amanhã!', body: 'Seu plano ainda tá lá, esperando. Bora?' },
-    { title: '📝 Planeje agora, grave amanhã', body: 'Consistência começa com um plano. Abre o VyralLab!' },
+    { title: '📝 Planeje agora, grave amanhã', body: 'Consistência começa com um plano. Abre o Vyral Lab!' },
     { title: '🔮 Amanhã pode ser diferente', body: 'Se você decidir agora. Abre o app e planeje!' },
     { title: '💤 Boa noite!', body: 'Mas antes: prometa que amanhã volta a criar. Deal?' },
     { title: '✅ Um passo de cada vez', body: 'Volta pro app amanhã e recomeça. Você consegue!' },
@@ -282,7 +282,7 @@ const FREE_INACTIVE: Record<Block, Msg[]> = {
 // ---------- NEW_USER ----------
 const NEW_USER: Record<Block, Msg[]> = {
   morning: [
-    { title: '👋 Bem-vindo ao VyralLab!', body: 'Abre o app e começa sua jornada de creator.' },
+    { title: '👋 Bem-vindo ao Vyral Lab!', body: 'Abre o app e começa sua jornada de creator.' },
     { title: '☀️ Bom dia! Vamos começar?', body: 'Seu plano de 30 dias te espera. Bora!' },
     { title: '✨ Hoje é um ótimo dia pra começar', body: 'Abre o app e descobre sua estratégia.' },
     { title: '🚀 Primeiro dia, primeiro passo', body: 'Em 15 min você tem matriz pronta pros próximos 30 dias.' },
@@ -300,7 +300,7 @@ const NEW_USER: Record<Block, Msg[]> = {
   ],
   evening: [
     { title: '🌙 Antes de dormir...', body: 'Dá uma olhada no app e prepara o primeiro dia.' },
-    { title: '💡 Amanhã pode ser o início', body: 'Abre o VyralLab e planeja seu primeiro conteúdo.' },
+    { title: '💡 Amanhã pode ser o início', body: 'Abre o Vyral Lab e planeja seu primeiro conteúdo.' },
     { title: '✅ Bem-vindo!', body: 'Tudo pronto pra você começar. Te vejo no app!' },
   ],
 };
