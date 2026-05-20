@@ -1,52 +1,52 @@
-Status do que já está feito:
+## Diagnóstico
 
-1. Frontend da tela /auth
-- Já está implementada a validação antes do envio: o app tenta detectar se o email existe antes de chamar o reset de senha.
-- Se o email não existir, deveria aparecer uma mensagem dizendo que a conta não foi encontrada e oferecendo “Criar conta”.
-- Isso só vale onde o frontend novo estiver publicado. Se você testou em app.vyrallab.online e o deploy da Vercel ainda não pegou a alteração, vai continuar com o comportamento antigo.
+O teste com `naoexiste-teste-123@gmail.com` mostrou toast de sucesso porque a estratégia de sonda via `signInWithPassword` não funciona: o GoTrue retorna `"Invalid login credentials"` tanto para senha errada quanto para email inexistente (é proteção anti-enumeração nativa). O frontend interpreta isso como "email existe", chama `resetPasswordForEmail`, e o GoTrue responde 200 sem enviar nada (porque o usuário não existe).
 
-2. Template novo do email
-- O arquivo novo `recovery.html` já foi gerado e está disponível.
-- Ele ainda não altera automaticamente o Supabase self-hosted. Para mudar o email real, você precisa subir esse HTML no Storage self-hosted, substituindo o arquivo atual em `emails/emails/recovery.html`.
-- Sem esse upload manual, o email continuará chegando com o template antigo.
+Não é problema do Studio nem da VPS — o backend está correto. O frontend é que precisa de um caminho real pra checar existência.
 
-3. O que ainda pode estar falhando
-- O email pode não chegar por problema no Auth/SMTP/template path no self-hosted.
-- A validação de email pode não aparecer se você estiver testando no domínio publicado antes do deploy novo.
-- O reset pode estar sendo chamado, mas o email pode estar indo para spam ou usando ainda o template antigo.
+## Solução
 
-Plano para fechar o diagnóstico:
+Criar uma edge function `check-email-exists` no Supabase self-hosted que usa a `SUPABASE_SERVICE_ROLE_KEY` pra consultar `auth.users` direto e responde `{ exists: true|false }`.
 
-1. Confirmar onde você testou
-- Verificar se foi no preview da Lovable ou no domínio `https://app.vyrallab.online`.
-- Se foi no domínio publicado, confirmar se a Vercel já recebeu a alteração do arquivo `src/pages/Auth.tsx`.
+O frontend chama essa function antes do `resetPasswordForEmail`.
 
-2. Confirmar se o frontend novo está em produção
-- Testar a recuperação com um email inexistente.
-- Resultado esperado: aparecer mensagem “Não encontramos uma conta com este email...” e botão “Criar conta”.
-- Se aparecer mensagem genérica de envio, o domínio ainda está com frontend antigo.
+## Passos
 
-3. Confirmar se o Supabase self-hosted enviou o email
-Rodar no VPS, em `~/supabase/docker`:
+### 1. Edge function `check-email-exists`
+- Endpoint POST, recebe `{ email }`.
+- CORS aberto pra `app.vyrallab.online` e preview Lovable.
+- Usa `createClient` com `SUPABASE_SERVICE_ROLE_KEY` (já configurada no self-hosted) e roda:
+  ```
+  SELECT 1 FROM auth.users WHERE lower(email) = lower($1) LIMIT 1
+  ```
+- Retorna `{ exists: boolean }` com status 200.
+- Sem autenticação (público) — só revela um booleano e já existe o trade-off aceito de enumeração.
 
-```bash
-docker compose logs --tail=200 auth | grep -Ei "recover|mailer|smtp|error|template|mentecomp|request completed"
-```
+### 2. Atualizar `src/pages/Auth.tsx`
+- Trocar o `handleForgotPassword`: remover a sonda `signInWithPassword`.
+- Chamar `supabase.functions.invoke('check-email-exists', { body: { email } })`.
+- Se `exists === false` → mostrar "Não encontramos uma conta..." + botão "Criar conta".
+- Se `exists === true` → seguir com `resetPasswordForEmail` e toast de sucesso.
+- Se a function falhar (rede, 5xx) → fallback: chamar `resetPasswordForEmail` mesmo assim com mensagem genérica "Se o email existir, enviamos o link" pra não travar o usuário.
 
-4. Confirmar se o usuário existe no Auth self-hosted
-Trocar pelo email testado:
+### 3. Deploy no self-hosted (bloco copia-e-cola pra VPS)
+Como o backend é self-hosted, edge functions Lovable não chegam lá automaticamente. Vou entregar o código + comando:
 
 ```bash
-docker compose exec db psql -U postgres -d postgres -c "SELECT email, email_confirmed_at, created_at FROM auth.users WHERE lower(email) = lower('EMAIL_TESTADO');"
+cd /root/app
+git pull
+./scripts/deploy-selfhost.sh check-email-exists
+# ou
+docker compose restart functions
 ```
 
-5. Subir o template novo no Storage self-hosted
-- Baixar o arquivo `recovery.html` gerado.
-- No Studio self-hosted, abrir Storage → bucket `emails` → pasta `emails/`.
-- Substituir o arquivo `recovery.html` atual.
-- Testar recuperação novamente.
+## Fora deste plano
 
-6. Se o email ainda não chegar
-- Revisar logs do container `auth` imediatamente após o teste.
-- Se o log mostrar status 200 em `/recover`, o Auth aceitou o pedido; o problema passa a ser SMTP/template/destino.
-- Se mostrar erro SMTP/template, corrigimos a variável ou o arquivo específico no self-hosted.
+- Template `recovery.html` novo — continua pendente upload manual no Studio (separado, já foi gerado antes).
+- Outros templates (signup, magic_link, etc.) — fica pra depois.
+- Mudar o "From name" do GoTrue — separado.
+
+## Resultado esperado após implementar
+
+- Email inexistente → toast vermelho + botão "Criar conta".
+- Email existente → toast verde + email chega (com template antigo até você subir o `recovery.html` novo).
