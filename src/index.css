@@ -173,3 +173,130 @@
     color: hsl(30 85% 50%);
   }
 }
+
+/* ─────────────────────────────────────────────────────────
+   LANDING (ZK-inspired) — scoped tokens + utilities
+   Apply class="landing-dark" on the Landing root only.
+   ───────────────────────────────────────────────────────── */
+.landing-dark {
+  /* Core tokens override (cascades into all shadcn components inside) */
+  --background: 265 50% 5%;
+  --foreground: 260 20% 96%;
+  --card: 265 40% 8%;
+  --card-foreground: 260 20% 96%;
+  --popover: 265 40% 8%;
+  --popover-foreground: 260 20% 96%;
+  --primary: 270 90% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 265 30% 14%;
+  --secondary-foreground: 260 20% 96%;
+  --muted: 265 25% 12%;
+  --muted-foreground: 260 15% 65%;
+  --accent: 322 85% 60%;
+  --accent-foreground: 0 0% 100%;
+  --border: 270 30% 18%;
+  --input: 270 30% 18%;
+  --ring: 270 90% 65%;
+
+  /* Neon extras */
+  --primary-glow: 270 100% 70%;
+  --accent-glow: 322 100% 65%;
+  --gradient-neon: linear-gradient(135deg, hsl(270 95% 65%), hsl(322 90% 60%));
+  --shadow-neon: 0 0 0 1px hsl(270 100% 70% / 0.35),
+                 0 0 28px -4px hsl(270 100% 70% / 0.55),
+                 0 0 60px -10px hsl(322 100% 65% / 0.4);
+  --shadow-glow-soft: 0 8px 60px -12px hsl(270 100% 70% / 0.35);
+
+  color-scheme: dark;
+  background: radial-gradient(120% 80% at 10% 0%, hsl(270 60% 12%) 0%, hsl(265 50% 5%) 60%);
+  color: hsl(var(--foreground));
+}
+
+.landing-dark *,
+.landing-dark *::before,
+.landing-dark *::after {
+  border-color: hsl(var(--border));
+}
+
+/* Soft floating background orbs */
+.landing-dark .neon-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+/* Gradient text used in big headlines (highlighted word) */
+.landing-dark .neon-text {
+  background: var(--gradient-neon);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Primary CTA with neon halo */
+.landing-dark .neon-cta {
+  background: var(--gradient-neon);
+  color: #fff;
+  border: 1px solid hsl(var(--primary-glow) / 0.6);
+  box-shadow: var(--shadow-neon);
+}
+.landing-dark .neon-cta:hover {
+  filter: brightness(1.08);
+}
+
+/* Eyebrow chip (small uppercase pill) */
+.landing-dark .neon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / 0.12);
+  border: 1px solid hsl(var(--primary) / 0.35);
+  color: hsl(var(--primary-glow));
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Card with subtle inner border + soft glow */
+.landing-dark .neon-card {
+  background: linear-gradient(180deg, hsl(265 40% 10% / 0.85), hsl(265 50% 6% / 0.85));
+  border: 1px solid hsl(270 40% 22% / 0.7);
+  border-radius: 1.25rem;
+  backdrop-filter: blur(8px);
+}
+
+.landing-dark .neon-card:hover {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: var(--shadow-glow-soft);
+}
+
+/* Floating top pill nav */
+.landing-dark .nav-pill {
+  background: hsl(265 50% 8% / 0.7);
+  border: 1px solid hsl(270 40% 25% / 0.7);
+  backdrop-filter: blur(14px);
+  border-radius: 9999px;
+}
+
+/* Active nav item */
+.landing-dark .nav-pill-item-active {
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--primary-glow));
+}
+
+/* Marquee row mask */
+.landing-dark .marquee-mask {
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+/* Tracker step active glow */
+.landing-dark .step-pulse {
+  box-shadow: 0 0 0 4px hsl(var(--primary) / 0.18),
+              0 0 0 10px hsl(var(--primary) / 0.08),
+              0 0 30px hsl(var(--primary-glow) / 0.6);
+}
