@@ -10,13 +10,15 @@ import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
 import { CheckoutModal } from '@/components/CheckoutModal';
-import { ChevronRight, Calendar, LogOut, Crown, HelpCircle } from 'lucide-react';
+import { ChevronRight, Calendar, LogOut, Crown, HelpCircle, Sun, Moon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState, useEffect } from 'react';
 import { InstallVideoModal, INSTALL_VIDEO_SEEN_KEY } from '@/components/InstallVideoModal';
+import { useAppTheme } from '@/hooks/useAppTheme';
 import logo from '@/assets/vyrallab-logo-horizontal.png';
+
 
 const Index = () => {
   const { strategies, loading: strategiesLoading, hasPersonalized } = useUserStrategies();
