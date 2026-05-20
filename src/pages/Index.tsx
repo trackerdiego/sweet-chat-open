@@ -98,7 +98,7 @@ const Index = () => {
         >
           <div className="flex items-center justify-between">
             <img
-              src={logo}
+              src={isDark ? logoDark : logoLight}
               alt="Vyral Lab"
               className={`h-8 w-auto ${isDark ? 'drop-shadow-[0_0_18px_rgba(168,85,247,0.55)]' : ''}`}
             />
