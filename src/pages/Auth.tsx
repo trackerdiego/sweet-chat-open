@@ -48,11 +48,39 @@ const Auth = () => {
     if (!email) { toast.error('Digite seu email'); return; }
     setLoading(true);
     try {
+      // Sonda: tenta login com senha inválida pra ver se o email existe.
+      // "Invalid login credentials" => email existe (só a senha tá errada).
+      // Outras mensagens (user not found etc.) => email não cadastrado.
+      const probePassword = '__probe_' + crypto.randomUUID();
+      const { error: probeError } = await supabase.auth.signInWithPassword({
+        email,
+        password: probePassword,
+      });
+
+      const msg = (probeError?.message || '').toLowerCase();
+      const rateLimited = msg.includes('rate') || msg.includes('too many');
+      const emailExists = msg.includes('invalid login') || msg.includes('invalid credentials');
+
+      if (!rateLimited && !emailExists) {
+        toast.error('Não encontramos uma conta com este email. Verifique se digitou corretamente ou crie uma nova conta.', {
+          duration: 6000,
+          action: {
+            label: 'Criar conta',
+            onClick: () => {
+              setIsForgotPassword(false);
+              setIsLogin(false);
+            },
+          },
+        });
+        return;
+      }
+
+      // Email existe (ou estamos com rate-limit e seguimos o caminho seguro).
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
-      toast.success('Email de recuperação enviado!');
+      toast.success('Email de recuperação enviado! Verifique sua caixa de entrada (e o spam).');
       setIsForgotPassword(false);
     } catch (err: any) {
       toast.error(err.message || 'Erro ao enviar email');
@@ -60,6 +88,7 @@ const Auth = () => {
       setLoading(false);
     }
   };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
