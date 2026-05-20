@@ -60,15 +60,15 @@ const Index = () => {
 
         <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10">
           <div className="max-w-lg mx-auto space-y-3">
-            <Skeleton className="h-5 w-32 bg-white/10" />
-            <Skeleton className="h-9 w-48 bg-white/10" />
-            <Skeleton className="h-4 w-56 bg-white/10" />
+            <Skeleton className="h-5 w-32 bg-muted/50" />
+            <Skeleton className="h-9 w-48 bg-muted/50" />
+            <Skeleton className="h-4 w-56 bg-muted/50" />
           </div>
         </div>
         <div className="px-4 max-w-lg mx-auto space-y-4 relative z-10">
-          <Skeleton className="h-24 w-full rounded-xl bg-white/5" />
-          <Skeleton className="h-32 w-full rounded-xl bg-white/5" />
-          <Skeleton className="h-20 w-full rounded-xl bg-white/5" />
+          <Skeleton className="h-24 w-full rounded-xl bg-muted/30" />
+          <Skeleton className="h-32 w-full rounded-xl bg-muted/30" />
+          <Skeleton className="h-20 w-full rounded-xl bg-muted/30" />
         </div>
       </div>
     );
@@ -149,7 +149,7 @@ const Index = () => {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="neon-card p-4"
+            className="glass-card p-4"
             style={{ borderColor: 'hsl(38 92% 50% / 0.4)' }}
           >
             <div className="flex items-start gap-3">
@@ -170,11 +170,11 @@ const Index = () => {
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="neon-card p-4 flex items-center justify-between gap-3"
+            className="glass-card p-4 flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/15 border border-primary/40">
-                <Crown size={18} className="text-[hsl(var(--primary-glow))]" />
+                <Crown size={18} className="text-primary" />
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">Plano Gratuito</p>
@@ -199,7 +199,7 @@ const Index = () => {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <Link to="/script" className="block neon-card p-5 transition-all group">
+          <Link to="/script" className="block glass-card p-5 transition-all group">
             <div className="flex items-start justify-between">
               <div className="space-y-2">
                 <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${getPillarColor(todayStrategy.pillar)}`}>
@@ -212,10 +212,10 @@ const Index = () => {
                   {todayStrategy.viralHook}
                 </p>
               </div>
-              <ChevronRight size={20} className="text-muted-foreground mt-2 group-hover:text-[hsl(var(--primary-glow))] transition-colors" />
+              <ChevronRight size={20} className="text-muted-foreground mt-2 group-hover:text-primary transition-colors" />
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <div className="flex-1 h-2 rounded-full bg-white/5">
+              <div className="flex-1 h-2 rounded-full bg-muted/30">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{

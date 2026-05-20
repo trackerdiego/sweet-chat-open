@@ -16,10 +16,10 @@ export function MonthlyProgress({ completedDays, totalDays }: MonthlyProgressPro
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="neon-card p-6 flex flex-col items-center gap-4"
+      className="glass-card p-6 flex flex-col items-center gap-4"
     >
       <div className="flex items-center gap-2">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/15 border border-primary/40 text-[hsl(var(--primary-glow))]">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/15 border border-primary/40 text-primary">
           <TrendingUp size={18} />
         </div>
         <h3 className="font-serif text-lg font-semibold text-foreground">Progresso do Mês</h3>

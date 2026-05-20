@@ -33,7 +33,7 @@ export function WeeklyView({ currentDay, completedDays, strategies }: WeeklyView
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.25 }}
-        className="neon-card p-5 space-y-3"
+        className="glass-card p-5 space-y-3"
       >
         <h3 className="font-serif text-lg font-semibold text-foreground">Visão Semanal</h3>
 
@@ -48,10 +48,10 @@ export function WeeklyView({ currentDay, completedDays, strategies }: WeeklyView
                 onClick={() => handleDayClick(day.day)}
                 className={`flex flex-col items-center gap-1 p-2 rounded-lg text-center transition-all cursor-pointer hover:scale-105 ${
                   isToday
-                    ? 'ring-2 ring-[hsl(var(--primary-glow))] bg-primary/15 shadow-[0_0_18px_-4px_hsl(270_100%_70%/0.6)]'
+                    ? 'ring-2 ring-primary bg-primary/15 shadow-[0_0_18px_-4px_hsl(270_100%_70%/0.6)]'
                     : isDone
                     ? 'bg-primary/10 border border-primary/30'
-                    : 'bg-white/5'
+                    : 'bg-muted/30'
                 }`}
               >
                 <span className="text-xs text-muted-foreground">D{day.day}</span>
