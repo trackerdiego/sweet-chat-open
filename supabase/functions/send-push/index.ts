@@ -259,7 +259,7 @@ Deno.serve(async (req) => {
         const encryptedPayload = await encryptPayload(payload, sub.p256dh, sub.auth);
 
         const audience = new URL(sub.endpoint).origin;
-        const jwtToken = await generateVapidJWT(audience, 'mailto:push@influlab.app');
+        const jwtToken = await generateVapidJWT(audience, 'mailto:push@vyrallab.online');
 
         const response = await fetch(sub.endpoint, {
           method: 'POST',
