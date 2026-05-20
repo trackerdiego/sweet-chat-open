@@ -278,7 +278,7 @@ export function Navigation() {
           <AlertDialogHeader>
             <AlertDialogTitle>Precisa de ajuda com sua assinatura?</AlertDialogTitle>
             <AlertDialogDescription>
-              Para qualquer ajuste — pausar, alterar plano, atualizar dados de pagamento ou cancelar — envie um email para <strong>suporte@influlab.pro</strong>. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação.
+              Para qualquer ajuste — pausar, alterar plano, atualizar dados de pagamento ou cancelar — envie um email para <strong>suporte@vyrallab.online</strong>. Nossa equipe responde em até 24h e cuida de tudo pra você, sem complicação.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
