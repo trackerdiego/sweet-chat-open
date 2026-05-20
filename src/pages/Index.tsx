@@ -28,6 +28,8 @@ const Index = () => {
   const navigate = useNavigate();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [installVideoOpen, setInstallVideoOpen] = useState(false);
+  const { isDark, toggle: toggleTheme } = useAppTheme();
+
 
   useEffect(() => {
     if (!profile?.onboarding_completed) return;
@@ -76,10 +78,15 @@ const Index = () => {
 
 
   return (
-    <div className="landing-dark min-h-screen pb-24 md:pt-20 relative overflow-hidden">
-      {/* Background orbs */}
-      <div className="neon-orb" style={{ width: 420, height: 420, background: 'hsl(270 90% 55%)', top: -160, left: -140 }} />
-      <div className="neon-orb" style={{ width: 320, height: 320, background: 'hsl(322 85% 55%)', top: 200, right: -120 }} />
+    <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+      {/* Background orbs (apenas no modo escuro) */}
+      {isDark && (
+        <>
+          <div className="neon-orb" style={{ width: 420, height: 420, background: 'hsl(270 90% 55%)', top: -160, left: -140 }} />
+          <div className="neon-orb" style={{ width: 320, height: 320, background: 'hsl(322 85% 55%)', top: 200, right: -120 }} />
+        </>
+      )}
+
 
       <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-8">
         <motion.div
@@ -91,14 +98,23 @@ const Index = () => {
             <img
               src={logo}
               alt="Vyral Lab"
-              className="h-8 w-auto drop-shadow-[0_0_18px_rgba(168,85,247,0.55)]"
+              className={`h-8 w-auto ${isDark ? 'drop-shadow-[0_0_18px_rgba(168,85,247,0.55)]' : ''}`}
             />
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="icon"
+                onClick={toggleTheme}
+                className="text-foreground/70 hover:text-foreground"
+                aria-label={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+              >
+                {isDark ? <Sun size={18} /> : <Moon size={18} />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => navigate('/ajuda')}
-                className="text-foreground/70 hover:text-foreground hover:bg-white/5"
+                className="text-foreground/70 hover:text-foreground"
                 aria-label="Central de ajuda"
               >
                 <HelpCircle size={18} />
@@ -107,12 +123,13 @@ const Index = () => {
                 variant="ghost"
                 size="icon"
                 onClick={signOut}
-                className="text-foreground/70 hover:text-foreground hover:bg-white/5"
+                className="text-foreground/70 hover:text-foreground"
                 aria-label="Sair"
               >
                 <LogOut size={18} />
               </Button>
             </div>
+
           </div>
           <p className="text-muted-foreground text-sm flex items-center gap-1.5">
             <Calendar size={14} /> Dia {state.currentDay} de 30
