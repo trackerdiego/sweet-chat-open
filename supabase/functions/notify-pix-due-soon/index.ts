@@ -56,6 +56,28 @@ serve(async (req) => {
 
   const results: Array<{ user_id: string; status: string; detail?: unknown }> = [];
 
+  const D3 = [
+    (v: number) => ({ title: '⏳ Sua fatura vence em 3 dias', body: `R$ ${brl(v)} via Pix. Toque pra pagar agora e garantir seu acesso.` }),
+    (v: number) => ({ title: '📅 Faltam 3 dias pra renovação', body: `R$ ${brl(v)} no Pix. Resolve em 1 minuto e nem pensa mais nisso.` }),
+    (v: number) => ({ title: '💜 Lembrete carinhoso', body: `Sua renovação do VyralLab (R$ ${brl(v)}) vence em 3 dias. Bora adiantar?` }),
+  ];
+  const D1 = [
+    (v: number) => ({ title: '🚨 Sua fatura vence amanhã', body: `R$ ${brl(v)} via Pix. Não perca acesso ao VyralLab.` }),
+    (v: number) => ({ title: '⏰ Última chance sem urgência', body: `R$ ${brl(v)} no Pix amanhã. Resolve hoje e dorme tranquilo.` }),
+    (v: number) => ({ title: '💡 Vence amanhã!', body: `R$ ${brl(v)} mantém sua matriz, IA e scripts liberados. Toque pra pagar.` }),
+  ];
+  const D0 = [
+    (v: number) => ({ title: '🔥 Última chamada — vence HOJE', body: `R$ ${brl(v)} via Pix. Pague agora pra continuar dentro.` }),
+    (v: number) => ({ title: '⚡ Vence hoje!', body: `R$ ${brl(v)} no Pix. Depois das 23h59 acesso é pausado.` }),
+    (v: number) => ({ title: '🚨 Hoje é o dia', body: `Renova agora (R$ ${brl(v)}) e não perde o ritmo que você construiu.` }),
+  ];
+  const DP1 = [
+    (v: number) => ({ title: '😬 Sua assinatura venceu ontem', body: `Pague o Pix de R$ ${brl(v)} em segundos e recupera o acesso ao VyralLab.` }),
+    (v: number) => ({ title: '⏸️ Acesso pausado', body: `Sua fatura de R$ ${brl(v)} venceu ontem. Toque pra regularizar agora.` }),
+    (v: number) => ({ title: '🔓 Ainda dá tempo!', body: `Renovação venceu ontem (R$ ${brl(v)}). Pix expira logo — pague pra voltar.` }),
+  ];
+  const choose = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
   for (const s of subs ?? []) {
     try {
       const inv = s.next_invoice as Record<string, any>;
@@ -64,26 +86,28 @@ serve(async (req) => {
       if (!inv.due_date) continue;
 
       const days = daysUntil(inv.due_date);
-      const sent = inv.notifications_sent ?? { d3: false, d1: false, d0: false };
+      const sent = inv.notifications_sent ?? { d3: false, d1: false, d0: false, d_plus_1: false };
       const value = Number(inv.value ?? 0);
 
-      let key: "d3" | "d1" | "d0" | null = null;
+      let key: "d3" | "d1" | "d0" | "d_plus_1" | null = null;
       let title = "";
       let body = "";
 
       if (days === 3 && !sent.d3) {
         key = "d3";
-        title = "Sua fatura vence em 3 dias";
-        body = `R$ ${brl(value)} via Pix. Toque pra pagar agora e garantir seu acesso.`;
+        const m = choose(D3)(value); title = m.title; body = m.body;
       } else if (days === 1 && !sent.d1) {
         key = "d1";
-        title = "Sua fatura vence amanhã";
-        body = `R$ ${brl(value)} via Pix. Não perca acesso ao InfluLab.`;
-      } else if (days <= 0 && !sent.d0) {
+        const m = choose(D1)(value); title = m.title; body = m.body;
+      } else if (days === 0 && !sent.d0) {
         key = "d0";
-        title = "Última chamada — sua assinatura vence hoje";
-        body = `R$ ${brl(value)} via Pix. Pague agora pra continuar dentro.`;
+        const m = choose(D0)(value); title = m.title; body = m.body;
+      } else if (days === -1 && !sent.d_plus_1) {
+        key = "d_plus_1";
+        const m = choose(DP1)(value); title = m.title; body = m.body;
       }
+
+
 
       if (!key) {
         results.push({ user_id: s.user_id, status: `skip_no_window_days_${days}` });
