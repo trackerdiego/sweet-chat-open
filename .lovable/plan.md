@@ -1,39 +1,51 @@
-## Objetivo
+## Problema
 
-Deixar a seção "Funciona para qualquer nicho" (marquee) visualmente mais próxima da referência ZK Delivery: **cards maiores com imagem em destaque** (não emoji, não ícone minúsculo), no estilo dos cards de comida da referência.
+No mobile (391px), o `FloatingNav` renderiza **3 pílulas lado a lado** (logo + nav central + ações "Entrar/Começar"). A pílula de ações é larga demais e o conjunto estoura a viewport — por isso o "Começar →" aparece cortado na direita no print.
 
-## Estado atual
+Hoje o nav usa `flex items-center justify-between gap-3` sem nenhum tratamento responsivo para encolher botões abaixo de `lg`. A logo atual (`influlab-logo-horizontal.png`) é **180×36 px** e é renderizada com `h-6` (24px de altura visual).
 
-`src/components/landing/NichesMarquee.tsx` já usa `NicheIcon` (PNGs reais de `src/assets/niches/*.png`), porém:
-- Tamanho `size={18}` → minúsculo, parece ícone de chip
-- Layout é "pill" horizontal (`px-4 py-2 rounded-full`) com ícone + texto lado a lado
-- Resultado fica longe do visual da referência, onde cada item é um **card grande tipo "foto + legenda"**
+## Correção (responsiva, em todos os dispositivos)
 
-## Mudança proposta
+Refactor do `src/components/landing/FloatingNav.tsx` com **dois layouts**:
 
-Refatorar `NichesMarquee.tsx` para renderizar cada nicho como um **card grande tipo "polaroid"**, igual à referência:
+**Mobile / tablet (< lg, até 1023px):**
+- Mostrar apenas **2 pílulas**: logo à esquerda + ações à direita
+- Botão "Entrar" vira link de texto (sem fundo de pílula) ou desaparece em < 380px (fica só "Começar")
+- Botão "Começar" sem texto longo: vira `"Começar"` curto + ícone, com `px-3` e `text-xs sm:text-sm`
+- Logo um pouco menor (`h-5 sm:h-6`) para sobrar respiro
+- Adicionar `min-w-0` nos containers e `whitespace-nowrap` nos botões para nunca quebrar
+- Reduzir `gap-3` para `gap-2` e `px-3` do `<nav>` para `px-2` em mobile
+- Garantir que a soma das pílulas + gaps ≤ viewport (cabendo em 360px de largura)
 
-- Card: `w-44 h-44 sm:w-52 sm:h-52` (quadrado), `rounded-2xl`, `neon-card` (mantém glassmorphism roxo)
-- Imagem do nicho (`NicheIcon`) ocupando a área toda: `size={140}` em mobile, `size={180}` em desktop, com `object-contain` e leve `drop-shadow`
-- Label sobreposto no canto inferior esquerdo: chip preto translúcido (`bg-black/50 backdrop-blur`) com texto branco bold (`text-sm font-bold`), no estilo da referência ("Sushi", "Pizza", "Hambúrguer"…)
-- Borda sutil roxa no hover/ativo (mantém DNA neon do nosso tema, não copia o laranja do ZK)
-- Gap entre cards aumenta para `gap-4 sm:gap-5`
-- Duas linhas continuam: uma rola para esquerda, outra para direita (mantém `animate-marquee-x` / `animate-marquee-x-reverse`)
-- Velocidade ajustada: como os cards são maiores, aumentar duração da animação para 50s para não passar voando
+**Desktop (lg+):**
+- Mantém layout atual (3 pílulas com nav central)
 
-## Pontos técnicos
+**Defesa contra overflow global:**
+- Adicionar `max-w-full overflow-hidden` no `<nav>` para nunca causar scroll lateral, mesmo que algo escape
 
-- `NicheIcon` já aceita `size` numérico e renderiza `<img>` com `object-contain` → só passar tamanho maior
-- Nenhuma alteração em `tailwind.config.ts` (keyframes `marquee-x` continuam servindo; só ajusto duração via classe utilitária inline `[animation-duration:50s]` ou trocando a animation)
-- Mascaramento lateral (`marquee-mask`) mantido
-- Sem mudança em outros componentes
+## Tamanho exato da nova logo (para você enviar)
+
+A logo aparece **só** dentro da pílula horizontal do nav, com altura CSS de **24px** (`h-6`). Para nitidez em telas Retina (até 3x DPR de iPhone Pro), o ideal é:
+
+- **Logo horizontal (uso no FloatingNav):**
+  - **Altura: 72px** (3× a altura renderizada de 24px)
+  - **Largura: proporcional** — mantenha a proporção natural do desenho (a atual é 5:1 → ~360×72px funcionaria, mas envie na proporção que ficar bonita; o CSS usa `w-auto`)
+  - **Formato: PNG com fundo transparente** (o nav é escuro; vou remover o `brightness-0 invert` atual se a logo já vier branca/clara — me diga se ela já é branca ou se quer que eu mantenha o filtro de inversão)
+  - Peso ideal: < 30 KB
+
+- **Logo quadrada (opcional, usado em outros pontos como favicon/install card):**
+  - **512×512 px**, PNG transparente
+
+### Resumo bem curto pro arquivo
+- `influlab-logo-horizontal.png` → **~360×72 px**, PNG transparente, logo já em branco
+- `influlab-logo.png` (quadrado) → **512×512 px**, PNG transparente
 
 ## Arquivo afetado
 
-- `src/components/landing/NichesMarquee.tsx` — reescrita do componente `Row` (item visual) e ajuste de espaçamento
+- `src/components/landing/FloatingNav.tsx` — reestrutura responsiva
+- Nenhuma mudança em `index.css` ou tailwind config necessária
 
 ## Validação pós-implementação
 
-- Em 769px (viewport atual) e 375px: cards aparecem em tamanho generoso, com imagem nítida e label legível
-- Sem scroll horizontal da página (marquee corre dentro do próprio container com `overflow-hidden`)
-- Animação contínua suave nas duas direções
+- 320px, 360px, 375px, 391px (atual), 414px, 768px, 1024px, 1280px — confirmar zero overflow horizontal e nada cortado
+- Logo nítida nas 3 resoluções DPR (1x/2x/3x) quando você enviar a nova
