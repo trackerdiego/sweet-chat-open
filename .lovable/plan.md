@@ -1,70 +1,65 @@
-# Configurar SMTP manualmente no .env (modo seguro)
+## Parte 1 — Validar email antes de chamar `resetPasswordForEmail`
 
-Você abre o `.env` no nano, procura cada seção e edita/adiciona à mão. Sem `sed`, sem `cat >>`. Mais lento, mas zero risco de duplicar variável ou cortar linha errada.
+**Arquivo:** `src/pages/Auth.tsx` (função `handleForgotPassword`, linhas 46-62)
 
-## Passo 1 — Backup + abrir
+**Estratégia de validação:** chamar `supabase.auth.signInWithPassword({ email, password: '__probe_invalid_'+crypto.randomUUID() })` e ler o `error.message`:
 
-```bash
-cd ~/supabase/docker
-cp .env .env.bak.$(date +%F-%H%M%S)
-nano .env
-```
+- `"Invalid login credentials"` → email **existe** (senha errada). Prosseguir com `resetPasswordForEmail` e mostrar:
+  > "Email de recuperação enviado! Verifique sua caixa de entrada (e o spam)."
+- Mensagem contendo `"not found"` / `"user"` / qualquer outra → email **não cadastrado**. Mostrar:
+  > "Não encontramos uma conta com este email. Verifique se digitou corretamente ou crie uma nova conta."
+  
+  Também oferecer botão "Criar conta" que troca pra tela de signup pré-preenchida com o email.
 
-## Passo 2 — Procurar a seção SMTP (atalho `Ctrl+W` no nano)
+**Trade-off assumido (já confirmado):** essa abordagem permite enumeração de usuários — atacantes podem descobrir quais emails têm conta. Aceito em troca de UX mais clara.
 
-Digite `SMTP` e Enter. Você vai cair numa de duas situações:
-
-### Situação A — já existem variáveis `SMTP_*` ou `GOTRUE_SMTP_*`
-Edite os valores existentes pra ficarem **exatamente** assim (não adicione duplicado):
-
-```env
-GOTRUE_SMTP_HOST=acesso.host.servidorsaturno.com.br
-GOTRUE_SMTP_PORT=465
-GOTRUE_SMTP_USER=suporte@vyrallab.online
-GOTRUE_SMTP_PASS=SUA_SENHA_REAL_AQUI
-GOTRUE_SMTP_ADMIN_EMAIL=suporte@vyrallab.online
-GOTRUE_SMTP_SENDER_NAME=Vyral Lab
-```
-
-Se existir alguma `SMTP_HOST=` / `SMTP_USER=` (sem o prefixo `GOTRUE_`), o template oficial do Supabase usa essas e injeta no GoTrue via `docker-compose.yml`. **Nesse caso edite essas, não crie as `GOTRUE_SMTP_*`** — senão duplica e fica imprevisível qual ganha.
-
-> Pra descobrir qual o seu template usa, antes de salvar abra outro terminal:
-> ```bash
-> grep -E 'SMTP|MAILER' ~/supabase/docker/docker-compose.yml
-> ```
-> Se vir algo tipo `GOTRUE_SMTP_HOST: ${SMTP_HOST}` → seu .env usa **`SMTP_*`** (sem prefixo).  
-> Se vir `GOTRUE_SMTP_HOST: ${GOTRUE_SMTP_HOST}` → usa **`GOTRUE_SMTP_*`** (com prefixo).
-
-### Situação B — não existe nenhuma variável SMTP no .env
-Aí sim, vai no final do arquivo (`Ctrl+End` ou setinha pra baixo até o fim) e adiciona o bloco acima usando o **mesmo prefixo do seu docker-compose** (resultado do `grep` acima).
-
-## Passo 3 — Salvar
-
-`Ctrl+O` → Enter (confirma nome) → `Ctrl+X` (sai)
-
-## Passo 4 — Proteger permissão
-
-```bash
-chmod 600 .env
-```
-
-## Passo 5 — Subir o auth
-
-```bash
-docker compose up -d --force-recreate auth
-docker compose logs --tail=100 auth | grep -iE 'smtp|mail|error|started'
-```
-
-## Passo 6 — Smoke test
-
-1. `https://app.vyrallab.online/auth` → "Esqueci minha senha" → seu email
-2. Conferir remetente `Vyral Lab <suporte@vyrallab.online>` + SPF/DKIM pass
+**Rate-limit safety:** o GoTrue rate-limita o `signInWithPassword`. Se vier `"rate limit"`, fazer fallback pro comportamento atual (sempre mostrar "email enviado se existir") pra não travar o fluxo.
 
 ---
 
-## Antes de eu finalizar, me confirma 2 coisas:
+## Parte 2 — Novo template HTML `recovery.html` (Vyral Lab)
 
-1. Posso te pedir pra **rodar primeiro o `grep` do `docker-compose.yml`** e me colar a saída? Aí eu te falo com 100% de certeza se é `SMTP_*` ou `GOTRUE_SMTP_*` e te entrego o bloco final exato — sem chute.
-2. **Porta 465 ok** ou prefere 587 desde o início?
+Gerar arquivo novo `recovery.html` com:
 
-Aprova e eu te mando o comando do grep.
+**Branding atualizado:**
+- Header com gradiente roxo/violeta (paleta do app: `#7c3aed` → `#a855f7`)
+- Logo: `https://api.influlab.pro/storage/v1/object/public/emails/Novo%20Projeto%20(75).png` (URL fornecida)
+- Tamanho controlado (`max-width: 120px`, `height: auto`) e `alt="Vyral Lab"`
+- Nome da marca: **"Vyral Lab"** em todos os lugares (substitui "InfluLab")
+- Footer com `© 2026 Vyral Lab` + `app.vyrallab.online`
+
+**Conteúdo (PT-BR, tom amigável):**
+- H1: "Redefinir sua senha"
+- Parágrafo: "Recebemos uma solicitação para redefinir a senha da sua conta **Vyral Lab**. Clique no botão abaixo para criar uma nova senha."
+- Box de atenção: "⏰ Este link expira em **1 hora** por motivos de segurança."
+- CTA: botão roxo "Redefinir minha senha" → `{{ .ConfirmationURL }}`
+- Fallback: "Ou copie e cole este link no seu navegador:" + `{{ .ConfirmationURL }}` (quebra de linha com `word-break: break-all`)
+- Aviso final: "Se você não solicitou essa redefinição, ignore este email. Sua senha continua segura."
+- Preheader (texto invisível pra preview do inbox): "Redefina sua senha com segurança no Vyral Lab."
+
+**Compatibilidade email:**
+- HTML em tabelas (não usa flex/grid moderno)
+- CSS inline em todos elementos críticos
+- Sem JS, sem `<style>` externo
+- `<meta name="viewport">` pra mobile
+
+**Variáveis GoTrue mantidas:** `{{ .ConfirmationURL }}`, `{{ .Email }}`, `{{ .SiteURL }}`.
+
+O arquivo será gravado em `/mnt/documents/recovery.html` pra você baixar e fazer upload no Studio self-hosted (bucket `emails/emails/recovery.html`, substituindo o atual). Não mexo no GoTrue nem no docker-compose — `MAILER_TEMPLATES_RECOVERY` já aponta pra esse caminho.
+
+---
+
+## Bloco de deploy (final)
+
+Vou entregar:
+1. Edit no `src/pages/Auth.tsx` → commit/push do Vercel pega automático.
+2. Arquivo `recovery.html` no `/mnt/documents/` + instruções de **2 cliques no Studio**: abrir bucket `emails` → pasta `emails/` → upload (substituir) → testar pedindo recovery de novo.
+
+Sem mexer em `~/supabase/docker/.env`, sem `docker compose restart`, sem migration.
+
+---
+
+## Fora do escopo
+
+- Outros 4 templates (confirmation, magic_link, email_change, invite) ficam pra depois — você pode pedir num próximo turno e eu replico o mesmo branding.
+- Mudar o "From name" no GoTrue (hoje vem como "InfluLab AI") — isso é env `GOTRUE_SMTP_SENDER_NAME` no `.env` do self-hosted, posso instruir se quiser.
