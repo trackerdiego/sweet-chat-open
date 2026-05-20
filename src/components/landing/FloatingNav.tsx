@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import logoHorizontal from "@/assets/influlab-logo-horizontal.png";
+import logoHorizontal from "@/assets/vyrallab-logo-horizontal.png";
 
 const sections = [
   { id: "inicio", label: "Início" },
@@ -42,9 +42,10 @@ export function FloatingNav({ onPlansClick }: { onPlansClick: () => void }) {
         <div className="nav-pill flex items-center px-2.5 sm:px-3 py-1.5 sm:py-2 shrink-0">
           <img
             src={logoHorizontal}
-            alt="InfluLab"
-            className="h-5 sm:h-6 w-auto brightness-0 invert"
+            alt="Vyral Lab"
+            className="h-7 sm:h-9 w-auto"
           />
+
         </div>
 
         {/* Center pill (desktop only) */}
