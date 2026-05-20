@@ -4,7 +4,7 @@ import { useReferrals } from '@/hooks/useReferrals';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-const SHARE_BASE = 'https://app.influlab.pro/auth?ref=';
+const SHARE_BASE = 'https://app.vyrallab.online/auth?ref=';
 
 function maskName(name: string | null | undefined): string {
   if (!name) return 'Novo usuário';
