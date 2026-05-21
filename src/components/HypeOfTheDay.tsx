@@ -83,7 +83,6 @@ export function HypeOfTheDay() {
   }
 
   const top = (items || []).slice(0, 5);
-  const [allOpen, setAllOpen] = useState(false);
 
   return (
     <>
