@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/accordion';
 import { VideoEmbed } from '@/components/landing/VideoEmbed';
 import { TUTORIALS, type TutorialTopic } from '@/data/tutorials';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const SUPPORT_EMAIL = 'suporte@vyrallab.online';
 const TUTORIAL_TOPICS: TutorialTopic[] = ['onboarding', 'matriz', 'scripts', 'tools', 'tarefas'];
