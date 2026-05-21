@@ -6,9 +6,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 import { corsHeaders, jsonResponse, enqueueJob, runInBackground, JobError } from "../_shared/ai-job-runner.ts";
-import { fetchGoogleTrendsBR, fetchReddit, fetchYouTubeTrendingBR, type RawTrend } from "../_shared/hype-sources.ts";
+import {
+  fetchGoogleTrendsBR,
+  fetchGoogleTrendsRealtimeBR,
+  fetchReddit,
+  fetchYouTubeTrendingBR,
+  fetchYouTubeShortsBR,
+  fetchYouTubeMusicTrendingBR,
+  type RawTrend,
+} from "../_shared/hype-sources.ts";
 
-const FUNCTION_VERSION = "2026-05-21-hype-v1";
+const FUNCTION_VERSION = "2026-05-21-hype-v2-multisource";
 console.log(`[start-hype-job] boot v=${FUNCTION_VERSION}`);
 
 serve(async (req) => {
