@@ -502,7 +502,7 @@ export default function Landing() {
                   </ul>
                   <Button
                     size="lg"
-                    onClick={() => navigate("/auth?plan=yearly")}
+                    onClick={() => navigate("/auth?plan=yearly&mode=signup")}
                     className="neon-cta w-full rounded-full py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                   >
                     Assinar plano anual <ArrowRight className="h-4 w-4 ml-1" />
