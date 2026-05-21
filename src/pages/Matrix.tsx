@@ -35,17 +35,16 @@ const Matrix = () => {
 
   if (strategiesLoading || strategies.length === 0) {
     return (
-      <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
-          <div className="max-w-lg mx-auto">
-            <Skeleton className="h-9 w-48 bg-white/20" />
-            <Skeleton className="h-4 w-56 bg-white/20 mt-2" />
-          </div>
+      <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+        <PageBackdrop />
+        <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto">
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-4 w-56 mt-2" />
         </div>
-        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+        <div className="relative z-10 px-4 max-w-lg mx-auto space-y-4">
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-xl" />
+              <Skeleton key={i} className="h-28 w-full rounded-2xl" />
             ))}
           </div>
         </div>
