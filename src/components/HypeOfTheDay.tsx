@@ -81,6 +81,9 @@ export function HypeOfTheDay() {
     );
   }
 
+  const top = (items || []).slice(0, 5);
+  const [allOpen, setAllOpen] = useState(false);
+
   return (
     <>
       <section className="space-y-3">
@@ -116,47 +119,100 @@ export function HypeOfTheDay() {
           })}
         </div>
 
-        {/* Grid neon */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {items.map((item, i) => {
+        {/* Top 5 lista compacta */}
+        <div className="space-y-2">
+          {top.map((item, i) => {
             const m = sourceMeta(item.fonte);
             const Icon = m.Icon;
             return (
               <motion.button
                 key={i}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.03, 0.3) }}
+                transition={{ delay: Math.min(i * 0.04, 0.2) }}
                 onClick={() => setOpen(item)}
-                className="app-neon-border text-left p-4 transition-all group"
+                className="app-neon-border soft text-left w-full p-3.5 transition-all group flex items-center gap-3"
               >
-                <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-gradient-to-br from-primary/20 to-accent/20 text-primary border border-primary/30">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <h3 className="font-serif text-base font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-                      {item.tema}
-                    </h3>
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {item.porque_bombou}
-                    </p>
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/60 bg-card/60 font-medium">
-                        {item.formato_sugerido}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Icon className="w-3 h-3" style={{ color: m.color }} />
-                        {m.label}
-                      </span>
-                    </div>
+                <span className="shrink-0 font-serif text-2xl font-bold w-8 text-center bg-clip-text text-transparent bg-[linear-gradient(135deg,hsl(270_95%_65%),hsl(322_90%_60%))]">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-serif text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                    {item.tema}
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                    {item.porque_bombou}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Icon className="w-3 h-3" style={{ color: m.color }} />
+                      {m.label}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/60 bg-card/60 font-medium text-muted-foreground">
+                      {item.formato_sugerido}
+                    </span>
                   </div>
                 </div>
               </motion.button>
             );
           })}
         </div>
+
+        {items.length > top.length && (
+          <Button
+            variant="outline"
+            className="w-full h-11 border-primary/40 bg-primary/5 hover:bg-primary/10 text-foreground"
+            onClick={() => setAllOpen(true)}
+          >
+            Ver todas as {items.length} tendências
+          </Button>
+        )}
       </section>
+
+      {/* Sheet com grid completo */}
+      <Sheet open={allOpen} onOpenChange={setAllOpen}>
+        <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-3xl">
+          <SheetHeader className="text-left mb-4">
+            <SheetTitle className="font-serif text-2xl">Todas as tendências</SheetTitle>
+          </SheetHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-6">
+            {items.map((item, i) => {
+              const m = sourceMeta(item.fonte);
+              const Icon = m.Icon;
+              return (
+                <button
+                  key={i}
+                  onClick={() => { setAllOpen(false); setOpen(item); }}
+                  className="app-neon-border text-left p-4 transition-all group"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-gradient-to-br from-primary/20 to-accent/20 text-primary border border-primary/30">
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <h3 className="font-serif text-base font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                        {item.tema}
+                      </h3>
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                        {item.porque_bombou}
+                      </p>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/60 bg-card/60 font-medium">
+                          {item.formato_sugerido}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Icon className="w-3 h-3" style={{ color: m.color }} />
+                          {m.label}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={!!open} onOpenChange={(v) => !v && setOpen(null)}>
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
