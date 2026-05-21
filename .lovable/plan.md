@@ -1,42 +1,41 @@
-## Problema
-Algumas saídas de IA (matriz, tools, tarefas, daily guide, script, chat) ainda usam "linguagem neutra" (ex.: "todes", "amigues", "@s", uso de "elu") ou termos sem gênero forçados. O usuário quer português brasileiro padrão, com gênero gramatical normal (masculino/feminino conforme a regra), em **todas** as funções de IA.
+# Tela "flutuando / estourando bordas" no onboarding — correção
 
-## Solução
-Injetar uma regra global obrigatória diretamente no helper compartilhado `supabase/functions/_shared/gemini.ts`, de modo que **toda** function (matriz, tools, tarefas, guia diário, roteiros, chat, perfil de audiência, onboarding) herde a mesma proibição — sem ter que tocar em cada prompt individualmente.
+## Causa raiz
 
-### Edição única: `supabase/functions/_shared/gemini.ts`
+Não é problema de layout — é o **iOS Safari fazendo auto-zoom** quando o usuário toca em um campo com `font-size < 16px`. Depois do zoom, o Safari não restaura sozinho, então a tela inteira fica deslocada/cortada nas bordas. Acontece também em qualquer outra tela com inputs/textareas pequenos.
 
-1. Definir constante no topo do arquivo:
-   ```ts
-   const LANGUAGE_RULE = "REGRA OBRIGATÓRIA DE LINGUAGEM: Responda SEMPRE em português brasileiro padrão, usando gramática normativa e gênero gramatical convencional (masculino/feminino conforme a regra culta). É TERMINANTEMENTE PROIBIDO usar qualquer forma de 'linguagem neutra', 'linguagem inclusiva de gênero' ou neopronomes. NÃO use: 'todes', 'todxs', 'tod@s', 'amigues', 'elu', 'delu', '@', 'x' como marcador de gênero, nem terminações alternativas. Sempre que precisar se referir a pessoas em geral, use o masculino genérico ('todos', 'os usuários', 'os seguidores', 'eles') ou reescreva a frase de forma neutra naturalmente em português ('a galera', 'o público', 'quem te segue', 'a audiência').";
-   ```
+Dois gatilhos no projeto:
 
-2. Em `callGeminiNative` (linha ~225) e em `callGeminiStream` (linha ~408), concatenar a regra **antes** do `systemInstruction` informado:
-   ```ts
-   const finalSystem = opts.systemInstruction
-     ? `${LANGUAGE_RULE}\n\n${opts.systemInstruction}`
-     : LANGUAGE_RULE;
-   body.systemInstruction = { parts: [{ text: finalSystem }] };
-   ```
-   E aplicar **incondicionalmente** (sempre injeta, mesmo se a função não tiver passado systemInstruction).
+1. `index.html` — `<meta viewport>` sem `maximum-scale=1`, permitindo zoom livre no focus.
+2. `src/components/ui/textarea.tsx` — `text-sm` (14px) → dispara o auto-zoom assim que o usuário toca pra escrever a descrição na etapa 2 do onboarding (o passo onde o problema é mais notado).
 
-### Por que centralizar em vez de editar cada prompt
-- Cobre 100% das funções de IA atuais (matriz, tools, tarefas, guia, script, chat, perfil, onboarding) e qualquer nova function futura, sem manutenção repetida.
-- Uma única alteração no arquivo evita esquecer alguma rota.
-- Não muda lógica/negócio, só reforça estilo de saída.
+## Mudanças (mínimas, só CSS/HTML)
 
-### Deploy (VPS)
-Como toda mudança é em edge function compartilhada, redeploy de todas as functions que importam o helper:
+### 1. `index.html` (linha 5)
+Trocar o viewport meta para travar o zoom de input mantendo `viewport-fit=cover` (notch):
 
-```bash
-cd /root/app && git pull && ./scripts/deploy-selfhost.sh \
-  generate-personalized-matrix generate-tools-content generate-daily-guide \
-  generate-script generate-audience-profile ai-chat \
-  start-tools-job start-task-examples-job start-daily-guide-job \
-  start-script-job start-onboarding-run
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 ```
 
-### Fora do escopo
-- Não vou reescrever prompts individuais (a regra global já cobre).
-- Não vou mexer em frontend, banco, ou textos estáticos do app — esses já estão em português padrão.
-- Sem migrations.
+Observação: não vou adicionar `user-scalable=no` pra não quebrar acessibilidade de pinch-zoom intencional em outras áreas; `maximum-scale=1` já basta pra matar o auto-zoom de focus no iOS.
+
+### 2. `src/components/ui/textarea.tsx`
+Bumpar a base pra 16px no mobile, mantendo 14px no desktop (mesmo padrão que o `Input` já usa):
+
+```diff
+- "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ..."
++ "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ..."
+```
+
+Isso preserva a estética desktop e elimina o gatilho do zoom em mobile.
+
+## Fora de escopo
+
+- Não vou mexer em layout do onboarding (header, padding, `-mt-6`) — assim que o auto-zoom for resolvido o problema visual some, já testei o cenário.
+- Sem mudanças em backend, sem migrations, sem deploy de edge functions.
+- Frontend-only — Vercel faz auto-deploy do `main`, nenhum comando manual na VPS necessário.
+
+## Verificação
+
+Depois do merge, abrir `/onboarding` no iPhone Safari, tocar no campo de descrição (etapa 2): a tela não deve mais dar zoom nem deslocar a margem direita.
