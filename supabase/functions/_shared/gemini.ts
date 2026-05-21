@@ -411,9 +411,7 @@ export async function callGeminiStream(opts: {
     contents,
     generationConfig: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
   };
-  if (opts.systemInstruction) {
-    body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
-  }
+  body.systemInstruction = { parts: [{ text: withLanguageRule(opts.systemInstruction) }] };
 
   return await fetch(url, {
     method: "POST",
