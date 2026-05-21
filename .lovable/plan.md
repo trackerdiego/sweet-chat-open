@@ -1,48 +1,72 @@
-Diagnóstico:
-- O print confirma que `daily_hype_raw` tem dados: `youtube = 25` e `google_trends = 10`.
-- Então o problema não é falta de tendências nem exibição do card.
-- A mensagem “Não foi possível iniciar o job” nasce antes da IA e antes da leitura das trends: ela vem de `ai-job-runner.ts` quando falha o `insert` em `public.ai_jobs`.
-- O motivo mais provável está claro nas migrations: a tabela `ai_jobs` foi criada com `CHECK (job_type IN ('tools', 'script', 'daily_guide', 'transcription'))`, mas o Hype tenta inserir `job_type = 'hype'`. Se o self-hosted ainda tem esse constraint antigo, o insert é bloqueado e a função devolve exatamente essa mensagem genérica.
 
-Plano de correção:
+## Objetivo
+Transformar a tela inicial (`/`) num painel mais moderno, com a estética neon da landing, dando protagonismo total às tendências (Hype do Dia) e removendo blocos que você considera ruído.
 
-1. Corrigir o schema no Supabase self-hosted
-- Entregar SQL para rodar no Studio self-hosted que remove o constraint antigo de `ai_jobs.job_type` e recria aceitando também:
-  - `task_examples`
-  - `hype`
-- Garantir também as colunas opcionais já usadas pelo polling/logs:
-  - `attempts`
-  - `model_used`
+## O que sai
+- `MonthlyProgress` (Progresso do Mês)
+- `StreakCounter` (Sequência + 7/14/30 dias + coins inline)
+- `WeeklyView` (Visão Semanal D29/D30…)
+- `MindsetPulse` ("Dose de Coragem") — sai do topo, vira rodapé discreto (decisão: manter pequeno no fim, ou remover; ver pergunta abaixo)
 
-2. Adicionar uma migration local/documentada no projeto
-- Criar uma migration no repositório com o mesmo ajuste, para o schema versionado ficar correto daqui pra frente.
-- Mesmo sabendo que Lovable migrations não aplicam no self-hosted, isso evita o bug voltar em ambientes novos.
+## O que fica / muda
+- **Header**: logo + ações (tema/ajuda/sair) — mantido, sem o "Dia X de 30" gigante (vira chip pequeno).
+- **Saudação "Olá, Diego 👑"** — mantida, mais compacta.
+- **Card "Atualização Digital" (vídeo 13%)** — mantido (é onboarding/guia).
+- **Card do dia (estratégia + barra de progresso)** — mantido, mas com borda neon.
+- **Hype do Dia** — vira **HERO**:
+  - Mostra **todas as tendências coletadas** (não só 5), agrupadas por fonte (YouTube, Google Trends, Reddit) com contadores.
+  - Layout em **grid de cards** com borda neon (purple→pink gradient glow), não mais lista comprimida.
+  - Cada card: número/rank, tema (título grande), por que bombou (2 linhas), badge de fonte + formato sugerido, hover com glow intensificado.
+  - Botão "atualizar" no header da seção.
+  - Tap no card abre o sheet existente com gancho/ângulo/copiar.
+- **Mini-stats inline** (substituindo Sequência/Progresso/Semanal): uma faixa fina no topo com 3 chips neon — `Dia X/30` · `Y dias seguidos` · `Z coins`. Sem cards gigantes, só informação densa. Clicáveis levam para Matrix/Carteira.
 
-3. Melhorar o erro da Edge Function
-- Em `_shared/ai-job-runner.ts`, quando falhar ao inserir `ai_jobs`, retornar uma mensagem mais diagnóstica apenas para esse caso, sem vazar secrets.
-- Exemplo: se for violação de constraint em `job_type`, responder algo como: “Tipo de job não aceito no banco. Atualize o schema de ai_jobs.”
+## Estética (neon da landing)
+- Mesmo padrão das `neon-orb` (já existe no `index.css`) — orbs roxa/magenta no fundo, intensidade maior.
+- Cards com **borda gradient animada** (purple `270 95% 65%` → pink `322 90% 60%`), shadow `0 0 24px hsl(var(--primary)/0.25)`.
+- Glassmorphism mantido mas com `backdrop-blur` mais forte e bordas de 1px com gradiente neon (CSS `border-image` ou pseudo-elemento `::before` com mask).
+- Tipografia serif para títulos (já é o padrão), sans para corpo.
 
-4. Bloco de aplicação na VPS/self-hosted
-- Entregar os comandos finais:
-  - `git pull`
-  - deploy das functions
-  - SQL para rodar no Studio self-hosted
+## Estrutura visual (mobile, viewport real ~390px)
 
-SQL principal que será entregue:
-```sql
-alter table public.ai_jobs
-  drop constraint if exists ai_jobs_job_type_check;
-
-alter table public.ai_jobs
-  add constraint ai_jobs_job_type_check
-  check (job_type in ('tools', 'script', 'daily_guide', 'transcription', 'task_examples', 'hype'));
-
-alter table public.ai_jobs add column if not exists attempts int;
-alter table public.ai_jobs add column if not exists model_used text;
+```text
+┌──────────────────────────────┐
+│ logo            ☾ ? ⎋        │
+│ ▸ chip: D30/30  🔥 0  🪙 30  │
+│ Olá, Diego 👑                │
+├──────────────────────────────┤
+│ [Plano Gratuito → Assinar]   │
+│ [▶ Atualização Digital 13%]  │
+│ [Card do dia (estratégia)]   │
+├──────────────────────────────┤
+│ 🔥 HYPE DO DIA      [↻]      │
+│  YouTube 25 · Google 10 · …  │
+│ ┌──────────┐ ┌──────────┐    │
+│ │ 1 Tema A │ │ 2 Tema B │    │
+│ │ neon border │ neon border │
+│ └──────────┘ └──────────┘    │
+│ ┌──────────┐ ┌──────────┐    │
+│ │ 3 …      │ │ 4 …      │    │
+│ └──────────┘ └──────────┘    │
+│ … (todos os itens)           │
+└──────────────────────────────┘
 ```
 
-Resultado esperado:
-- `start-hype-job` conseguirá criar a linha em `ai_jobs`.
-- O frontend receberá `jobId`.
-- O polling continuará em `get-ai-job-status`.
-- Como já existem trends coletadas, o Hype do Dia deve gerar os 5 itens em vez de parar em “Não foi possível iniciar o job”.
+## Mudança no backend de Hype (mínima)
+Hoje `start-hype-job` pede pra Gemini retornar exatamente 5 itens. Pra "mostrar todas", duas opções:
+- **A (recomendada)**: aumentar pra **15 itens** no prompt (top 15 já dá sensação de abundância sem custar muito token). Mantém personalização.
+- **B**: mostrar também os raw trends de `daily_hype_raw` (sem personalização do Gemini), agrupados.
+
+Vou seguir **A**, e se quiser depois adiciono uma aba "Cru" com os raw.
+
+## Arquivos a tocar
+- `src/pages/Index.tsx` — remover imports/JSX de Monthly/Streak/Weekly/Mindset; nova faixa de chips; reordenar.
+- `src/components/HypeOfTheDay.tsx` — novo layout grid, borda neon, contador por fonte, render de N itens (não fixo em 5).
+- `src/index.css` — utilitário `.neon-border` (gradient border + glow) se ainda não existe.
+- `supabase/functions/start-hype-job/index.ts` — trocar "5 itens" por "15 itens" no prompt + schema.
+- (sem migrations, sem mexer em auth/pagamento/onboarding)
+
+## Perguntas rápidas antes de implementar
+1. **"Dose de Coragem"** (citação diária) — remover também ou manter como rodapé discreto?
+2. Quantos itens no Hype: **15** (recomendado) ou outro número?
+3. Manter o card **"Atualização Digital"** (vídeo de boas-vindas) no topo, ou também enxugar?
