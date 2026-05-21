@@ -11,6 +11,14 @@
 //     tag: "matrix-week-1",
 //   });
 
+// Regra global injetada em TODA chamada Gemini (nativo + streaming).
+// Proíbe linguagem neutra/inclusiva de gênero em qualquer saída de IA do app.
+const LANGUAGE_RULE = "REGRA OBRIGATÓRIA DE LINGUAGEM: Responda SEMPRE em português brasileiro padrão, usando gramática normativa e gênero gramatical convencional (masculino/feminino conforme a regra culta). É TERMINANTEMENTE PROIBIDO usar qualquer forma de 'linguagem neutra', 'linguagem inclusiva de gênero' ou neopronomes. NÃO use: 'todes', 'todxs', 'tod@s', 'amigues', 'elu', 'delu', '@' ou 'x' como marcador de gênero, nem terminações alternativas tipo '-e'/'-x' no lugar de '-o'/'-a'. Sempre que precisar se referir a pessoas em geral, use o masculino genérico ('todos', 'os usuários', 'os seguidores', 'eles') ou reescreva naturalmente em português ('a galera', 'o público', 'quem te segue', 'a audiência', 'a pessoa').";
+
+function withLanguageRule(systemInstruction?: string): string {
+  return systemInstruction ? `${LANGUAGE_RULE}\n\n${systemInstruction}` : LANGUAGE_RULE;
+}
+
 const RETRIABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const ALLOWED_MODELS = new Set([
   "gemini-2.5-pro",
