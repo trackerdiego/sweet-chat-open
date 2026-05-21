@@ -1,64 +1,42 @@
-## Objetivo
+## Problema
+Algumas saídas de IA (matriz, tools, tarefas, daily guide, script, chat) ainda usam "linguagem neutra" (ex.: "todes", "amigues", "@s", uso de "elu") ou termos sem gênero forçados. O usuário quer português brasileiro padrão, com gênero gramatical normal (masculino/feminino conforme a regra), em **todas** as funções de IA.
 
-Trocar o `InstallVideoModal` (Wistia) por um modal **visual com imagem ilustrativa**, no estilo da referência enviada (ZK Delivery): texto curto + ícones inline (compartilhar ↑ / adicionar ➕) mostrando exatamente onde tocar na barra inferior do navegador. Detectar iOS vs Android para mostrar o conjunto certo de símbolos.
+## Solução
+Injetar uma regra global obrigatória diretamente no helper compartilhado `supabase/functions/_shared/gemini.ts`, de modo que **toda** function (matriz, tools, tarefas, guia diário, roteiros, chat, perfil de audiência, onboarding) herde a mesma proibição — sem ter que tocar em cada prompt individualmente.
 
-## Mudanças
+### Edição única: `supabase/functions/_shared/gemini.ts`
 
-### 1. `src/components/InstallVideoModal.tsx` — reescrever
+1. Definir constante no topo do arquivo:
+   ```ts
+   const LANGUAGE_RULE = "REGRA OBRIGATÓRIA DE LINGUAGEM: Responda SEMPRE em português brasileiro padrão, usando gramática normativa e gênero gramatical convencional (masculino/feminino conforme a regra culta). É TERMINANTEMENTE PROIBIDO usar qualquer forma de 'linguagem neutra', 'linguagem inclusiva de gênero' ou neopronomes. NÃO use: 'todes', 'todxs', 'tod@s', 'amigues', 'elu', 'delu', '@', 'x' como marcador de gênero, nem terminações alternativas. Sempre que precisar se referir a pessoas em geral, use o masculino genérico ('todos', 'os usuários', 'os seguidores', 'eles') ou reescreva a frase de forma neutra naturalmente em português ('a galera', 'o público', 'quem te segue', 'a audiência').";
+   ```
 
-Remover toda a parte de Wistia (`ensureWistiaScripts`, `<wistia-player>`, scripts injetados). Manter:
+2. Em `callGeminiNative` (linha ~225) e em `callGeminiStream` (linha ~408), concatenar a regra **antes** do `systemInstruction` informado:
+   ```ts
+   const finalSystem = opts.systemInstruction
+     ? `${LANGUAGE_RULE}\n\n${opts.systemInstruction}`
+     : LANGUAGE_RULE;
+   body.systemInstruction = { parts: [{ text: finalSystem }] };
+   ```
+   E aplicar **incondicionalmente** (sempre injeta, mesmo se a função não tiver passado systemInstruction).
 
-- Mesmo nome do componente e export `INSTALL_VIDEO_SEEN_KEY` (para não quebrar `Index.tsx`).
-- Mesma chave `localStorage` (`influlab.installVideoSeen`).
-- Mesmo trigger (Dialog + `open/onOpenChange`).
+### Por que centralizar em vez de editar cada prompt
+- Cobre 100% das funções de IA atuais (matriz, tools, tarefas, guia, script, chat, perfil, onboarding) e qualquer nova function futura, sem manutenção repetida.
+- Uma única alteração no arquivo evita esquecer alguma rota.
+- Não muda lógica/negócio, só reforça estilo de saída.
 
-Novo conteúdo do modal:
+### Deploy (VPS)
+Como toda mudança é em edge function compartilhada, redeploy de todas as functions que importam o helper:
 
-- Detecta plataforma via `navigator.userAgent`: `isIOS`, `isAndroid`, fallback "outro".
-- Renderiza **uma seção por plataforma** com o mesmo padrão visual da referência:
-  - Texto explicativo curto em 2 frases.
-  - Ícones inline grandes (lucide) embutidos no parágrafo, igual ao print: `Share` (iOS) / `MoreVertical` (Android), e `Plus` no segundo passo.
-  - Mockup ilustrativo da barra inferior (iOS) ou superior (Android) do navegador — usa um bloco visual com `rounded-full bg-muted` + ícones, sem imagem externa (evita asset novo e mantém leve).
+```bash
+cd /root/app && git pull && ./scripts/deploy-selfhost.sh \
+  generate-personalized-matrix generate-tools-content generate-daily-guide \
+  generate-script generate-audience-profile ai-chat \
+  start-tools-job start-task-examples-job start-daily-guide-job \
+  start-script-job start-onboarding-run
+```
 
-Conteúdo por plataforma:
-
-- **iOS (Safari)**:
-  > Adicione o **Vyral Lab** à sua tela inicial para receber notificações e acesso rápido.
-  > Toque em **Compartilhar** [icone ↑] e depois em **Adicionar à Tela de Início** [icone ➕].
-  - Mockup da barra inferior do Safari (pill cinza com `app.vyrallab.online`).
-
-- **Android (Chrome)**:
-  > Adicione o **Vyral Lab** à sua tela inicial.
-  > Toque no menu **⋮** no canto superior direito e depois em **Instalar app** / **Adicionar à tela inicial** [icone ➕].
-  - Mockup da barra superior do Chrome com ícone `MoreVertical` destacado.
-
-- **Outro / desktop**: cai num fallback simples ("Abra no celular para instalar") — sem botões pesados.
-
-Botões finais (iguais aos atuais):
-- "Já instalei" (primary, marca `SEEN_KEY` e fecha).
-- "Ver depois" (ghost, só fecha).
-
-### 2. Nenhuma outra mudança
-
-- `src/pages/Index.tsx` continua importando o mesmo componente com a mesma API — zero alteração.
-- Nada de novo asset, nada de service worker, nada de backend.
-
-## Detalhes técnicos
-
-- Detecção:
-  ```ts
-  const ua = navigator.userAgent;
-  const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
-  const isAndroid = /Android/.test(ua);
-  ```
-- Ícones de `lucide-react`: `Share`, `Plus`, `MoreVertical`, `X` (close já é do Dialog).
-- Tokens de cor: usar `bg-muted`, `text-foreground`, `text-muted-foreground`, `border-border` — nada hardcoded.
-- Largura: manter `max-w-[380px]`, padding `p-5`.
-- Acessibilidade: `DialogTitle` e `DialogDescription` mantidos; ícones inline com `aria-hidden`.
-
-## Fora do escopo
-
-- Não mexer em `InAppBrowserBanner` (esse já trata Instagram/Facebook in-app).
-- Não mexer em `InstallInstructionsModal` (esse é o modal grande passo-a-passo, usado em outros pontos).
-- Não remover o componente nem o `INSTALL_VIDEO_SEEN_KEY` para preservar o gatilho atual.
-- Não criar nova edge function / migration.
+### Fora do escopo
+- Não vou reescrever prompts individuais (a regra global já cobre).
+- Não vou mexer em frontend, banco, ou textos estáticos do app — esses já estão em português padrão.
+- Sem migrations.
