@@ -65,8 +65,12 @@ export function useDailyHype() {
     }
   }, [start]);
 
+  const lastReloadRef = useRef(0);
   const reload = useCallback(() => {
     if (statusRef.current === 'starting' || statusRef.current === 'processing') return;
+    const now = Date.now();
+    if (now - lastReloadRef.current < 30000) return; // anti-spam: 30s
+    lastReloadRef.current = now;
     startedRef.current = false;
     setItems(null);
     void load(true);
