@@ -10,6 +10,7 @@ import { PremiumGate } from '@/components/PremiumGate';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
+import { PageBackdrop } from '@/components/PageBackdrop';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
