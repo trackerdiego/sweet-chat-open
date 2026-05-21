@@ -5,6 +5,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { useSubscription } from '@/hooks/useSubscription';
 import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { Button } from '@/components/ui/button';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const COIN_TO_BRL = 0.01;
 
