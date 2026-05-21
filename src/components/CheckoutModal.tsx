@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 interface CheckoutModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialPlan?: "monthly" | "yearly";
 }
 
 function formatCPF(value: string) {
@@ -46,8 +47,12 @@ const plans = {
   yearly: { label: "Anual", price: 297, cycle: "YEARLY" as const, perMonth: 24.75, description: "R$297/ano (≈ R$24,75/mês)" },
 };
 
-export function CheckoutModal({ open, onOpenChange }: CheckoutModalProps) {
-  const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
+export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModalProps) {
+  const [selectedPlan, setSelectedPlan] = useState<Plan>(initialPlan ?? "yearly");
+
+  useEffect(() => {
+    if (open && initialPlan) setSelectedPlan(initialPlan);
+  }, [open, initialPlan]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 

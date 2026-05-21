@@ -10,9 +10,20 @@ import logo from '@/assets/vyrallab-logo-light.png';
 import { InAppBrowserBanner } from '@/components/InAppBrowserBanner';
 
 const REF_STORAGE_KEY = 'pending_ref';
+const CHECKOUT_PLAN_KEY = 'pending_checkout_plan';
+
+const PLAN_LABELS: Record<string, { label: string; price: string }> = {
+  yearly: { label: 'Anual', price: 'R$297/ano (≈ R$24,75/mês)' },
+  monthly: { label: 'Mensal', price: 'R$47/mês' },
+};
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
+  const initialParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const initialPlan = initialParams.get('plan');
+  const initialMode = initialParams.get('mode');
+  const startAsSignup = initialMode === 'signup' || (!!initialPlan && (initialPlan === 'monthly' || initialPlan === 'yearly'));
+
+  const [isLogin, setIsLogin] = useState(!startAsSignup);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [displayName, setDisplayName] = useState('');
@@ -21,6 +32,15 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [refCode, setRefCode] = useState<string | null>(null);
   const [refOwnerName, setRefOwnerName] = useState<string | null>(null);
+  const [pendingPlan] = useState<string | null>(
+    initialPlan === 'monthly' || initialPlan === 'yearly' ? initialPlan : null
+  );
+
+  useEffect(() => {
+    if (pendingPlan) {
+      try { sessionStorage.setItem(CHECKOUT_PLAN_KEY, pendingPlan); } catch {}
+    }
+  }, [pendingPlan]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -205,6 +225,12 @@ const Auth = () => {
         </p>
       </div>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-sm">
+        {pendingPlan && !isLogin && (
+          <div className="mb-3 rounded-xl bg-gradient-to-r from-primary/15 to-accent/15 border border-primary/30 text-foreground px-4 py-3 text-sm w-full text-center">
+            <p className="font-semibold text-primary">Plano {PLAN_LABELS[pendingPlan].label} selecionado</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{PLAN_LABELS[pendingPlan].price} • crie sua conta para finalizar o pagamento</p>
+          </div>
+        )}
         {refCode && !isLogin && (
           <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary px-3 py-1 text-xs font-medium w-full justify-center">
             <Gift size={14} />

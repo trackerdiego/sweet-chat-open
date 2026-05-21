@@ -460,7 +460,7 @@ export default function Landing() {
                   <Button
                     size="lg"
                     variant="outline"
-                    onClick={() => navigate("/auth?plan=monthly")}
+                    onClick={() => navigate("/auth?plan=monthly&mode=signup")}
                     className="w-full rounded-full border-white/25 bg-transparent text-white hover:bg-white/10 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                   >
                     Assinar mensal <ArrowRight className="h-4 w-4 ml-1" />
@@ -502,7 +502,7 @@ export default function Landing() {
                   </ul>
                   <Button
                     size="lg"
-                    onClick={() => navigate("/auth?plan=yearly")}
+                    onClick={() => navigate("/auth?plan=yearly&mode=signup")}
                     className="neon-cta w-full rounded-full py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                   >
                     Assinar plano anual <ArrowRight className="h-4 w-4 ml-1" />

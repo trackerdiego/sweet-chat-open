@@ -7,6 +7,7 @@ import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
 import { TrialBanner } from "@/components/TrialBanner";
 import { AccessGuard } from "@/components/AccessGuard";
+import { AutoCheckoutOpener } from "@/components/AutoCheckoutOpener";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import Index from "./pages/Index";
 import Matrix from "./pages/Matrix";
@@ -65,11 +66,14 @@ function AppRoutes() {
 
   if (needsOnboarding) {
     return (
-      <Routes>
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/auth" element={<Navigate to="/onboarding" replace />} />
-        <Route path="*" element={<Navigate to="/onboarding" replace />} />
-      </Routes>
+      <>
+        <AutoCheckoutOpener />
+        <Routes>
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/auth" element={<Navigate to="/onboarding" replace />} />
+          <Route path="*" element={<Navigate to="/onboarding" replace />} />
+        </Routes>
+      </>
     );
   }
 
@@ -78,6 +82,7 @@ function AppRoutes() {
       <PixDueBanner />
       <InstallBanner />
       <TrialBanner />
+      <AutoCheckoutOpener />
       <Navigation />
       <AccessGuard>
         <Routes>
