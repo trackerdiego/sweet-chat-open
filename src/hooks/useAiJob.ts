@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 
-export type AiJobType = 'tools' | 'script' | 'daily_guide' | 'transcription' | 'task_examples';
+export type AiJobType = 'tools' | 'script' | 'daily_guide' | 'transcription' | 'task_examples' | 'hype';
 export type AiJobStatus = 'idle' | 'starting' | 'processing' | 'done' | 'failed';
 
 const FUNCTION_BY_TYPE: Record<AiJobType, string> = {
@@ -20,6 +20,7 @@ const FUNCTION_BY_TYPE: Record<AiJobType, string> = {
   daily_guide: 'start-daily-guide-job',
   transcription: 'start-transcription-job',
   task_examples: 'start-task-examples-job',
+  hype: 'start-hype-job',
 };
 
 const POLL_INTERVAL_MS = 2000;
