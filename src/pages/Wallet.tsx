@@ -78,7 +78,7 @@ export default function Wallet() {
           return (
             <motion.div
               initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.03 }}
-              className={`glass-card p-5 border ${
+              className={`app-neon-border soft p-5 border ${
                 overdue || urgent
                   ? 'border-destructive/40 bg-destructive/5'
                   : 'border-primary/20'
@@ -114,7 +114,7 @@ export default function Wallet() {
         })()}
 
         <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.05 }}
-          className="glass-card p-5 flex items-center justify-between">
+          className="app-neon-border soft p-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-foreground">
               <Gift size={18} className="text-primary" />
@@ -148,7 +148,7 @@ export default function Wallet() {
           {loading ? (
             <div className="text-sm text-muted-foreground px-1">Carregando…</div>
           ) : transactions.length === 0 ? (
-            <div className="glass-card p-6 text-center text-sm text-muted-foreground">
+            <div className="app-neon-border soft p-6 text-center text-sm text-muted-foreground">
               Sem movimentações ainda. Conclua tarefas para começar a ganhar coins.
             </div>
           ) : (
@@ -158,7 +158,7 @@ export default function Wallet() {
                 const Icon = meta.icon;
                 const positive = tx.amount > 0;
                 return (
-                  <li key={tx.id} className="glass-card p-3 flex items-center gap-3">
+                  <li key={tx.id} className="app-neon-border soft p-3 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
                       <Icon size={16} />
                     </div>

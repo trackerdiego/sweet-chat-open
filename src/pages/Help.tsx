@@ -98,7 +98,7 @@ export default function Help() {
                 id={tut.topic}
                 ref={(el) => (tutorialRefs.current[tut.topic] = el as HTMLDivElement | null)}
                 value={tut.topic}
-                className="glass-card border-none px-4 rounded-2xl scroll-mt-4"
+                className="app-neon-border soft border-none px-4 rounded-2xl scroll-mt-4"
               >
                 <AccordionTrigger className="hover:no-underline py-4">
                   <div className="flex items-center gap-3 text-left flex-1">
@@ -151,7 +151,7 @@ export default function Help() {
           {/* ===================== COINS ===================== */}
           <AccordionItem
             value="coins"
-            className="glass-card border-none px-4 rounded-2xl"
+            className="app-neon-border soft border-none px-4 rounded-2xl"
           >
             <AccordionTrigger className="hover:no-underline py-4">
               <div className="flex items-center gap-3 text-left">
@@ -329,7 +329,7 @@ export default function Help() {
           {/* ===================== SUPORTE ===================== */}
           <AccordionItem
             value="suporte"
-            className="glass-card border-none px-4 rounded-2xl"
+            className="app-neon-border soft border-none px-4 rounded-2xl"
           >
             <AccordionTrigger className="hover:no-underline py-4">
               <div className="flex items-center gap-3 text-left">

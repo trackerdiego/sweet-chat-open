@@ -49,7 +49,7 @@ export default function Referral() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
-        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="glass-card p-5 text-center">
+        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-neon-border soft p-5 text-center">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Seu código</p>
           <p className="font-mono text-2xl font-bold text-primary mt-1 break-all">
             {loading ? '—' : code ?? 'Gerando…'}
@@ -65,7 +65,7 @@ export default function Referral() {
           </div>
         </motion.div>
 
-        <div className="glass-card p-4 flex items-center justify-around text-center">
+        <div className="app-neon-border soft p-4 flex items-center justify-around text-center">
           <div>
             <p className="text-2xl font-bold text-primary tabular-nums">{paidCount}</p>
             <p className="text-xs text-muted-foreground">Pagantes</p>
@@ -87,7 +87,7 @@ export default function Referral() {
           {loading ? (
             <div className="text-sm text-muted-foreground px-1">Carregando…</div>
           ) : referrals.length === 0 ? (
-            <div className="glass-card p-6 text-center text-sm text-muted-foreground">
+            <div className="app-neon-border soft p-6 text-center text-sm text-muted-foreground">
               Você ainda não indicou ninguém. Compartilhe seu link!
             </div>
           ) : (
@@ -96,7 +96,7 @@ export default function Referral() {
                 const meta = STATUS_META[r.status] ?? STATUS_META.pending;
                 const Icon = meta.icon;
                 return (
-                  <li key={r.id} className="glass-card p-3 flex items-center gap-3">
+                  <li key={r.id} className="app-neon-border soft p-3 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
                       <Icon size={16} />
                     </div>
