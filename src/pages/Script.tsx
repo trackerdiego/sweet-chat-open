@@ -4,6 +4,7 @@ import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const Script = () => {
   const { strategies, loading } = useUserStrategies();
@@ -13,27 +14,33 @@ const Script = () => {
 
   if (loading || strategies.length === 0) {
     return (
-      <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))] space-y-4">
-        <Skeleton className="h-8 w-48 mx-auto" />
-        <Skeleton className="h-4 w-64 mx-auto" />
-        <Skeleton className="h-[200px] w-full rounded-xl" />
-        <Skeleton className="h-12 w-full rounded-xl" />
+      <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+        <PageBackdrop />
+        <div className="relative z-10 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))] space-y-4">
+          <Skeleton className="h-8 w-48 mx-auto" />
+          <Skeleton className="h-4 w-64 mx-auto" />
+          <Skeleton className="h-[200px] w-full rounded-2xl" />
+          <Skeleton className="h-12 w-full rounded-2xl" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))] relative">
-      <div className="absolute right-3 top-[max(1rem,env(safe-area-inset-top))] md:top-24 z-10">
-        <HelpButton topic="scripts" variant="dark" />
+    <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+      <div className="relative z-10 px-4 max-w-lg mx-auto pt-[max(1.5rem,env(safe-area-inset-top))]">
+        <div className="absolute right-3 top-[max(1rem,env(safe-area-inset-top))] md:top-24 z-10">
+          <HelpButton topic="scripts" variant="dark" />
+        </div>
+        {todayStrategy && (
+          <ScriptGenerator
+            strategy={todayStrategy}
+            primaryNiche={profile?.primary_niche}
+            contentStyle={profile?.content_style}
+          />
+        )}
       </div>
-      {todayStrategy && (
-        <ScriptGenerator
-          strategy={todayStrategy}
-          primaryNiche={profile?.primary_niche}
-          contentStyle={profile?.content_style}
-        />
-      )}
     </div>
   );
 };

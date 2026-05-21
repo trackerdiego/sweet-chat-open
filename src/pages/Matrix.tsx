@@ -10,6 +10,7 @@ import { PremiumGate } from '@/components/PremiumGate';
 import { CheckCircle2, Lock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const Matrix = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();
@@ -34,17 +35,16 @@ const Matrix = () => {
 
   if (strategiesLoading || strategies.length === 0) {
     return (
-      <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
-          <div className="max-w-lg mx-auto">
-            <Skeleton className="h-9 w-48 bg-white/20" />
-            <Skeleton className="h-4 w-56 bg-white/20 mt-2" />
-          </div>
+      <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+        <PageBackdrop />
+        <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto">
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-4 w-56 mt-2" />
         </div>
-        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+        <div className="relative z-10 px-4 max-w-lg mx-auto space-y-4">
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-xl" />
+              <Skeleton key={i} className="h-28 w-full rounded-2xl" />
             ))}
           </div>
         </div>
@@ -57,25 +57,29 @@ const Matrix = () => {
   const selectedDayLocked = selectedDay ? !canAccessDay(selectedDay) : false;
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
+    <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4">
         <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-lg mx-auto flex items-start justify-between gap-3">
           <div>
-            <h1 className="font-serif text-3xl font-bold text-white">Matriz 30 Dias</h1>
-            <p className="text-white/60 text-sm mt-1">Sua biblioteca completa de estratégias</p>
+            <h1 className="font-serif text-3xl font-bold text-foreground">Matriz 30 Dias</h1>
+            <p className="text-muted-foreground text-sm mt-1">Sua biblioteca completa de estratégias</p>
           </div>
           <HelpButton topic="matriz" />
         </motion.div>
       </div>
 
-      <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+      <div className="relative z-10 px-4 max-w-lg mx-auto space-y-4">
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
           {pillars.map(p => (
             <button
               key={p.key}
               onClick={() => setFilter(p.key)}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-                filter === p.key ? 'gold-gradient text-primary-foreground shadow-md shadow-primary/20' : 'bg-card text-muted-foreground hover:bg-muted border border-border'
+                filter === p.key
+                  ? 'gold-gradient text-primary-foreground shadow-md shadow-primary/20'
+                  : 'app-neon-chip'
               }`}
             >
               {p.label}
@@ -96,8 +100,8 @@ const Matrix = () => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: i * 0.03 }}
                 onClick={() => setSelectedDay(day.day)}
-                className={`glass-card p-4 text-left hover:shadow-lg transition-all group relative ${
-                  isCurrent ? 'ring-2 ring-primary' : ''
+                className={`p-4 text-left transition-all group relative ${
+                  isCurrent ? 'app-neon-border' : 'app-neon-border soft'
                 } ${isLocked ? 'opacity-70' : ''}`}
               >
                 {isLocked && (

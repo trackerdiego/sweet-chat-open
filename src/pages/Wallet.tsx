@@ -5,6 +5,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { useSubscription } from '@/hooks/useSubscription';
 import { usePendingInvoice } from '@/hooks/usePendingInvoice';
 import { Button } from '@/components/ui/button';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const COIN_TO_BRL = 0.01;
 
@@ -44,20 +45,22 @@ export default function Wallet() {
     : null;
 
   return (
-    <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-12 rounded-b-3xl text-center">
-        <h1 className="font-serif text-2xl font-bold text-white">Sua carteira 🪙</h1>
-        <p className="text-white/60 text-sm mt-1">Ganhe coins e desconto na assinatura</p>
+    <div className="min-h-screen pb-24 md:pb-6 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto text-center">
+        <h1 className="font-serif text-3xl font-bold text-foreground">Sua carteira 🪙</h1>
+        <p className="text-muted-foreground text-sm mt-1">Ganhe coins e desconto na assinatura</p>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
-        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="glass-card p-6 text-center">
-          <div className="flex items-center justify-center gap-2 text-primary">
+      <div className="relative z-10 max-w-lg mx-auto px-4 space-y-4">
+        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-hero-gradient p-6 text-center">
+          <div className="flex items-center justify-center gap-2 text-white">
             <Coins size={28} />
             <span className="text-4xl font-bold tabular-nums">{loading ? '—' : wallet.coins_balance}</span>
           </div>
-          <p className="text-sm text-muted-foreground mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
+          <p className="text-sm text-white/80 mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
+          <p className="text-xs text-white/60 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
         </motion.div>
 
         {hasPendingPixInvoice && invoice && (() => {
@@ -75,7 +78,7 @@ export default function Wallet() {
           return (
             <motion.div
               initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.03 }}
-              className={`glass-card p-5 border ${
+              className={`app-neon-border soft p-5 border ${
                 overdue || urgent
                   ? 'border-destructive/40 bg-destructive/5'
                   : 'border-primary/20'
@@ -111,7 +114,7 @@ export default function Wallet() {
         })()}
 
         <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.05 }}
-          className="glass-card p-5 flex items-center justify-between">
+          className="app-neon-border soft p-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-foreground">
               <Gift size={18} className="text-primary" />
@@ -145,7 +148,7 @@ export default function Wallet() {
           {loading ? (
             <div className="text-sm text-muted-foreground px-1">Carregando…</div>
           ) : transactions.length === 0 ? (
-            <div className="glass-card p-6 text-center text-sm text-muted-foreground">
+            <div className="app-neon-border soft p-6 text-center text-sm text-muted-foreground">
               Sem movimentações ainda. Conclua tarefas para começar a ganhar coins.
             </div>
           ) : (
@@ -155,7 +158,7 @@ export default function Wallet() {
                 const Icon = meta.icon;
                 const positive = tx.amount > 0;
                 return (
-                  <li key={tx.id} className="glass-card p-3 flex items-center gap-3">
+                  <li key={tx.id} className="app-neon-border soft p-3 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
                       <Icon size={16} />
                     </div>
