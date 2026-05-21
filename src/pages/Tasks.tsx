@@ -34,28 +34,29 @@ const Tasks = () => {
 
   if (loading || strategies.length === 0) {
     return (
-      <div className="min-h-screen pb-24 md:pt-20">
-        <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
-          <div className="max-w-lg mx-auto">
-            <Skeleton className="h-8 w-32 bg-white/20" />
-            <Skeleton className="h-4 w-48 mt-2 bg-white/10" />
-          </div>
+      <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+        <PageBackdrop />
+        <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-48 mt-2" />
         </div>
-        <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
-          <Skeleton className="h-[120px] w-full rounded-xl" />
-          <Skeleton className="h-[200px] w-full rounded-xl" />
+        <div className="relative z-10 px-4 max-w-lg mx-auto space-y-4">
+          <Skeleton className="h-[120px] w-full rounded-2xl" />
+          <Skeleton className="h-[200px] w-full rounded-2xl" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-24 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-10 rounded-b-3xl">
+    <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4">
         <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-lg mx-auto flex items-start justify-between gap-3">
           <div>
-            <h1 className="font-serif text-3xl font-bold text-white">Tarefas</h1>
-            <p className="text-white/60 text-sm mt-1">
+            <h1 className="font-serif text-3xl font-bold text-foreground">Tarefas</h1>
+            <p className="text-muted-foreground text-sm mt-1">
               Dia {state.currentDay} de 30 — {displayDate}
             </p>
           </div>
@@ -63,7 +64,7 @@ const Tasks = () => {
         </motion.div>
       </div>
 
-      <div className="px-4 max-w-lg mx-auto space-y-4 -mt-5">
+      <div className="relative z-10 px-4 max-w-lg mx-auto space-y-4">
         <PremiumGate locked={dayLocked} message="Assine para desbloquear as tarefas a partir do dia 8">
           {todayStrategy && (
             <DailyGuide
