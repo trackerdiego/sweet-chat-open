@@ -56,28 +56,54 @@ serve(async (req) => {
           if (Array.isArray(r.trends)) allTrends.push(...(r.trends as RawTrend[]));
         }
       } else {
-        console.log(`[start-hype-job] no raw data for ${today}, fetching live`);
+        console.log(`[start-hype-job] no raw data for ${today}, fetching live (6 sources)`);
         const youtubeKey = Deno.env.get("YOUTUBE_API_KEY") ?? "";
-        const [gt, rd, yt] = await Promise.all([
+        const [gtRss, gtRealtime, rd, ytTrending, ytShorts, ytMusic] = await Promise.all([
           fetchGoogleTrendsBR(),
+          fetchGoogleTrendsRealtimeBR(),
           fetchReddit(),
           fetchYouTubeTrendingBR(youtubeKey),
+          fetchYouTubeShortsBR(youtubeKey),
+          fetchYouTubeMusicTrendingBR(youtubeKey),
         ]);
-        allTrends = [...gt, ...rd, ...yt];
-        // grava pra próximos users do dia já pegarem do cache
+        const googleAll = [...gtRss, ...gtRealtime];
+        const youtubeAll = [...ytTrending, ...ytShorts, ...ytMusic];
+        allTrends = [...googleAll, ...rd, ...youtubeAll];
+        console.log(`[start-hype-job] live counts`, {
+          gtRss: gtRss.length, gtRealtime: gtRealtime.length, reddit: rd.length,
+          ytTrending: ytTrending.length, ytShorts: ytShorts.length, ytMusic: ytMusic.length,
+        });
         const rows = [
-          { date: today, source: "google_trends", trends: gt },
+          { date: today, source: "google_trends", trends: googleAll },
           { date: today, source: "reddit", trends: rd },
-          { date: today, source: "youtube", trends: yt },
+          { date: today, source: "youtube", trends: youtubeAll },
         ].filter((r) => r.trends.length > 0);
         if (rows.length > 0) {
           await admin.from("daily_hype_raw").upsert(rows, { onConflict: "date,source" });
         }
       }
 
-      if (allTrends.length === 0) {
-        throw new JobError("Não conseguimos puxar tendências agora. Tente novamente em alguns minutos.");
+      const degraded = allTrends.length === 0;
+      if (degraded) {
+        console.warn(`[start-hype-job] ZERO trends — caindo pra evergreen via Gemini`);
       }
+
+      // 3) Perfil do user pra personalizar
+      const [{ data: profile }, { data: audience }] = await Promise.all([
+        userClient.from("user_profiles").select("primary_niche, content_style, audience_size, display_name").eq("user_id", userId).maybeSingle(),
+        userClient.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
+      ]);
+
+      const niche = profile?.primary_niche || "lifestyle";
+      const style = profile?.content_style || "casual";
+      const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
+
+      // Compacta trends (top 60). Em modo degraded, vai vazio e prompt vira evergreen.
+      const compact = allTrends
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, 60)
+        .map((t) => `[${t.source}${t.subsource ? "/" + t.subsource : ""}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
+        .join("\n");
 
       // 3) Perfil do user pra personalizar
       const [{ data: profile }, { data: audience }] = await Promise.all([
