@@ -407,7 +407,9 @@ const Tools = () => {
   const handleBack = () => { setSelectedTool(null); setUserInput(''); setResult(null); };
 
   return (
-    <div className={`${selectedTool?.id === 'chat' ? 'h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-20 md:pb-0' : 'min-h-screen pb-24 md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))]'} max-w-lg mx-auto`}>
+    <div className={`${selectedTool?.id === 'chat' ? 'h-[100dvh] flex flex-col md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-20 md:pb-0' : 'min-h-screen pb-24 md:pt-20 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] relative overflow-hidden'} max-w-lg mx-auto`}>
+      {selectedTool?.id !== 'chat' && <PageBackdrop />}
+      <div className="relative z-10">
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
       <InstallInstructionsModal
         open={linkInstallOpen}
