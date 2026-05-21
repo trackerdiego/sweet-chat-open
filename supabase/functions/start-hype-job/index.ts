@@ -133,7 +133,7 @@ REGRAS:
       const prompt = degraded
         ? `As fontes de tendências em tempo real estão indisponíveis agora (${today}).
 
-Gere 5 PAUTAS EVERGREEN de altíssima conversão pro nicho "${niche}", aproveitando o perfil do público descrito acima. Devem parecer atuais e relevantes, baseadas em padrões de conteúdo que SEMPRE funcionam nesse nicho (curiosidade, transformação, mito x verdade, bastidor, antes/depois, lista). Para cada uma:
+Gere 12 PAUTAS EVERGREEN de altíssima conversão pro nicho "${niche}", aproveitando o perfil do público descrito acima. Devem parecer atuais e relevantes, baseadas em padrões de conteúdo que SEMPRE funcionam nesse nicho (curiosidade, transformação, mito x verdade, bastidor, antes/depois, lista). Para cada uma:
 - tema: o nome curto da pauta
 - porque_bombou: 1 frase explicando por que esse ângulo sempre engaja nesse nicho
 - gancho: frase de abertura pronta pra falar na câmera (1ª pessoa, máx 180 caracteres, faz o público parar de scrollar)
@@ -144,7 +144,7 @@ Gere 5 PAUTAS EVERGREEN de altíssima conversão pro nicho "${niche}", aproveita
 
 ${compact}
 
-Escolha as 5 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON pedido. Para cada uma:
+Escolha as 15 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON pedido. Varie as fontes (não devolva só YouTube). Para cada uma:
 - tema: o nome curto da tendência
 - porque_bombou: 1 frase explicando o motivo do hype hoje
 - gancho: frase de abertura pronta pra falar na câmera (1ª pessoa, máx 180 caracteres, faz o público parar de scrollar)
