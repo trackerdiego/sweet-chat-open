@@ -24,6 +24,7 @@ export function HypeOfTheDay() {
   const { items, loading, error, reload } = useDailyHype();
   const [open, setOpen] = useState<HypeItem | null>(null);
   const [copied, setCopied] = useState(false);
+  const [allOpen, setAllOpen] = useState(false);
   const { toast } = useToast();
 
   const counts = useMemo(() => {
@@ -82,7 +83,6 @@ export function HypeOfTheDay() {
   }
 
   const top = (items || []).slice(0, 5);
-  const [allOpen, setAllOpen] = useState(false);
 
   return (
     <>
