@@ -247,14 +247,11 @@ Escolha as 15 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON ped
         throw new JobError("A IA não retornou sugestões desta vez. Tente novamente em instantes.");
       }
 
-      // Persiste no cache só quando NÃO degraded — assim a próxima chamada
-      // tenta de novo trazer tendências reais em vez de servir evergreen 24h.
-      if (!degraded) {
-        const { error: cacheErr } = await admin
-          .from("user_daily_hype")
-          .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
-        if (cacheErr) console.warn("[start-hype-job] user_daily_hype cache upsert failed, returning items", cacheErr);
-      }
+      // Cacheia sempre (inclusive evergreen) — 1 geração por dia por usuário.
+      const { error: cacheErr } = await admin
+        .from("user_daily_hype")
+        .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+      if (cacheErr) console.warn("[start-hype-job] user_daily_hype cache upsert failed, returning items", cacheErr);
 
       console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, degraded, attempts: res.attempts, modelUsed: res.modelUsed });
       return { items, cached: false, __meta: { attempts: res.attempts, modelUsed: res.modelUsed, degraded } };
