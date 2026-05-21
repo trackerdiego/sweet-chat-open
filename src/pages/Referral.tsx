@@ -43,26 +43,28 @@ export default function Referral() {
   };
 
   return (
-    <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-12 rounded-b-3xl text-center">
-        <h1 className="font-serif text-2xl font-bold text-white">Indique amigos 🎁</h1>
-        <p className="text-white/60 text-sm mt-1">Ganhe R$ 10 por cada pagante</p>
+    <div className="min-h-screen pb-24 md:pb-6 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto text-center">
+        <h1 className="font-serif text-3xl font-bold text-foreground">Indique amigos 🎁</h1>
+        <p className="text-muted-foreground text-sm mt-1">Ganhe R$ 10 por cada pagante</p>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
-        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-neon-border soft p-5 text-center">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Seu código</p>
-          <p className="font-mono text-2xl font-bold text-primary mt-1 break-all">
+      <div className="relative z-10 max-w-lg mx-auto px-4 space-y-4">
+        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-hero-gradient p-5 text-center">
+          <p className="text-xs uppercase tracking-wider text-white/70">Seu código</p>
+          <p className="font-mono text-2xl font-bold text-white mt-1 break-all">
             {loading ? '—' : code ?? 'Gerando…'}
           </p>
-          <div className="mt-4 bg-muted/40 rounded-lg p-2 text-xs text-muted-foreground break-all">{link || '—'}</div>
+          <div className="mt-4 bg-white/10 rounded-lg p-2 text-xs text-white/80 break-all">{link || '—'}</div>
           <div className="grid grid-cols-2 gap-2 mt-3">
-            <Button variant="outline" size="sm" onClick={copy} disabled={!link}><Copy size={14} /> Copiar</Button>
-            <Button size="sm" onClick={shareNative} disabled={!link} className="gold-gradient text-primary-foreground"><Share2 size={14} /> Compartilhar</Button>
+            <Button variant="outline" size="sm" onClick={copy} disabled={!link} className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white"><Copy size={14} /> Copiar</Button>
+            <Button size="sm" onClick={shareNative} disabled={!link} className="bg-white text-primary hover:bg-white/90"><Share2 size={14} /> Compartilhar</Button>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
-            <Button variant="ghost" size="sm" onClick={shareWhats} disabled={!link}><MessageCircle size={14} /> WhatsApp</Button>
-            <Button variant="ghost" size="sm" onClick={shareTg} disabled={!link}><Send size={14} /> Telegram</Button>
+            <Button variant="ghost" size="sm" onClick={shareWhats} disabled={!link} className="text-white/85 hover:text-white hover:bg-white/10"><MessageCircle size={14} /> WhatsApp</Button>
+            <Button variant="ghost" size="sm" onClick={shareTg} disabled={!link} className="text-white/85 hover:text-white hover:bg-white/10"><Send size={14} /> Telegram</Button>
           </div>
         </motion.div>
 
