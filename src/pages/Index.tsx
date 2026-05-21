@@ -9,6 +9,7 @@ import { MonthlyProgress } from '@/components/MonthlyProgress';
 import { StreakCounter } from '@/components/StreakCounter';
 import { MindsetPulse } from '@/components/MindsetPulse';
 import { WeeklyView } from '@/components/WeeklyView';
+import { HypeOfTheDay } from '@/components/HypeOfTheDay';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { ChevronRight, Calendar, LogOut, Crown, HelpCircle, Sun, Moon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -231,6 +232,7 @@ const Index = () => {
         </motion.div>
 
         <StreakCounter streak={state.streak} points={state.influencePoints} />
+        <HypeOfTheDay />
         <WeeklyView currentDay={state.currentDay} completedDays={completedDays} strategies={strategies} />
       </div>
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />

@@ -24,7 +24,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-export type AiJobType = "tools" | "script" | "daily_guide" | "transcription" | "task_examples";
+export type AiJobType = "tools" | "script" | "daily_guide" | "transcription" | "task_examples" | "hype";
 
 export interface EnqueueResult {
   jobId: string;
