@@ -1,33 +1,48 @@
-Diagnóstico atual:
-- A função self-hosted `https://api.influlab.pro/functions/v1/start-hype-job` está alcançável e carrega sem SyntaxError, porque respondeu `401 Não autorizado` quando testada sem token válido. Então o erro anterior de duplicidade provavelmente não é mais o único problema.
-- O preview que consegui abrir está na landing page sem login, então não disparou a chamada real do Hype.
-- Encontrei um bug real no frontend: depois da primeira tentativa, `useDailyHype` marca `startedRef.current = true`; ao clicar em atualizar de novo, ele não dispara novo job. Ou seja: se a primeira tentativa falha, o botão pode ficar preso sem tentar gerar de verdade.
-- As consultas via ferramenta Supabase não provam o estado real do app, porque o app usa Supabase self-hosted em `api.influlab.pro`, e as migrations Lovable não alteram esse banco automaticamente.
+Diagnóstico:
+- O print confirma que `daily_hype_raw` tem dados: `youtube = 25` e `google_trends = 10`.
+- Então o problema não é falta de tendências nem exibição do card.
+- A mensagem “Não foi possível iniciar o job” nasce antes da IA e antes da leitura das trends: ela vem de `ai-job-runner.ts` quando falha o `insert` em `public.ai_jobs`.
+- O motivo mais provável está claro nas migrations: a tabela `ai_jobs` foi criada com `CHECK (job_type IN ('tools', 'script', 'daily_guide', 'transcription'))`, mas o Hype tenta inserir `job_type = 'hype'`. Se o self-hosted ainda tem esse constraint antigo, o insert é bloqueado e a função devolve exatamente essa mensagem genérica.
 
 Plano de correção:
 
-1. Corrigir o botão de tentar novamente
-- Alterar `src/hooks/useDailyHype.ts` para separar carregamento inicial de recarregamento manual.
-- No reload manual, limpar erro, zerar `startedRef`, e disparar um novo `start-hype-job` mesmo que já tenha tentado antes.
-- Garantir que múltiplos cliques não criem jobs paralelos enquanto já estiver processando.
+1. Corrigir o schema no Supabase self-hosted
+- Entregar SQL para rodar no Studio self-hosted que remove o constraint antigo de `ai_jobs.job_type` e recria aceitando também:
+  - `task_examples`
+  - `hype`
+- Garantir também as colunas opcionais já usadas pelo polling/logs:
+  - `attempts`
+  - `model_used`
 
-2. Blindar o backend do Hype contra falhas parciais
-- Em `supabase/functions/start-hype-job/index.ts`, tratar falhas de leitura/gravação de `daily_hype_raw` como degradadas, não como erro fatal.
-- Se coleta de tendências ou upsert falhar, seguir para modo evergreen via Gemini, em vez de devolver erro para o usuário.
-- Se o Gemini devolver lista vazia, retornar uma mensagem clara e persistir falha amigável no `ai_jobs`, em vez de mostrar “sem tendências”.
+2. Adicionar uma migration local/documentada no projeto
+- Criar uma migration no repositório com o mesmo ajuste, para o schema versionado ficar correto daqui pra frente.
+- Mesmo sabendo que Lovable migrations não aplicam no self-hosted, isso evita o bug voltar em ambientes novos.
 
-3. Melhorar visibilidade do erro
-- Fazer o frontend exibir mensagem mais útil quando o job falhar, diferenciando:
-  - falha ao iniciar job;
-  - falha no polling;
-  - job finalizado sem itens.
-- Manter o texto simples para o usuário, mas preservar logs técnicos no console/função.
+3. Melhorar o erro da Edge Function
+- Em `_shared/ai-job-runner.ts`, quando falhar ao inserir `ai_jobs`, retornar uma mensagem mais diagnóstica apenas para esse caso, sem vazar secrets.
+- Exemplo: se for violação de constraint em `job_type`, responder algo como: “Tipo de job não aceito no banco. Atualize o schema de ai_jobs.”
 
-4. Entregar checklist para o self-hosted
-- Como o backend real é self-hosted, entregar junto o SQL de verificação/criação das tabelas `daily_hype_raw` e `user_daily_hype` para rodar no Studio do self-hosted se ainda não existir.
-- Entregar o bloco de deploy da VPS para publicar a função atualizada.
+4. Bloco de aplicação na VPS/self-hosted
+- Entregar os comandos finais:
+  - `git pull`
+  - deploy das functions
+  - SQL para rodar no Studio self-hosted
+
+SQL principal que será entregue:
+```sql
+alter table public.ai_jobs
+  drop constraint if exists ai_jobs_job_type_check;
+
+alter table public.ai_jobs
+  add constraint ai_jobs_job_type_check
+  check (job_type in ('tools', 'script', 'daily_guide', 'transcription', 'task_examples', 'hype'));
+
+alter table public.ai_jobs add column if not exists attempts int;
+alter table public.ai_jobs add column if not exists model_used text;
+```
 
 Resultado esperado:
-- Clicar em “Hype do dia”/atualizar realmente tenta gerar de novo.
-- Se Google/YouTube/Reddit falharem, o usuário ainda recebe 5 pautas evergreen.
-- O card não fica preso em “sem tendências” por causa de uma tentativa anterior falhada.
+- `start-hype-job` conseguirá criar a linha em `ai_jobs`.
+- O frontend receberá `jobId`.
+- O polling continuará em `get-ai-job-status`.
+- Como já existem trends coletadas, o Hype do Dia deve gerar os 5 itens em vez de parar em “Não foi possível iniciar o job”.
