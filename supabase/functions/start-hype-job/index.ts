@@ -203,7 +203,7 @@ Escolha as 15 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON ped
       }
 
       const payload = res.json as { items: unknown[] };
-      const items = Array.isArray(payload.items) ? payload.items.slice(0, 5) : [];
+      const items = Array.isArray(payload.items) ? payload.items.slice(0, 15) : [];
       if (items.length === 0) {
         throw new JobError("A IA não retornou sugestões desta vez. Tente novamente em instantes.");
       }
