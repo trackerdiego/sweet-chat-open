@@ -49,7 +49,7 @@ export function useDailyHype() {
         .eq('date', today)
         .maybeSingle();
 
-      if (data?.items && Array.isArray(data.items) && data.items.length > 0) {
+      if (!force && data?.items && Array.isArray(data.items) && data.items.length > 0) {
         setItems(data.items as HypeItem[]);
         setLoading(false);
         return;
