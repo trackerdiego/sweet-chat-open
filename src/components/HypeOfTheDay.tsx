@@ -1,27 +1,36 @@
-// HypeOfTheDay — card de tendências do dia personalizadas pro nicho do criador.
-// Lê de user_daily_hype (cache 24h); se vazio, dispara job assíncrono.
+// HypeOfTheDay — HERO do painel. Grid neon de tendências do dia personalizadas.
 
 import { motion } from 'framer-motion';
-import { Flame, TrendingUp, ChevronRight, Copy, Check, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { Flame, TrendingUp, Copy, Check, RefreshCw, Youtube, Search, MessageCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useDailyHype, type HypeItem } from '@/hooks/useDailyHype';
 import { useToast } from '@/hooks/use-toast';
 
-const SOURCE_LABEL: Record<string, string> = {
-  google_trends: 'Google',
-  reddit: 'Reddit',
-  youtube: 'YouTube',
+const SOURCE_META: Record<string, { label: string; Icon: typeof Youtube; color: string }> = {
+  youtube: { label: 'YouTube', Icon: Youtube, color: 'hsl(0 85% 60%)' },
+  google_trends: { label: 'Google', Icon: Search, color: 'hsl(210 90% 60%)' },
+  reddit: { label: 'Reddit', Icon: MessageCircle, color: 'hsl(15 90% 55%)' },
+  evergreen: { label: 'Evergreen', Icon: Flame, color: 'hsl(270 90% 65%)' },
 };
+
+function sourceMeta(s: string) {
+  return SOURCE_META[s] || { label: s, Icon: Flame, color: 'hsl(270 90% 65%)' };
+}
 
 export function HypeOfTheDay() {
   const { items, loading, error, reload } = useDailyHype();
   const [open, setOpen] = useState<HypeItem | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
+    (items || []).forEach((i) => { map[i.fonte] = (map[i.fonte] || 0) + 1; });
+    return map;
+  }, [items]);
 
   const handleCopy = async (text: string) => {
     try {
@@ -36,87 +45,118 @@ export function HypeOfTheDay() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border/40 bg-card/40 backdrop-blur p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Flame className="w-4 h-4 text-orange-500" />
-          <span className="text-sm font-semibold">Hype do dia</span>
+      <section className="space-y-3">
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Flame className="w-5 h-5 text-orange-500" />
+            <h2 className="font-serif text-xl font-semibold">Hype do dia</h2>
+          </div>
+        </header>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl" />
+          ))}
         </div>
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-4 w-1/2" />
-        <Skeleton className="h-16 w-full rounded-xl" />
         <p className="text-xs text-muted-foreground">Vasculhando tendências do Brasil pra você…</p>
-      </div>
+      </section>
     );
   }
 
   if (error || !items || items.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/40 bg-card/40 backdrop-blur p-4">
+      <section className="app-neon-border soft p-5">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Flame className="w-4 h-4 text-orange-500" />
-            <span className="text-sm font-semibold">Hype do dia</span>
+            <Flame className="w-5 h-5 text-orange-500" />
+            <h2 className="font-serif text-lg font-semibold">Hype do dia</h2>
           </div>
-          <Button size="sm" variant="ghost" onClick={reload} className="h-7 px-2">
-            <RefreshCw className="w-3.5 h-3.5" />
+          <Button size="sm" variant="ghost" onClick={reload} className="h-8 px-2">
+            <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
           {error || 'Sem tendências no momento. Tente novamente em instantes.'}
         </p>
-      </div>
+      </section>
     );
   }
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 via-card/40 to-pink-500/5 backdrop-blur p-4 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Flame className="w-4 h-4 text-orange-500" />
-            <span className="text-sm font-semibold">Hype do dia</span>
-            <span className="text-xs text-muted-foreground">— top 5 pro seu nicho</span>
+      <section className="space-y-3">
+        <header className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-orange-500/20 to-pink-500/20 border border-orange-500/30">
+              <Flame className="w-4 h-4 text-orange-500" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-serif text-xl font-semibold leading-tight">Hype do dia</h2>
+              <p className="text-[11px] text-muted-foreground">{items.length} tendências pro seu nicho</p>
+            </div>
           </div>
-          <Button size="sm" variant="ghost" onClick={reload} className="h-7 px-2 text-muted-foreground">
-            <RefreshCw className="w-3.5 h-3.5" />
+          <Button size="sm" variant="ghost" onClick={reload} className="h-8 px-2 text-muted-foreground shrink-0">
+            <RefreshCw className="w-4 h-4" />
           </Button>
+        </header>
+
+        {/* Counters por fonte */}
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(counts).map(([src, n]) => {
+            const m = sourceMeta(src);
+            const Icon = m.Icon;
+            return (
+              <span
+                key={src}
+                className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-border/60 bg-card/50 text-muted-foreground"
+              >
+                <Icon className="w-3 h-3" style={{ color: m.color }} />
+                {m.label} <strong className="text-foreground">{n}</strong>
+              </span>
+            );
+          })}
         </div>
 
-        <div className="space-y-2">
-          {items.map((item, i) => (
-            <button
-              key={i}
-              onClick={() => setOpen(item)}
-              className="w-full text-left p-3 rounded-xl bg-background/60 hover:bg-background/90 border border-border/30 transition-all group"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500/10 flex items-center justify-center text-xs font-bold text-orange-500">
-                  {i + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-sm font-medium truncate">{item.tema}</span>
+        {/* Grid neon */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {items.map((item, i) => {
+            const m = sourceMeta(item.fonte);
+            const Icon = m.Icon;
+            return (
+              <motion.button
+                key={i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.03, 0.3) }}
+                onClick={() => setOpen(item)}
+                className="app-neon-border text-left p-4 transition-all group"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-gradient-to-br from-primary/20 to-accent/20 text-primary border border-primary/30">
+                    {i + 1}
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-1">{item.porque_bombou}</p>
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal">
-                      {item.formato_sugerido}
-                    </Badge>
-                    <span className="text-[10px] text-muted-foreground">
-                      {SOURCE_LABEL[item.fonte] || item.fonte}
-                    </span>
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <h3 className="font-serif text-base font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                      {item.tema}
+                    </h3>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      {item.porque_bombou}
+                    </p>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/60 bg-card/60 font-medium">
+                        {item.formato_sugerido}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Icon className="w-3 h-3" style={{ color: m.color }} />
+                        {m.label}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground self-center flex-shrink-0 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </button>
-          ))}
+              </motion.button>
+            );
+          })}
         </div>
-      </motion.div>
+      </section>
 
       <Sheet open={!!open} onOpenChange={(v) => !v && setOpen(null)}>
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
@@ -157,7 +197,7 @@ export function HypeOfTheDay() {
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border/50">
                   <span>Formato sugerido: <strong className="text-foreground">{open.formato_sugerido}</strong></span>
-                  <span>Fonte: {SOURCE_LABEL[open.fonte] || open.fonte}</span>
+                  <span>Fonte: {sourceMeta(open.fonte).label}</span>
                 </div>
               </div>
             </>
