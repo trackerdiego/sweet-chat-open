@@ -54,31 +54,31 @@ export default function Help() {
   }, [location.hash]);
 
   return (
-    <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-12 rounded-b-3xl">
-        <div className="max-w-lg mx-auto">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(-1)}
-            className="text-white/70 hover:text-white hover:bg-white/10 mb-2"
-            aria-label="Voltar"
-          >
-            <ArrowLeft size={20} />
-          </Button>
-          <div className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-white/15 flex items-center justify-center mb-3">
-              <HelpCircle className="text-white" size={24} />
-            </div>
-            <h1 className="font-serif text-2xl font-bold text-white">Central de ajuda</h1>
-            <p className="text-white/60 text-sm mt-1">
-              Tire suas dúvidas e aproveite ao máximo
-            </p>
+    <div className="min-h-screen pb-24 md:pb-6 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(-1)}
+          className="text-foreground/70 hover:text-foreground mb-2"
+          aria-label="Voltar"
+        >
+          <ArrowLeft size={20} />
+        </Button>
+        <div className="text-center">
+          <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'hsl(270 95% 65% / 0.12)', border: '1px solid hsl(270 95% 65% / 0.35)' }}>
+            <HelpCircle className="text-primary" size={24} />
           </div>
+          <h1 className="font-serif text-3xl font-bold text-foreground">Central de ajuda</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Tire suas dúvidas e aproveite ao máximo
+          </p>
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6">
+      <div className="relative z-10 max-w-lg mx-auto px-4 space-y-6">
         {/* ===================== TUTORIAIS EM VÍDEO ===================== */}
         <section className="space-y-3">
           <div className="flex items-center gap-2 px-1">
