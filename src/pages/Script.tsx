@@ -4,6 +4,7 @@ import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const Script = () => {
   const { strategies, loading } = useUserStrategies();
