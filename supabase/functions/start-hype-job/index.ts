@@ -92,9 +92,34 @@ serve(async (req) => {
         }
       }
 
-      const degraded = allTrends.length === 0;
+      // Pré-filtro: remove política/tragédia/esporte/etc antes de mandar pro Gemini
+      const BLOCKLIST = [
+        'política','politica','eleição','eleicao','eleições','eleicoes','presidente',
+        'lula','bolsonaro','stf','congresso','ministro','senador','deputado','governo',
+        'guerra','israel','palestina','hamas','ucrânia','ucrania','russia','rússia',
+        'atentado','morre','morreu','morto','morta','falece','faleceu','tragédia','tragedia',
+        'acidente','assassinato','assassino','crime','polícia','policia','facção','faccao',
+        'futebol','libertadores','brasileirão','brasileirao','copa','seleção brasileira',
+        'flamengo','palmeiras','corinthians','são paulo fc','vasco','santos fc',
+        'bolsa','dólar','dolar','ibovespa','inflação','inflacao','juros','selic',
+      ];
+      const isBlocked = (txt: string) => {
+        const t = (txt || '').toLowerCase();
+        return BLOCKLIST.some((w) => t.includes(w));
+      };
+      const filtered = allTrends.filter((t) => !isBlocked(`${t.title} ${t.context ?? ''}`));
+      console.log(`[start-hype-job] filter: ${allTrends.length} -> ${filtered.length}`);
+
+      // Boost score em fontes meme-friendly (shorts/music)
+      const boosted = filtered.map((t) => {
+        const sub = (t.subsource || '').toLowerCase();
+        const boost = sub === 'shorts' ? 50 : sub === 'music' ? 30 : 0;
+        return { ...t, score: (t.score ?? 0) + boost };
+      });
+
+      const degraded = boosted.length < 10;
       if (degraded) {
-        console.warn(`[start-hype-job] ZERO trends — caindo pra evergreen via Gemini`);
+        console.warn(`[start-hype-job] poucos trends após filtro (${boosted.length}) — caindo pra evergreen`);
       }
 
       // 3) Perfil do user pra personalizar
@@ -107,15 +132,15 @@ serve(async (req) => {
       const style = profile?.content_style || "casual";
       const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
 
-      // Compacta trends (top 60). Em modo degraded, vai vazio e prompt vira evergreen.
-      const compact = allTrends
+      // Compacta trends (top 60).
+      const compact = boosted
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
         .slice(0, 60)
         .map((t) => `[${t.source}${t.subsource ? "/" + t.subsource : ""}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
         .join("\n");
 
 
-      const systemInstruction = `Você é um curador de tendências brasileiro especialista em criação de conteúdo para o nicho "${niche}". Estilo do criador: ${style}.
+      const systemInstruction = `Você é um curador de MEMES e VIRAIS brasileiros, especialista em criar conteúdo de creator para o nicho "${niche}". Estilo do criador: ${style}.
 
 PERFIL DO PÚBLICO:
 Avatar: ${ap.avatar || "não definido"}
@@ -123,12 +148,26 @@ Desejo oculto: ${ap.deepOccultDesire || ""}
 Dores: ${JSON.stringify(ap.coreWounds || [])}
 Gatilhos verbais: ${JSON.stringify(ap.verbalTriggers || [])}
 
-REGRAS:
-- Escreva em português brasileiro padrão (norma culta), ortografia impecável.
+FOCO (o que SIM):
+- Memes brasileiros do momento (frases virais, áudios do TikTok, edits, trends de áudio)
+- Cultura pop leve (novelas, BBB/realities, lançamentos de música, séries, filmes)
+- Trends de formato curtinho (POV, "que dia é hoje", desafios, transições, before/after viral)
+- Curiosidades, "ninguém fala sobre isso", micro-virais orgânicos
+- Conteúdo de creator: bastidor, "isso ninguém te conta", lista, mito x verdade
+
+PROIBIDO TOTAL (nunca devolver, descarta de vez):
+- Qualquer assunto político, eleitoral, governo, STF, presidente, ministros, partidos
+- Religioso polêmico, guerra (Israel/Ucrânia/etc), conflitos internacionais
+- Tragédias, mortes, acidentes, crimes, violência, facções, polícia
+- Esporte sério (futebol, libertadores, seleção) — exceto se o nicho for exatamente esporte
+- Economia pesada (bolsa, dólar, juros, inflação)
+
+REGRAS DE ESCRITA:
+- Português brasileiro padrão (norma culta), ortografia impecável.
 - PROIBIDO: "todes", "amigues", "x"/"e"/"@" trocando gênero, abreviações ("vc", "pq", "tb").
-- Selecione apenas tendências que CONVERSAM com o nicho "${niche}" e o público acima.
-- Descarte tendências políticas pesadas, tragédias, esporte (a menos que o nicho seja exatamente isso).
-- Cada item deve ter um gancho PRONTO pra gravar (não genérico).`;
+- Tudo precisa conversar com o nicho "${niche}" e o público acima — se não dá pra conectar, descarta.
+- Cada item tem gancho PRONTO pra gravar, com cara de meme/viral (não reportagem, não jornal).
+- formato_sugerido: priorize "Reels" e "TikTok". "Carrossel" só pra lista/dica/tutorial. "Story" raramente.`;
 
       const prompt = degraded
         ? `As fontes de tendências em tempo real estão indisponíveis agora (${today}).
