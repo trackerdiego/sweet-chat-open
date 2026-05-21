@@ -10,9 +10,20 @@ import logo from '@/assets/vyrallab-logo-light.png';
 import { InAppBrowserBanner } from '@/components/InAppBrowserBanner';
 
 const REF_STORAGE_KEY = 'pending_ref';
+const CHECKOUT_PLAN_KEY = 'pending_checkout_plan';
+
+const PLAN_LABELS: Record<string, { label: string; price: string }> = {
+  yearly: { label: 'Anual', price: 'R$297/ano (≈ R$24,75/mês)' },
+  monthly: { label: 'Mensal', price: 'R$47/mês' },
+};
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
+  const initialParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const initialPlan = initialParams.get('plan');
+  const initialMode = initialParams.get('mode');
+  const startAsSignup = initialMode === 'signup' || (!!initialPlan && (initialPlan === 'monthly' || initialPlan === 'yearly'));
+
+  const [isLogin, setIsLogin] = useState(!startAsSignup);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [displayName, setDisplayName] = useState('');
@@ -21,6 +32,15 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [refCode, setRefCode] = useState<string | null>(null);
   const [refOwnerName, setRefOwnerName] = useState<string | null>(null);
+  const [pendingPlan] = useState<string | null>(
+    initialPlan === 'monthly' || initialPlan === 'yearly' ? initialPlan : null
+  );
+
+  useEffect(() => {
+    if (pendingPlan) {
+      try { sessionStorage.setItem(CHECKOUT_PLAN_KEY, pendingPlan); } catch {}
+    }
+  }, [pendingPlan]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
