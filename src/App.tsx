@@ -7,6 +7,7 @@ import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
 import { TrialBanner } from "@/components/TrialBanner";
 import { AccessGuard } from "@/components/AccessGuard";
+import { AutoCheckoutOpener } from "@/components/AutoCheckoutOpener";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import Index from "./pages/Index";
 import Matrix from "./pages/Matrix";
