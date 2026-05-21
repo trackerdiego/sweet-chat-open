@@ -67,6 +67,19 @@ function AppRoutes() {
     );
   }
 
+  // Paywall: usuário autenticado mas SEM assinatura ativa fica preso aqui
+  // independente de onboarding. Só libera quando o webhook Asaas marcar
+  // subscription_state.status='active'. Evita acesso grátis via trial legado
+  // e impede que o cadastro mande pro onboarding antes de pagar.
+  if (!subLoading && !isActive) {
+    return (
+      <Routes>
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<PaywallScreen />} />
+      </Routes>
+    );
+  }
+
   if (needsOnboarding) {
     return (
       <>
