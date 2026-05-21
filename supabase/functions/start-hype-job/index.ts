@@ -105,15 +105,6 @@ serve(async (req) => {
         .map((t) => `[${t.source}${t.subsource ? "/" + t.subsource : ""}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
         .join("\n");
 
-      // 3) Perfil do user pra personalizar
-      const [{ data: profile }, { data: audience }] = await Promise.all([
-        userClient.from("user_profiles").select("primary_niche, content_style, audience_size, display_name").eq("user_id", userId).maybeSingle(),
-        userClient.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
-      ]);
-
-      const niche = profile?.primary_niche || "lifestyle";
-      const style = profile?.content_style || "casual";
-      const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
 
       const systemInstruction = `Você é um curador de tendências brasileiro especialista em criação de conteúdo para o nicho "${niche}". Estilo do criador: ${style}.
 
