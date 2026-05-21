@@ -1,13 +1,20 @@
 // fetch-daily-hype — cron diário (06h BRT / 09h UTC).
-// Coleta trends de Google Trends BR + Reddit + YouTube e grava em daily_hype_raw
-// (1 row por fonte por dia). Compartilhado entre todos os users.
+// Coleta trends de Google Trends (RSS + Realtime) + Reddit (best-effort) +
+// YouTube Trending + YouTube Shorts + YouTube Music e grava em daily_hype_raw.
 //
 // Proteção: header `x-cron-secret` deve bater com env CRON_SECRET, senão 401.
 // Pode ser chamada manualmente pra forçar refresh.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { fetchGoogleTrendsBR, fetchReddit, fetchYouTubeTrendingBR } from "../_shared/hype-sources.ts";
+import {
+  fetchGoogleTrendsBR,
+  fetchGoogleTrendsRealtimeBR,
+  fetchReddit,
+  fetchYouTubeTrendingBR,
+  fetchYouTubeShortsBR,
+  fetchYouTubeMusicTrendingBR,
+} from "../_shared/hype-sources.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,16 +42,23 @@ serve(async (req) => {
   const today = new Date().toISOString().split("T")[0];
   const youtubeKey = Deno.env.get("YOUTUBE_API_KEY") ?? "";
 
-  const [trends, reddit, youtube] = await Promise.all([
+  const [gtRss, gtRealtime, reddit, ytTrending, ytShorts, ytMusic] = await Promise.all([
     fetchGoogleTrendsBR(),
+    fetchGoogleTrendsRealtimeBR(),
     fetchReddit(),
     fetchYouTubeTrendingBR(youtubeKey),
+    fetchYouTubeShortsBR(youtubeKey),
+    fetchYouTubeMusicTrendingBR(youtubeKey),
   ]);
 
+  // Agrupa por source bucket (a tabela tem UNIQUE date+source)
+  const googleAll = [...gtRss, ...gtRealtime];
+  const youtubeAll = [...ytTrending, ...ytShorts, ...ytMusic];
+
   const rows = [
-    { date: today, source: "google_trends", trends },
+    { date: today, source: "google_trends", trends: googleAll },
     { date: today, source: "reddit", trends: reddit },
-    { date: today, source: "youtube", trends: youtube },
+    { date: today, source: "youtube", trends: youtubeAll },
   ].filter((r) => r.trends.length > 0);
 
   const { error } = await admin
@@ -61,7 +75,15 @@ serve(async (req) => {
 
   const summary = {
     date: today,
-    counts: { google_trends: trends.length, reddit: reddit.length, youtube: youtube.length },
+    counts: {
+      google_trends_rss: gtRss.length,
+      google_trends_realtime: gtRealtime.length,
+      reddit: reddit.length,
+      youtube_trending: ytTrending.length,
+      youtube_shorts: ytShorts.length,
+      youtube_music: ytMusic.length,
+      total: googleAll.length + reddit.length + youtubeAll.length,
+    },
   };
   console.log("[fetch-daily-hype] ok", summary);
   return new Response(JSON.stringify({ ok: true, ...summary }), {

@@ -6,9 +6,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 import { corsHeaders, jsonResponse, enqueueJob, runInBackground, JobError } from "../_shared/ai-job-runner.ts";
-import { fetchGoogleTrendsBR, fetchReddit, fetchYouTubeTrendingBR, type RawTrend } from "../_shared/hype-sources.ts";
+import {
+  fetchGoogleTrendsBR,
+  fetchGoogleTrendsRealtimeBR,
+  fetchReddit,
+  fetchYouTubeTrendingBR,
+  fetchYouTubeShortsBR,
+  fetchYouTubeMusicTrendingBR,
+  type RawTrend,
+} from "../_shared/hype-sources.ts";
 
-const FUNCTION_VERSION = "2026-05-21-hype-v1";
+const FUNCTION_VERSION = "2026-05-21-hype-v2-multisource";
 console.log(`[start-hype-job] boot v=${FUNCTION_VERSION}`);
 
 serve(async (req) => {
@@ -48,27 +56,36 @@ serve(async (req) => {
           if (Array.isArray(r.trends)) allTrends.push(...(r.trends as RawTrend[]));
         }
       } else {
-        console.log(`[start-hype-job] no raw data for ${today}, fetching live`);
+        console.log(`[start-hype-job] no raw data for ${today}, fetching live (6 sources)`);
         const youtubeKey = Deno.env.get("YOUTUBE_API_KEY") ?? "";
-        const [gt, rd, yt] = await Promise.all([
+        const [gtRss, gtRealtime, rd, ytTrending, ytShorts, ytMusic] = await Promise.all([
           fetchGoogleTrendsBR(),
+          fetchGoogleTrendsRealtimeBR(),
           fetchReddit(),
           fetchYouTubeTrendingBR(youtubeKey),
+          fetchYouTubeShortsBR(youtubeKey),
+          fetchYouTubeMusicTrendingBR(youtubeKey),
         ]);
-        allTrends = [...gt, ...rd, ...yt];
-        // grava pra próximos users do dia já pegarem do cache
+        const googleAll = [...gtRss, ...gtRealtime];
+        const youtubeAll = [...ytTrending, ...ytShorts, ...ytMusic];
+        allTrends = [...googleAll, ...rd, ...youtubeAll];
+        console.log(`[start-hype-job] live counts`, {
+          gtRss: gtRss.length, gtRealtime: gtRealtime.length, reddit: rd.length,
+          ytTrending: ytTrending.length, ytShorts: ytShorts.length, ytMusic: ytMusic.length,
+        });
         const rows = [
-          { date: today, source: "google_trends", trends: gt },
+          { date: today, source: "google_trends", trends: googleAll },
           { date: today, source: "reddit", trends: rd },
-          { date: today, source: "youtube", trends: yt },
+          { date: today, source: "youtube", trends: youtubeAll },
         ].filter((r) => r.trends.length > 0);
         if (rows.length > 0) {
           await admin.from("daily_hype_raw").upsert(rows, { onConflict: "date,source" });
         }
       }
 
-      if (allTrends.length === 0) {
-        throw new JobError("Não conseguimos puxar tendências agora. Tente novamente em alguns minutos.");
+      const degraded = allTrends.length === 0;
+      if (degraded) {
+        console.warn(`[start-hype-job] ZERO trends — caindo pra evergreen via Gemini`);
       }
 
       // 3) Perfil do user pra personalizar
@@ -81,12 +98,22 @@ serve(async (req) => {
       const style = profile?.content_style || "casual";
       const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
 
-      // Compacta trends (top 60) pra caber no prompt
+      // Compacta trends (top 60). Em modo degraded, vai vazio e prompt vira evergreen.
       const compact = allTrends
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
         .slice(0, 60)
-        .map((t) => `[${t.source}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
+        .map((t) => `[${t.source}${t.subsource ? "/" + t.subsource : ""}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
         .join("\n");
+
+      // 3) Perfil do user pra personalizar
+      const [{ data: profile }, { data: audience }] = await Promise.all([
+        userClient.from("user_profiles").select("primary_niche, content_style, audience_size, display_name").eq("user_id", userId).maybeSingle(),
+        userClient.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
+      ]);
+
+      const niche = profile?.primary_niche || "lifestyle";
+      const style = profile?.content_style || "casual";
+      const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
 
       const systemInstruction = `Você é um curador de tendências brasileiro especialista em criação de conteúdo para o nicho "${niche}". Estilo do criador: ${style}.
 
@@ -103,7 +130,17 @@ REGRAS:
 - Descarte tendências políticas pesadas, tragédias, esporte (a menos que o nicho seja exatamente isso).
 - Cada item deve ter um gancho PRONTO pra gravar (não genérico).`;
 
-      const prompt = `TENDÊNCIAS BRASILEIRAS DE HOJE (${today}):
+      const prompt = degraded
+        ? `As fontes de tendências em tempo real estão indisponíveis agora (${today}).
+
+Gere 5 PAUTAS EVERGREEN de altíssima conversão pro nicho "${niche}", aproveitando o perfil do público descrito acima. Devem parecer atuais e relevantes, baseadas em padrões de conteúdo que SEMPRE funcionam nesse nicho (curiosidade, transformação, mito x verdade, bastidor, antes/depois, lista). Para cada uma:
+- tema: o nome curto da pauta
+- porque_bombou: 1 frase explicando por que esse ângulo sempre engaja nesse nicho
+- gancho: frase de abertura pronta pra falar na câmera (1ª pessoa, máx 180 caracteres, faz o público parar de scrollar)
+- formato_sugerido: "Reels", "Story", "Carrossel" ou "TikTok"
+- angulo: como conectar a pauta ao nicho "${niche}" em 1 frase
+- fonte: use "evergreen"`
+        : `TENDÊNCIAS BRASILEIRAS DE HOJE (${today}):
 
 ${compact}
 
@@ -168,13 +205,16 @@ Escolha as 5 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON pedi
       const payload = res.json as { items: unknown[] };
       const items = Array.isArray(payload.items) ? payload.items.slice(0, 5) : [];
 
-      // Persiste no cache do user
-      await admin
-        .from("user_daily_hype")
-        .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+      // Persiste no cache só quando NÃO degraded — assim a próxima chamada
+      // tenta de novo trazer tendências reais em vez de servir evergreen 24h.
+      if (!degraded) {
+        await admin
+          .from("user_daily_hype")
+          .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+      }
 
-      console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, attempts: res.attempts, modelUsed: res.modelUsed });
-      return { items, cached: false, __meta: { attempts: res.attempts, modelUsed: res.modelUsed } };
+      console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, degraded, attempts: res.attempts, modelUsed: res.modelUsed });
+      return { items, cached: false, __meta: { attempts: res.attempts, modelUsed: res.modelUsed, degraded } };
     });
 
     return jsonResponse({ jobId });
