@@ -113,6 +113,33 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_hype_raw: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          raw_text: string | null
+          source: string
+          trends: Json
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          raw_text?: string | null
+          source: string
+          trends?: Json
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          raw_text?: string | null
+          source?: string
+          trends?: Json
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -436,6 +463,30 @@ export type Database = {
           created_at?: string | null
           feature?: string
           id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_daily_hype: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          items: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          items?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          items?: Json
           user_id?: string
         }
         Relationships: []
