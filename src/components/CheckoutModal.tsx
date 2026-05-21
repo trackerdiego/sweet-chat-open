@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 interface CheckoutModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialPlan?: "monthly" | "yearly";
 }
 
 function formatCPF(value: string) {
