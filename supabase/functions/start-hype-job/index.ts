@@ -115,13 +115,6 @@ serve(async (req) => {
       const style = profile?.content_style || "casual";
       const ap = (audience?.avatar_profile as Record<string, unknown> | null) ?? {};
 
-      // Compacta trends (top 60) pra caber no prompt
-      const compact = allTrends
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, 60)
-        .map((t) => `[${t.source}${t.category ? "|" + t.category : ""}] ${t.title}${t.context ? " — " + t.context : ""}`)
-        .join("\n");
-
       const systemInstruction = `Você é um curador de tendências brasileiro especialista em criação de conteúdo para o nicho "${niche}". Estilo do criador: ${style}.
 
 PERFIL DO PÚBLICO:
@@ -137,7 +130,17 @@ REGRAS:
 - Descarte tendências políticas pesadas, tragédias, esporte (a menos que o nicho seja exatamente isso).
 - Cada item deve ter um gancho PRONTO pra gravar (não genérico).`;
 
-      const prompt = `TENDÊNCIAS BRASILEIRAS DE HOJE (${today}):
+      const prompt = degraded
+        ? `As fontes de tendências em tempo real estão indisponíveis agora (${today}).
+
+Gere 5 PAUTAS EVERGREEN de altíssima conversão pro nicho "${niche}", aproveitando o perfil do público descrito acima. Devem parecer atuais e relevantes, baseadas em padrões de conteúdo que SEMPRE funcionam nesse nicho (curiosidade, transformação, mito x verdade, bastidor, antes/depois, lista). Para cada uma:
+- tema: o nome curto da pauta
+- porque_bombou: 1 frase explicando por que esse ângulo sempre engaja nesse nicho
+- gancho: frase de abertura pronta pra falar na câmera (1ª pessoa, máx 180 caracteres, faz o público parar de scrollar)
+- formato_sugerido: "Reels", "Story", "Carrossel" ou "TikTok"
+- angulo: como conectar a pauta ao nicho "${niche}" em 1 frase
+- fonte: use "evergreen"`
+        : `TENDÊNCIAS BRASILEIRAS DE HOJE (${today}):
 
 ${compact}
 
