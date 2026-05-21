@@ -78,10 +78,14 @@ const Index = () => {
 
   return (
     <div className="min-h-screen pb-24 md:pt-20 relative overflow-hidden">
-      {/* Background neon orbs (sempre, em ambos os temas) */}
-      <div className="app-neon-orb" style={{ width: 460, height: 460, background: 'hsl(270 95% 60%)', top: -180, left: -160 }} />
-      <div className="app-neon-orb" style={{ width: 360, height: 360, background: 'hsl(322 90% 60%)', top: 240, right: -140 }} />
-      <div className="app-neon-orb" style={{ width: 300, height: 300, background: 'hsl(258 85% 55%)', bottom: -100, left: -80, opacity: 0.3 }} />
+      {/* Background neon orbs (apenas no tema dark) */}
+      {isDark && (
+        <>
+          <div className="app-neon-orb" style={{ width: 460, height: 460, background: 'hsl(270 95% 60%)', top: -180, left: -160 }} />
+          <div className="app-neon-orb" style={{ width: 360, height: 360, background: 'hsl(322 90% 60%)', top: 240, right: -140 }} />
+          <div className="app-neon-orb" style={{ width: 300, height: 300, background: 'hsl(258 85% 55%)', bottom: -100, left: -80, opacity: 0.3 }} />
+        </>
+      )}
 
       <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5">
         <motion.div
