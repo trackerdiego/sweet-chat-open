@@ -17,6 +17,7 @@ import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunc
 import { HelpButton } from '@/components/HelpButton';
 import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const SOCIAL_LINK_REGEX = /(https?:\/\/)?(www\.)?(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|kwai\.com)\/\S+/i;
 
