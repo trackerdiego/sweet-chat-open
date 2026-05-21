@@ -82,6 +82,7 @@ function AppRoutes() {
       <PixDueBanner />
       <InstallBanner />
       <TrialBanner />
+      <AutoCheckoutOpener />
       <Navigation />
       <AccessGuard>
         <Routes>
