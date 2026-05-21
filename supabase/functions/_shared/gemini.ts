@@ -230,9 +230,7 @@ export async function callGeminiNative(opts: GeminiOptions): Promise<GeminiResul
     contents: opts.contents ?? [{ role: "user", parts: [{ text: opts.prompt ?? "" }] }],
     generationConfig,
   };
-  if (opts.systemInstruction) {
-    body.systemInstruction = { parts: [{ text: opts.systemInstruction }] };
-  }
+  body.systemInstruction = { parts: [{ text: withLanguageRule(opts.systemInstruction) }] };
 
   const startedAt = Date.now();
   const globalDeadline = startedAt + (opts.globalDeadlineMs ?? 90000);
