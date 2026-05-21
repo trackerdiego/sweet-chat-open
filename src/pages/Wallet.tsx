@@ -45,20 +45,22 @@ export default function Wallet() {
     : null;
 
   return (
-    <div className="min-h-screen pb-24 md:pb-6 md:pt-20">
-      <div className="gradient-header px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-12 rounded-b-3xl text-center">
-        <h1 className="font-serif text-2xl font-bold text-white">Sua carteira 🪙</h1>
-        <p className="text-white/60 text-sm mt-1">Ganhe coins e desconto na assinatura</p>
+    <div className="min-h-screen pb-24 md:pb-6 md:pt-20 relative overflow-hidden">
+      <PageBackdrop />
+
+      <div className="relative z-10 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-4 max-w-lg mx-auto text-center">
+        <h1 className="font-serif text-3xl font-bold text-foreground">Sua carteira 🪙</h1>
+        <p className="text-muted-foreground text-sm mt-1">Ganhe coins e desconto na assinatura</p>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-4">
-        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="glass-card p-6 text-center">
-          <div className="flex items-center justify-center gap-2 text-primary">
+      <div className="relative z-10 max-w-lg mx-auto px-4 space-y-4">
+        <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="app-hero-gradient p-6 text-center">
+          <div className="flex items-center justify-center gap-2 text-white">
             <Coins size={28} />
             <span className="text-4xl font-bold tabular-nums">{loading ? '—' : wallet.coins_balance}</span>
           </div>
-          <p className="text-sm text-muted-foreground mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
+          <p className="text-sm text-white/80 mt-2">≈ R$ {discountBrl.toFixed(2)} em desconto</p>
+          <p className="text-xs text-white/60 mt-1">Total acumulado: {wallet.lifetime_coins_earned} coins</p>
         </motion.div>
 
         {hasPendingPixInvoice && invoice && (() => {
