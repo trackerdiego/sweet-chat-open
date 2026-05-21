@@ -205,13 +205,16 @@ Escolha as 5 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON pedi
       const payload = res.json as { items: unknown[] };
       const items = Array.isArray(payload.items) ? payload.items.slice(0, 5) : [];
 
-      // Persiste no cache do user
-      await admin
-        .from("user_daily_hype")
-        .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+      // Persiste no cache só quando NÃO degraded — assim a próxima chamada
+      // tenta de novo trazer tendências reais em vez de servir evergreen 24h.
+      if (!degraded) {
+        await admin
+          .from("user_daily_hype")
+          .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+      }
 
-      console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, attempts: res.attempts, modelUsed: res.modelUsed });
-      return { items, cached: false, __meta: { attempts: res.attempts, modelUsed: res.modelUsed } };
+      console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, degraded, attempts: res.attempts, modelUsed: res.modelUsed });
+      return { items, cached: false, __meta: { attempts: res.attempts, modelUsed: res.modelUsed, degraded } };
     });
 
     return jsonResponse({ jobId });
