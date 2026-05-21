@@ -45,9 +45,11 @@ const tools: ToolConfig[] = [
 function ToolCard({ tool, onClick }: { tool: ToolConfig; onClick: () => void }) {
   const Icon = tool.icon;
   return (
-    <motion.button initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} whileTap={{ scale: 0.97 }} onClick={onClick} className="w-full glass-card p-5 text-left hover:shadow-md transition-shadow">
+    <motion.button initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} whileTap={{ scale: 0.97 }} onClick={onClick} className="w-full app-neon-border soft p-5 text-left transition-shadow">
       <div className="flex items-start gap-4">
-        <div className="p-2.5 rounded-xl bg-primary/10 shrink-0"><Icon size={22} className="text-primary" /></div>
+        <div className="p-2.5 rounded-xl shrink-0" style={{ background: 'hsl(270 95% 65% / 0.12)', border: '1px solid hsl(270 95% 65% / 0.35)' }}>
+          <Icon size={22} className="text-primary" />
+        </div>
         <div className="space-y-1.5">
           <h3 className="font-serif font-semibold text-base">{tool.title}</h3>
           <p className="text-sm text-muted-foreground leading-relaxed">{tool.description}</p>
