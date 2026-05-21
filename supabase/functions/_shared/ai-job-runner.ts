@@ -80,7 +80,12 @@ export async function enqueueJob(opts: {
 
   if (insertErr || !job) {
     console.error(`[ai-job-runner] failed to insert ${jobType} job`, insertErr);
-    return jsonResponse({ error: "Não foi possível iniciar o job" }, 500);
+    const raw = (insertErr as { message?: string } | null)?.message ?? "";
+    const isCheckViolation = /ai_jobs_job_type_check|violates check constraint/i.test(raw);
+    const userMessage = isCheckViolation
+      ? `Tipo de job "${jobType}" ainda não está liberado no banco. Rode a migration ai_jobs_allow_hype_and_task_examples no Studio self-hosted.`
+      : "Não foi possível iniciar o job";
+    return jsonResponse({ error: userMessage }, 500);
   }
 
   return { jobId: job.id, userId: user.id, userClient, admin };
