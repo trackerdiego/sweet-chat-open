@@ -8,7 +8,9 @@ import { InstallBanner } from "@/components/InstallBanner";
 import { TrialBanner } from "@/components/TrialBanner";
 import { AccessGuard } from "@/components/AccessGuard";
 import { AutoCheckoutOpener } from "@/components/AutoCheckoutOpener";
+import { PaywallScreen } from "@/components/PaywallScreen";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useSubscription } from "@/hooks/useSubscription";
 import Index from "./pages/Index";
 import Matrix from "./pages/Matrix";
 import Script from "./pages/Script";
@@ -30,6 +32,7 @@ const queryClient = new QueryClient();
 
 function AppRoutes() {
   const { isAuthenticated, needsOnboarding, loading } = useUserProfile();
+  const { isActive, loading: subLoading } = useSubscription();
 
   // Rotas públicas que precisam renderizar ANTES de qualquer guard de auth/onboarding/access.
   // Adicione aqui qualquer nova tela disparada por link de email do Supabase (recovery, invite, etc).
@@ -60,6 +63,19 @@ function AppRoutes() {
         <Route path="/auth" element={<Auth />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
+  // Paywall: usuário autenticado mas SEM assinatura ativa fica preso aqui
+  // independente de onboarding. Só libera quando o webhook Asaas marcar
+  // subscription_state.status='active'. Evita acesso grátis via trial legado
+  // e impede que o cadastro mande pro onboarding antes de pagar.
+  if (!subLoading && !isActive) {
+    return (
+      <Routes>
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<PaywallScreen />} />
       </Routes>
     );
   }

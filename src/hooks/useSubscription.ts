@@ -43,14 +43,16 @@ export function useSubscription() {
 
   const now = Date.now();
   const trialEndMs = sub.trialEndsAt ? new Date(sub.trialEndsAt).getTime() : 0;
-  const isTrialing = sub.status === 'trial' && trialEndMs > now;
+  // Trial removido do modelo público — sempre falso para bloquear acesso
+  // sem pagamento. Mantido como variável para compatibilidade com componentes
+  // legados, mas nunca libera o app.
+  const isTrialing = false;
   const isActive = sub.status === 'active';
   const isExpired = sub.status === 'trial' && trialEndMs <= now;
   const isPastDueOrCanceled = sub.status === 'past_due' || sub.status === 'canceled';
-  const hasAccess = isActive || isTrialing;
-  const daysLeftInTrial = isTrialing
-    ? Math.max(1, Math.ceil((trialEndMs - now) / (1000 * 60 * 60 * 24)))
-    : 0;
+  // Acesso só com assinatura ativa confirmada via webhook Asaas.
+  const hasAccess = isActive;
+  const daysLeftInTrial = 0;
 
   return {
     ...sub,
