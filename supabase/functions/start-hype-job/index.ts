@@ -45,41 +45,50 @@ serve(async (req) => {
       }
 
       // 2) Busca trends crus do dia, senão coleta agora (self-bootstrap)
-      const { data: rawRows } = await admin
+      const { data: rawRows, error: rawErr } = await admin
         .from("daily_hype_raw")
         .select("source, trends")
         .eq("date", today);
+      if (rawErr) {
+        console.warn("[start-hype-job] daily_hype_raw read failed, fetching live", rawErr);
+      }
 
       let allTrends: RawTrend[] = [];
-      if (rawRows && rawRows.length > 0) {
+      if (!rawErr && rawRows && rawRows.length > 0) {
         for (const r of rawRows) {
           if (Array.isArray(r.trends)) allTrends.push(...(r.trends as RawTrend[]));
         }
       } else {
         console.log(`[start-hype-job] no raw data for ${today}, fetching live (6 sources)`);
         const youtubeKey = Deno.env.get("YOUTUBE_API_KEY") ?? "";
-        const [gtRss, gtRealtime, rd, ytTrending, ytShorts, ytMusic] = await Promise.all([
-          fetchGoogleTrendsBR(),
-          fetchGoogleTrendsRealtimeBR(),
-          fetchReddit(),
-          fetchYouTubeTrendingBR(youtubeKey),
-          fetchYouTubeShortsBR(youtubeKey),
-          fetchYouTubeMusicTrendingBR(youtubeKey),
-        ]);
-        const googleAll = [...gtRss, ...gtRealtime];
-        const youtubeAll = [...ytTrending, ...ytShorts, ...ytMusic];
-        allTrends = [...googleAll, ...rd, ...youtubeAll];
-        console.log(`[start-hype-job] live counts`, {
-          gtRss: gtRss.length, gtRealtime: gtRealtime.length, reddit: rd.length,
-          ytTrending: ytTrending.length, ytShorts: ytShorts.length, ytMusic: ytMusic.length,
-        });
-        const rows = [
-          { date: today, source: "google_trends", trends: googleAll },
-          { date: today, source: "reddit", trends: rd },
-          { date: today, source: "youtube", trends: youtubeAll },
-        ].filter((r) => r.trends.length > 0);
-        if (rows.length > 0) {
-          await admin.from("daily_hype_raw").upsert(rows, { onConflict: "date,source" });
+        try {
+          const [gtRss, gtRealtime, rd, ytTrending, ytShorts, ytMusic] = await Promise.all([
+            fetchGoogleTrendsBR(),
+            fetchGoogleTrendsRealtimeBR(),
+            fetchReddit(),
+            fetchYouTubeTrendingBR(youtubeKey),
+            fetchYouTubeShortsBR(youtubeKey),
+            fetchYouTubeMusicTrendingBR(youtubeKey),
+          ]);
+          const googleAll = [...gtRss, ...gtRealtime];
+          const youtubeAll = [...ytTrending, ...ytShorts, ...ytMusic];
+          allTrends = [...googleAll, ...rd, ...youtubeAll];
+          console.log(`[start-hype-job] live counts`, {
+            gtRss: gtRss.length, gtRealtime: gtRealtime.length, reddit: rd.length,
+            ytTrending: ytTrending.length, ytShorts: ytShorts.length, ytMusic: ytMusic.length,
+          });
+          const rows = [
+            { date: today, source: "google_trends", trends: googleAll },
+            { date: today, source: "reddit", trends: rd },
+            { date: today, source: "youtube", trends: youtubeAll },
+          ].filter((r) => r.trends.length > 0);
+          if (rows.length > 0) {
+            const { error: upsertErr } = await admin.from("daily_hype_raw").upsert(rows, { onConflict: "date,source" });
+            if (upsertErr) console.warn("[start-hype-job] daily_hype_raw upsert failed, continuing", upsertErr);
+          }
+        } catch (sourceErr) {
+          console.warn("[start-hype-job] live trend collection failed, falling back to evergreen", sourceErr);
+          allTrends = [];
         }
       }
 
@@ -195,13 +204,17 @@ Escolha as 5 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON pedi
 
       const payload = res.json as { items: unknown[] };
       const items = Array.isArray(payload.items) ? payload.items.slice(0, 5) : [];
+      if (items.length === 0) {
+        throw new JobError("A IA não retornou sugestões desta vez. Tente novamente em instantes.");
+      }
 
       // Persiste no cache só quando NÃO degraded — assim a próxima chamada
       // tenta de novo trazer tendências reais em vez de servir evergreen 24h.
       if (!degraded) {
-        await admin
+        const { error: cacheErr } = await admin
           .from("user_daily_hype")
           .upsert({ user_id: userId, date: today, items }, { onConflict: "user_id,date" });
+        if (cacheErr) console.warn("[start-hype-job] user_daily_hype cache upsert failed, returning items", cacheErr);
       }
 
       console.log(`[start-hype-job] job ${jobId} success`, { count: items.length, degraded, attempts: res.attempts, modelUsed: res.modelUsed });
