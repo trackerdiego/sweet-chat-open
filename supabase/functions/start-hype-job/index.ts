@@ -185,7 +185,7 @@ Escolha as 15 MAIS RELEVANTES pro nicho "${niche}" e devolva no formato JSON ped
           model: "gemini-2.5-flash",
           midModel: "gemini-2.5-flash-lite",
           fallbackModel: "gemini-2.5-pro",
-          maxOutputTokens: 2200,
+          maxOutputTokens: 5500,
           timeoutMs: 45000,
           midTimeoutMs: 35000,
           fallbackTimeoutMs: 60000,
