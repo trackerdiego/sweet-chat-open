@@ -509,6 +509,7 @@ const Tools = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 };
