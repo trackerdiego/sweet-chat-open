@@ -66,11 +66,14 @@ function AppRoutes() {
 
   if (needsOnboarding) {
     return (
-      <Routes>
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/auth" element={<Navigate to="/onboarding" replace />} />
-        <Route path="*" element={<Navigate to="/onboarding" replace />} />
-      </Routes>
+      <>
+        <AutoCheckoutOpener />
+        <Routes>
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/auth" element={<Navigate to="/onboarding" replace />} />
+          <Route path="*" element={<Navigate to="/onboarding" replace />} />
+        </Routes>
+      </>
     );
   }
 
