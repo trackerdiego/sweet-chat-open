@@ -10,6 +10,7 @@ import { PremiumGate } from '@/components/PremiumGate';
 import { CheckCircle2, Lock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const Matrix = () => {
   const { strategies, loading: strategiesLoading } = useUserStrategies();
