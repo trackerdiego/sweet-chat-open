@@ -3,6 +3,7 @@ import { Gift, Copy, Share2, MessageCircle, Send, CheckCircle2, Clock, XCircle }
 import { useReferrals } from '@/hooks/useReferrals';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { PageBackdrop } from '@/components/PageBackdrop';
 
 const SHARE_BASE = 'https://app.vyrallab.online/auth?ref=';
 
