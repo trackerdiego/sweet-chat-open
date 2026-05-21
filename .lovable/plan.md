@@ -1,57 +1,33 @@
-# Corrigir hype: bloco duplicado quebra a função
+Diagnóstico atual:
+- A função self-hosted `https://api.influlab.pro/functions/v1/start-hype-job` está alcançável e carrega sem SyntaxError, porque respondeu `401 Não autorizado` quando testada sem token válido. Então o erro anterior de duplicidade provavelmente não é mais o único problema.
+- O preview que consegui abrir está na landing page sem login, então não disparou a chamada real do Hype.
+- Encontrei um bug real no frontend: depois da primeira tentativa, `useDailyHype` marca `startedRef.current = true`; ao clicar em atualizar de novo, ele não dispara novo job. Ou seja: se a primeira tentativa falha, o botão pode ficar preso sem tentar gerar de verdade.
+- As consultas via ferramenta Supabase não provam o estado real do app, porque o app usa Supabase self-hosted em `api.influlab.pro`, e as migrations Lovable não alteram esse banco automaticamente.
 
-## Diagnóstico
+Plano de correção:
 
-A função `start-hype-job/index.ts` tem o trecho de "Perfil do user" **duplicado** (linhas 91–99 e 108–116). Isso declara `profile`, `audience`, `niche`, `style`, `ap` duas vezes no mesmo escopo, e o Deno aborta com `SyntaxError: Identifier 'profile' has already been declared`. Resultado: TODA chamada de gerar hype falha com erro — não importa se as fontes (Google Trends / YouTube / Reddit) trouxeram dados ou não. As trends provavelmente até estão sendo coletadas, mas a função morre antes de chamar o Gemini.
+1. Corrigir o botão de tentar novamente
+- Alterar `src/hooks/useDailyHype.ts` para separar carregamento inicial de recarregamento manual.
+- No reload manual, limpar erro, zerar `startedRef`, e disparar um novo `start-hype-job` mesmo que já tenha tentado antes.
+- Garantir que múltiplos cliques não criem jobs paralelos enquanto já estiver processando.
 
-Não é problema das fontes, nem de cache, nem do Gemini — é puramente o código duplicado introduzido na última edição.
+2. Blindar o backend do Hype contra falhas parciais
+- Em `supabase/functions/start-hype-job/index.ts`, tratar falhas de leitura/gravação de `daily_hype_raw` como degradadas, não como erro fatal.
+- Se coleta de tendências ou upsert falhar, seguir para modo evergreen via Gemini, em vez de devolver erro para o usuário.
+- Se o Gemini devolver lista vazia, retornar uma mensagem clara e persistir falha amigável no `ai_jobs`, em vez de mostrar “sem tendências”.
 
-## Mudança
+3. Melhorar visibilidade do erro
+- Fazer o frontend exibir mensagem mais útil quando o job falhar, diferenciando:
+  - falha ao iniciar job;
+  - falha no polling;
+  - job finalizado sem itens.
+- Manter o texto simples para o usuário, mas preservar logs técnicos no console/função.
 
-Arquivo: `supabase/functions/start-hype-job/index.ts`
+4. Entregar checklist para o self-hosted
+- Como o backend real é self-hosted, entregar junto o SQL de verificação/criação das tabelas `daily_hype_raw` e `user_daily_hype` para rodar no Studio do self-hosted se ainda não existir.
+- Entregar o bloco de deploy da VPS para publicar a função atualizada.
 
-Remover a segunda ocorrência do bloco (linhas 108–116), mantendo apenas a primeira (91–99) que já está posicionada antes do `compact` (que usa `allTrends`, não depende do perfil) — a ordem fica correta.
-
-Resultado final dessa região:
-
-```text
-... fetch das trends ...
-const degraded = allTrends.length === 0;
-
-// 3) Perfil do user pra personalizar  (UMA vez só)
-const [{ data: profile }, { data: audience }] = await Promise.all([...]);
-const niche = profile?.primary_niche || "lifestyle";
-const style = profile?.content_style || "casual";
-const ap = (audience?.avatar_profile ...) ?? {};
-
-const compact = allTrends.sort(...).slice(0,60).map(...).join("\n");
-
-const systemInstruction = `...usa niche, style, ap...`;
-const prompt = degraded ? `...evergreen...` : `...compact...`;
-... chamada Gemini ...
-```
-
-## Deploy (VPS self-hosted)
-
-Como o backend roda em `api.influlab.pro` e migrations/edge functions do Lovable não chegam lá automaticamente, depois do merge no GitHub você roda na VPS:
-
-```bash
-cd /root/app && git pull origin main && ./scripts/deploy-selfhost.sh
-```
-
-(ou só `docker compose restart functions` se preferir).
-
-## Verificação pós-deploy
-
-1. Abrir o app, clicar em "Hype do dia" → deve gerar 5 itens (reais ou evergreen).
-2. Conferir logs:
-   ```bash
-   docker logs supabase-edge-functions --since 5m | grep -E "start-hype-job|hype-sources"
-   ```
-3. Conferir no Studio self-hosted se as trends foram salvas:
-   ```sql
-   SELECT date, source, jsonb_array_length(trends) FROM daily_hype_raw WHERE date = CURRENT_DATE;
-   SELECT id, status, error_message, attempts FROM ai_jobs WHERE job_type = 'hype' ORDER BY created_at DESC LIMIT 5;
-   ```
-
-Se ainda quiser forçar refresh: `SELECT * FROM user_daily_hype WHERE user_id = '<seu_id>' AND date = CURRENT_DATE;` e `DELETE` se necessário.
+Resultado esperado:
+- Clicar em “Hype do dia”/atualizar realmente tenta gerar de novo.
+- Se Google/YouTube/Reddit falharem, o usuário ainda recebe 5 pautas evergreen.
+- O card não fica preso em “sem tendências” por causa de uma tentativa anterior falhada.
