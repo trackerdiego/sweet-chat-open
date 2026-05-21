@@ -1,34 +1,33 @@
-## Causa raiz
+## Objetivo
+Trazer o mesmo padrão visual do Painel (`/`) para as telas internas, mantendo o layout atual de cada uma — só harmonizando fundo, header e cards.
 
-Em `src/components/HypeOfTheDay.tsx`, o hook `const [allOpen, setAllOpen] = useState(false)` está na **linha 85**, **depois** dos `if (loading) return ...` (linha 46) e `if (error || !items...) return ...` (linha 65).
+## Padrão alvo (já existente em `src/pages/Index.tsx` + `src/index.css`)
+- Fundo: `min-h-screen pb-24 md:pt-20 relative overflow-hidden` + orbs neon roxos/magenta no modo dark (`.app-neon-orb`).
+- Header hero: bloco com título serif + subtítulo dentro do **mesmo container do conteúdo** (sem o bloco roxo chapado que existe hoje). Padding `pt-[max(1.5rem,env(safe-area-inset-top))]`.
+- Card destaque (quando a tela tiver um): `.app-hero-gradient` no lugar do antigo `gradient-header`.
+- Cards internos: `.app-neon-border` (versão padrão para CTA, `.soft` para listas/itens).
+- Chips/badges: `.app-neon-chip`.
+- Botões e ícones de ação: variantes `ghost` já em uso, mantendo `text-foreground/70`.
 
-Isso quebra as Rules of Hooks do React: nos primeiros renders (enquanto `loading=true`) o componente chama menos hooks; quando `items` chega e os early returns deixam de disparar, esse `useState` extra é montado → **"Rendered more hooks than during the previous render"** → React desmonta a árvore inteira → tela branca / travada.
+## Telas a atualizar
+| Tela | Arquivo | Tratamento |
+|---|---|---|
+| Matriz | `src/pages/Matrix.tsx` | Remover `.gradient-header`. Header em `max-w-lg mx-auto` com título serif. Filtros de pilar viram `.app-neon-chip`. Cards dos 30 dias ganham `.app-neon-border.soft`; dia atual usa `.app-neon-border` (acento). Skeleton idem. |
+| Tarefas | `src/pages/Tasks.tsx` | Substituir `.gradient-header` por header hero (greeting "Tarefas" + dia/data). Card do dia atual em `.app-hero-gradient`. Lista `DailySchedule` mantém shadcn, só envelopa em `.app-neon-border.soft`. |
+| Ferramentas | `src/pages/Tools.tsx` | Adicionar orbs + header serif. Substituir `glass-card` dos `ToolCard` por `.app-neon-border.soft` (mantém hover). `bg-primary/10` do ícone vira chip com mesma cor neon. |
+| Carteira | `src/pages/Wallet.tsx` | Header hero + saldo em `.app-hero-gradient`. Lista de transações em `.app-neon-border.soft`. |
+| Indique | `src/pages/Referral.tsx` | Header hero. Cartão de link de indicação em `.app-hero-gradient`. Steps/recompensas em `.app-neon-border.soft`. |
+| Ajuda | `src/pages/Help.tsx` | Header hero. Cards de FAQ/contato em `.app-neon-border.soft`. |
+| Script | `src/pages/Script.tsx` | Header hero. Card principal do roteiro em `.app-neon-border` (acento), seções em `.app-neon-border.soft`. |
 
-## Correção
+## Fora de escopo
+- Estrutura de informação, ordem dos blocos, lógica de dados — tudo permanece.
+- Landing, Auth, Admin, Onboarding, Renew, ResetPassword, NotFound — não tocadas.
+- Sem mudar tokens globais em `index.css` (paleta já está definida); só consumo via utilities existentes.
 
-Mover `const [allOpen, setAllOpen] = useState(false)` para junto dos outros hooks no topo do componente (logo após `setCopied`), e remover a declaração da linha 85.
+## Verificação
+- Smoke visual em cada rota (light + dark) confirmando: fundo branco/limpo no light, orbs neon no dark, header sem bloco chapado, cards com borda neon sutil.
+- Garantir que botões de "voltar"/`HelpButton` continuam clicáveis sobre o novo fundo (z-index `relative z-10` nos wrappers).
 
-Diff conceitual:
-
-```text
-export function HypeOfTheDay() {
-  const { items, loading, error, reload } = useDailyHype();
-  const [open, setOpen] = useState<HypeItem | null>(null);
-  const [copied, setCopied] = useState(false);
-+ const [allOpen, setAllOpen] = useState(false);
-  const { toast } = useToast();
-  ...
-  if (loading) return ...
-  if (error || !items?.length) return ...
-
-  const top = (items || []).slice(0, 5);
-- const [allOpen, setAllOpen] = useState(false);   // ❌ remover
-  return ( ... )
-}
-```
-
-## Arquivos
-
-- `src/components/HypeOfTheDay.tsx` — 1 edit (mover hook).
-
-Sem mudança de comportamento, só ordem. Resolve o erro do console e a tela branca no preview e no mobile.
+## Entrega VPS
+Frontend hospedado na Vercel via GitHub; basta merge no `main`. Bloco copy-paste no fim da resposta de implementação.
