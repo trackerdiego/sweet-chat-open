@@ -1,72 +1,61 @@
 
 ## Objetivo
-Transformar a tela inicial (`/`) num painel mais moderno, com a estética neon da landing, dando protagonismo total às tendências (Hype do Dia) e removendo blocos que você considera ruído.
+Reformular `/matrix` no padrão das 4 referências (CatMiko, ChatIQ, AI Solutions, Personal AI Buddy): tipografia bold sans, cards bento com tamanhos variados, chips pílula sólidos, ícones em quadrados arredondados coloridos, hero com saudação grande e seções com "See all" inline. Mantém estética neon/purple já presente no app (dark) + variante airy white (light).
 
-## O que sai
-- `MonthlyProgress` (Progresso do Mês)
-- `StreakCounter` (Sequência + 7/14/30 dias + coins inline)
-- `WeeklyView` (Visão Semanal D29/D30…)
-- `MindsetPulse` ("Dose de Coragem") — sai do topo, vira rodapé discreto (decisão: manter pequeno no fim, ou remover; ver pergunta abaixo)
+## Padrões extraídos das referências
+1. **Tipografia**: bold sans-serif (não serif), títulos grandes 28–32px, peso 700–800, line-height apertado. Body 14px regular, muted gray.
+2. **Cards bento**: grid assimétrico — 1 card grande destacado (gradient roxo sólido + ícone branco + seta diagonal ↗) ao lado de 2 cards menores empilhados. Cantos 24px.
+3. **Chips de filtro**: pílula horizontal scroll, selecionado = preenchido sólido (roxo/preto), demais = outline transparente. Sem emojis dentro.
+4. **Seção header**: título + "Ver todos →" alinhado à direita, espaçamento generoso.
+5. **List cards**: avatar/ícone quadrado arredondado colorido à esquerda, título + subtítulo, timestamp/chevron à direita. Divider sutil.
+6. **Status visual**: badge "Online •" verde, ou "Pro" amarelo dentro do título — usar para marcar dia atual/concluído.
+7. **Background**: dark com gradient roxo radial sutil + linhas curvas decorativas; light = branco puro com mesma estrutura.
 
-## O que fica / muda
-- **Header**: logo + ações (tema/ajuda/sair) — mantido, sem o "Dia X de 30" gigante (vira chip pequeno).
-- **Saudação "Olá, Diego 👑"** — mantida, mais compacta.
-- **Card "Atualização Digital" (vídeo 13%)** — mantido (é onboarding/guia).
-- **Card do dia (estratégia + barra de progresso)** — mantido, mas com borda neon.
-- **Hype do Dia** — vira **HERO**:
-  - Mostra **todas as tendências coletadas** (não só 5), agrupadas por fonte (YouTube, Google Trends, Reddit) com contadores.
-  - Layout em **grid de cards** com borda neon (purple→pink gradient glow), não mais lista comprimida.
-  - Cada card: número/rank, tema (título grande), por que bombou (2 linhas), badge de fonte + formato sugerido, hover com glow intensificado.
-  - Botão "atualizar" no header da seção.
-  - Tap no card abre o sheet existente com gancho/ângulo/copiar.
-- **Mini-stats inline** (substituindo Sequência/Progresso/Semanal): uma faixa fina no topo com 3 chips neon — `Dia X/30` · `Y dias seguidos` · `Z coins`. Sem cards gigantes, só informação densa. Clicáveis levam para Matrix/Carteira.
+## Mudanças concretas em `src/pages/Matrix.tsx`
 
-## Estética (neon da landing)
-- Mesmo padrão das `neon-orb` (já existe no `index.css`) — orbs roxa/magenta no fundo, intensidade maior.
-- Cards com **borda gradient animada** (purple `270 95% 65%` → pink `322 90% 60%`), shadow `0 0 24px hsl(var(--primary)/0.25)`.
-- Glassmorphism mantido mas com `backdrop-blur` mais forte e bordas de 1px com gradiente neon (CSS `border-image` ou pseudo-elemento `::before` com mask).
-- Tipografia serif para títulos (já é o padrão), sans para corpo.
+### Header (substitui `gradient-header` atual)
+- Remove o bloco roxo gigante com cantos arredondados.
+- Saudação top: avatar circular esquerda, "Hi, {nome} 👋" pequena + "Sua matriz de 30 dias" em bold 28px abaixo. Sino/HelpButton direita.
+- Logo neon orb sutil no fundo (dark) ou nada (light).
 
-## Estrutura visual (mobile, viewport real ~390px)
-
+### Bento hero (novo bloco — substitui faixa de filtros como primeiro foco)
+Grid 2 colunas, altura ~180px:
 ```text
-┌──────────────────────────────┐
-│ logo            ☾ ? ⎋        │
-│ ▸ chip: D30/30  🔥 0  🪙 30  │
-│ Olá, Diego 👑                │
-├──────────────────────────────┤
-│ [Plano Gratuito → Assinar]   │
-│ [▶ Atualização Digital 13%]  │
-│ [Card do dia (estratégia)]   │
-├──────────────────────────────┤
-│ 🔥 HYPE DO DIA      [↻]      │
-│  YouTube 25 · Google 10 · …  │
-│ ┌──────────┐ ┌──────────┐    │
-│ │ 1 Tema A │ │ 2 Tema B │    │
-│ │ neon border │ neon border │
-│ └──────────┘ └──────────┘    │
-│ ┌──────────┐ ┌──────────┐    │
-│ │ 3 …      │ │ 4 …      │    │
-│ └──────────┘ └──────────┘    │
-│ … (todos os itens)           │
-└──────────────────────────────┘
+┌─────────────┬─────────┐
+│             │ Dia hoje│
+│  Dia atual  │  ↗      │
+│  destaque   ├─────────┤
+│  ↗ ícone    │ Próximo │
+│             │  ↗      │
+└─────────────┴─────────┘
 ```
+- Card grande esquerdo: gradient `from-primary to-accent`, texto branco, label "HOJE • Dia X", título do `todayStrategy.title` em 2 linhas, ícone branco em quadrado glass top-left, seta ↗ top-right.
+- 2 cards direita: glass/outline, "Concluídos {n}" e "Próximo • Dia X+1" com mini-título.
 
-## Mudança no backend de Hype (mínima)
-Hoje `start-hype-job` pede pra Gemini retornar exatamente 5 itens. Pra "mostrar todas", duas opções:
-- **A (recomendada)**: aumentar pra **15 itens** no prompt (top 15 já dá sensação de abundância sem custar muito token). Mantém personalização.
-- **B**: mostrar também os raw trends de `daily_hype_raw` (sem personalização do Gemini), agrupados.
+### Filtros (refinados)
+- Header da seção: "Pilares" bold + "Todos →" direita.
+- Chips pílula horizontal scroll. Sem emoji dentro do chip. Selecionado = bg-foreground / text-background sólido (preto no light, branco no dark), demais = border + bg transparente.
 
-Vou seguir **A**, e se quiser depois adiciono uma aba "Cru" com os raw.
+### Grid de dias (substitui o atual `grid-cols-2`)
+Vira **lista vertical estilo "History"** (ref CatMiko/Personal AI Buddy):
+- Card horizontal full-width, 72px altura, rounded-2xl, border sutil.
+- Esquerda: quadrado 48x48 rounded-xl com cor do pilar + ícone do nicho (branco).
+- Centro: "Dia X" muted text-xs + título bold text-sm (line-clamp-1) + label do pilar text-xs muted.
+- Direita: se concluído → check verde; se atual → badge "Hoje" pílula primária; se locked → cadeado + blur leve no título.
+- Tap = abre `DayDetailCard` (mantém comportamento).
 
-## Arquivos a tocar
-- `src/pages/Index.tsx` — remover imports/JSX de Monthly/Streak/Weekly/Mindset; nova faixa de chips; reordenar.
-- `src/components/HypeOfTheDay.tsx` — novo layout grid, borda neon, contador por fonte, render de N itens (não fixo em 5).
-- `src/index.css` — utilitário `.neon-border` (gradient border + glow) se ainda não existe.
-- `supabase/functions/start-hype-job/index.ts` — trocar "5 itens" por "15 itens" no prompt + schema.
-- (sem migrations, sem mexer em auth/pagamento/onboarding)
+Removo o blur agressivo nos locked — só ícone cadeado + opacity 60%.
 
-## Perguntas rápidas antes de implementar
-1. **"Dose de Coragem"** (citação diária) — remover também ou manter como rodapé discreto?
-2. Quantos itens no Hype: **15** (recomendado) ou outro número?
-3. Manter o card **"Atualização Digital"** (vídeo de boas-vindas) no topo, ou também enxugar?
+### Tipografia global da tela
+- Trocar `font-serif` por sans bold nos títulos desta página (sem mudar tokens globais — só nesta tela usar `font-sans font-bold tracking-tight`).
+- Se ok com você, posso introduzir token `--font-display` apontando p/ sans bold só pra essa tela (ou trocar global, mas isso afeta outras telas — confirma).
+
+## Arquivos
+- `src/pages/Matrix.tsx` — reescrita do JSX e layout (lógica de filtros/locked/selected mantida).
+- `src/index.css` — talvez 1 utilitário novo `.app-bento-card` (gradient + sombra neon).
+- Sem mexer em backend, hooks ou outras telas.
+
+## Perguntas rápidas
+1. **Tipografia**: aplico sans bold só nesta tela ou troco o `font-serif` global (afeta Index, Wallet, etc.)?
+2. **Bento hero**: card grande mostra **dia atual** (recomendado) ou **próximo bloqueado pra induzir upgrade**?
+3. **Lista vs grid**: você prefere lista vertical (como acima, mais legível) ou manter grid 2 colunas só com visual novo (cards quadrados grandes estilo bento)?
