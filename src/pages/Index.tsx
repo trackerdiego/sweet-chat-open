@@ -4,7 +4,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserUsage } from '@/hooks/useUserUsage';
 import { useWallet } from '@/hooks/useWallet';
-import { getPillarColor, getPillarEmoji } from '@/data/strategies';
+import { getPillarEmoji } from '@/data/strategies';
 import { NicheIcon } from '@/components/NicheIcon';
 import { HypeOfTheDay } from '@/components/HypeOfTheDay';
 import { QuickAccessGrid } from '@/components/QuickAccessGrid';
