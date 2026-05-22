@@ -32,7 +32,7 @@ const queryClient = new QueryClient();
 
 function AppRoutes() {
   const { isAuthenticated, needsOnboarding, loading } = useUserProfile();
-  const { isActive, loading: subLoading } = useSubscription();
+  const { isActive, loading: subLoading, hasLoadedOnce: subLoaded } = useSubscription();
 
   // Rotas públicas que precisam renderizar ANTES de qualquer guard de auth/onboarding/access.
   // Adicione aqui qualquer nova tela disparada por link de email do Supabase (recovery, invite, etc).
@@ -71,7 +71,7 @@ function AppRoutes() {
   // independente de onboarding. Só libera quando o webhook Asaas marcar
   // subscription_state.status='active'. Evita acesso grátis via trial legado
   // e impede que o cadastro mande pro onboarding antes de pagar.
-  if (!subLoading && !isActive) {
+  if (!subLoading && subLoaded && !isActive) {
     return (
       <Routes>
         <Route path="/reset-password" element={<ResetPassword />} />
