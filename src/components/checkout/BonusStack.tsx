@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 
 const items = [
-  { label: "Acesso completo Influ Lab", value: "R$ 297", free: false },
+  { label: "Acesso completo Vyral Lab", value: "R$ 297", free: false },
   { label: "Bônus: Matriz 30 dias custom", value: "R$ 197", free: true },
   { label: "Bônus: Banco de hooks virais", value: "R$ 97", free: true },
   { label: "Bônus: IA de roteiros ilimitada", value: "R$ 147", free: true },
