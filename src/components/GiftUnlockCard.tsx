@@ -38,10 +38,10 @@ export function GiftUnlockCard() {
   if (!firstPaidAt) {
     return (
       <GiftCard
-        title="Temos um presente pra você"
+        title="Seu bônus tá chegando"
         subtitle="Liberado após o primeiro pagamento confirmado"
         bigText="Aguardando confirmação"
-        small="Trends Virais do YouTube com thumbnails"
+        small="Hype do dia — tendências virais do Brasil"
       />
     );
   }
@@ -58,9 +58,9 @@ export function GiftUnlockCard() {
     ? `${hours}h ${minutes}m`
     : `${days}d ${hours}h ${minutes}m`;
 
-  const title = underDay ? 'Liberando em instantes!' : 'Temos um presente pra você';
+  const title = underDay ? 'Liberando em instantes!' : 'Bônus exclusivo desbloqueando';
   const subtitle = underDay
-    ? 'Quase lá — recarregue a página em algumas horas'
+    ? 'Atualize a página em algumas horas'
     : `Liberado em ${days + 1} ${days + 1 === 1 ? 'dia' : 'dias'}`;
 
   return (
@@ -68,7 +68,7 @@ export function GiftUnlockCard() {
       title={title}
       subtitle={subtitle}
       bigText={bigText}
-      small="Trends Virais do YouTube com thumbnails"
+      small="Hype do dia — tendências virais do Brasil"
     />
   );
 }
