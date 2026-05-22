@@ -1,77 +1,67 @@
+## Problemas identificados
 
-## Objetivo
+1. **Modal feio e morto** — header com `Playfair Display` (serif) que destoa do resto, sem hierarquia visual, sem energia, fundo `bg-card/95` chapado, sem profundidade roxa de verdade.
+2. **Sem gatilhos de conversão** — não tem empilhamento de bônus, vantagens visíveis, prova social, escassez/urgência, garantia. Checkout de R$297 sem nada disso converte mal.
+3. **Bug crítico de perda de estado** — ao trocar de aba do navegador e voltar, o modal "reseta": o usuário cai de volta na etapa de dados e perde tudo que digitou. Causa: o `step`, dados do formulário e `pix` vivem só em `useState` local do `CheckoutModal`; quando algum re-render externo (ex.: `useSubscription` refazendo fetch ao readquirir foco, ou o `AccessGuard`/rota remontando) desmonta e remonta o componente, o state vai pro lixo.
 
-Eliminar a tela "Quase lá! → Ir para pagamento" (redirect externo Asaas) e voltar para um checkout **100% interno** no `CheckoutModal`, com PIX (QR + copia-e-cola) e Cartão de Crédito (formulário inline) em abas. Junto disso, repaginar o visual do modal com a paleta violeta/glass do novo layout para dar vida.
+## Correções (sem mexer em backend)
 
-## Mudanças
+### A. Persistência do checkout (bug do "voltei e perdi tudo")
 
-### 1. Backend — `supabase/functions/create-asaas-subscription/index.ts`
+- **Persistir progresso em `sessionStorage`** com a chave `checkout:v1`:
+  - `step`, `selectedPlan`, `method`, todos os campos de dados (`name`, `email`, `cpfCnpj`, `phone`, endereço completo), e — se já gerado — o `pix` (encodedImage + payload).
+  - Hidratar no mount; salvar em `useEffect` com debounce.
+  - Limpar a chave quando: modal fecha por sucesso (`isActive` virar true) OU usuário clicar num novo botão "Recomeçar".
+- **Não desmontar o modal quando perder foco**: revisar se `CheckoutModal` está dentro de algum componente que remonta via `key` mudando. Se sim, içar pra fora ou estabilizar a key.
+- Resultado: trocar aba, fechar sem querer, ou recarregar a página mantém o usuário exatamente onde estava, com PIX já gerado ainda visível e o polling retomando.
 
-Hoje a função cria `subscription` com `billingType: "UNDEFINED"` e devolve `paymentUrl` (página hospedada Asaas). Vamos mudar para:
+### B. Redesign visual (purple/glass de alta conversão)
 
-- Receber `paymentMethod: "PIX" | "CREDIT_CARD"` e, se cartão, `creditCard` + `creditCardHolderInfo`.
-- Criar `subscription` com o `billingType` correto (`PIX` ou `CREDIT_CARD`).
-  - Cartão: enviar `creditCard` + `creditCardHolderInfo` + `remoteIp` no body da subscription para tokenizar e cobrar na hora.
-- Buscar a primeira cobrança gerada (`GET /subscriptions/{id}/payments`) e, se PIX, pegar o QR (`GET /payments/{id}/pixQrCode`).
-- Resposta:
-  - PIX → `{ subscriptionId, paymentId, pix: { encodedImage, payload, expirationDate } }`
-  - Cartão → `{ subscriptionId, paymentId, status: "CONFIRMED" | "RECEIVED" | ... }` (sem URL externa)
-- Espelhar `subscription_state` igual hoje (status só vira `active` via webhook, que já está pronto).
+Sem trocar a paleta do projeto — só usar melhor o que já existe (`--primary 258 60% 55%`, `--accent 280 65% 60%`, `gold-gradient`, `glass-card`).
 
-Erros do Asaas (cartão recusado, CPF inválido etc.) voltam com `error` legível.
+- **Tipografia**: remover `font-serif` do título. Usar `Inter` semibold/bold com tracking apertado pra ficar moderno. Reservar serifa só pra preço grande (efeito editorial).
+- **Header com vida**:
+  - Fundo aurora: dois `radial-gradient` em `hsl(var(--primary)/0.25)` e `hsl(var(--accent)/0.2)` com blur, animados sutilmente (Motion).
+  - Barra de progresso (3 dots: Dados → Pagamento → Confirmação) no topo, com o ativo em `gold-gradient`.
+  - Selo "Pagamento 100% seguro" com ícone shield e badge Asaas pequena.
+- **Bloco de bônus empilhados** (visível em todas as etapas, sticky no topo do conteúdo):
+  ```
+  ✓ Acesso completo Influ Lab          R$ 297
+  ✓ Bônus: 30 dias de matriz custom    R$ 197  GRÁTIS
+  ✓ Bônus: Banco de hooks virais       R$  97  GRÁTIS
+  ✓ Bônus: IA de roteiros ilimitada    R$ 147  GRÁTIS
+  ─────────────────────────────────────────────
+  Valor total:  R$ 738    Você paga: R$ 297
+  ```
+  Estilo: cards translúcidos com `border-primary/20`, valores "riscados" em muted, "GRÁTIS" em pill `gold-gradient`.
+- **Gatilhos de escassez/urgência**:
+  - Banner topo: ⚡ "Oferta de lançamento — preço sobe em [contador 47:23:12]" (countdown puramente visual, baseado em data fixa de campanha).
+  - "🔥 X criadores assinaram nas últimas 24h" (número estático ou vindo do `admin-launch-health` se já existir endpoint público).
+- **Garantia**: bloco verde-acizentado com `ShieldCheck` "7 dias de garantia — se não amar, devolvemos 100%".
+- **Cards de plano**: anel animado `bg-gradient-to-r` rodando no selecionado, badge "MAIS ESCOLHIDO" no anual com `gold-gradient`, parcela "12x R$24,75" destacada.
+- **Inputs**: agrupar em "cards" com label flutuante leve, `bg-background/40` + `backdrop-blur-md` + `border-border/40 focus:border-primary focus:ring-primary/30`, transições suaves.
+- **CTAs**: `gold-gradient` com glow `shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)]`, micro hover lift, ícone sempre.
+- **Tela de resultado PIX**:
+  - QR centralizado em card branco arredondado com glow roxo.
+  - Bloco "⏱ Aguardando pagamento — geralmente cai em 10s" com spinner roxo.
+  - Passo-a-passo numerado (1. Abra seu banco / 2. Escolha PIX / 3. Escaneie ou cole).
+  - Botão copia-e-cola GIGANTE como ação primária.
 
-### 2. Frontend — `src/components/CheckoutModal.tsx` (reescrito)
+### C. Aproveitar `admin-launch-health` (responder dúvida do user)
 
-Estrutura em **3 etapas internas**, sem nunca sair do modal:
+Você está certo — a `LaunchHealthDashboard` em `/admin` já mostra a saúde do webhook (eventos recebidos, processados, falhas). Vou **incluir no plano a verificação visual via essa tela** em vez de pedir queries manuais. Se ela mostrar webhook ok + assinatura ativa do cliente que pagou, está tudo certo, sem necessidade de retrabalho.
 
-```text
-Etapa A: Plano + dados (igual hoje, melhorado visual)
-Etapa B: Escolher método [Tabs: PIX | Cartão]
-         - PIX:    botão "Gerar PIX"
-         - Cartão: form número/validade/CVV/nome → botão "Pagar R$X"
-Etapa C: Resultado
-         - PIX:    QR + copia-e-cola + "Aguardando pagamento…" (polling subscription)
-         - Cartão: ✅ "Pagamento aprovado, liberando acesso…" (polling subscription)
-```
+## Arquivos afetados
 
-Polling: usar `useSubscription` que já existe — quando `isActive` virar true, o `App.tsx` automaticamente sai do `PaywallScreen` e entra no onboarding. Sem precisar de lógica nova de redirect.
+- `src/components/CheckoutModal.tsx` — redesign completo + hook de persistência em sessionStorage.
+- `src/hooks/useCheckoutDraft.ts` *(novo)* — encapsula save/load/clear do rascunho.
+- `src/components/checkout/BonusStack.tsx` *(novo)* — bloco de bônus reutilizável.
+- `src/components/checkout/UrgencyBar.tsx` *(novo)* — countdown + social proof.
+- Nenhum arquivo de backend, nenhuma migration, nenhum deploy de edge function.
 
-### 3. Visual — paleta do novo layout (violeta + glass)
+## Critérios de aceite
 
-Aplicar nos campos e botões do modal o mesmo idioma da `PaywallScreen` (já usa `glass-card`, `gold-gradient`, `text-primary`):
-
-- Background do `DialogContent`: `glass-card` + leve gradient violeta no header.
-- Cards de plano (Mensal/Anual): borda animada `border-primary` com `shadow-[0_0_24px_-4px_hsl(var(--primary)/0.4)]` quando selecionado, badge "Economize 47%" em `gold-gradient`.
-- Tabs PIX/Cartão: pill com `bg-primary/10` ativo, ícone (QrCode / CreditCard).
-- Inputs: `bg-background/50 backdrop-blur border-border/60 focus:border-primary` + `transition`.
-- Botão principal: `gold-gradient` com `Crown` icon, hover scale sutil (`hover:scale-[1.01]`).
-- Estado PIX: QR num card `bg-white p-4 rounded-2xl` centralizado, copia-e-cola com botão `Copy` que dá toast.
-- Microanimação por etapa com `motion.div` (fade + slide 8px) para sensação de fluidez.
-
-Tokens: tudo via `hsl(var(--primary))`, `hsl(var(--card))`, `gold-gradient` — zero cor hardcoded.
-
-### 4. Remover `PaywallScreen` → abertura direta do modal
-
-`PaywallScreen` continua existindo como gate (com os 5 bullets + CTA), mas:
-
-- Mantém abertura automática do `CheckoutModal` igual hoje.
-- Quando o pagamento for confirmado (cartão) ou detectado por polling (PIX), `useSubscription` muda para `active` e o gate cai sozinho — sem reload, sem redirect externo.
-
-### 5. Arquivos tocados
-
-- `supabase/functions/create-asaas-subscription/index.ts` — adiciona PIX/Cartão inline.
-- `src/components/CheckoutModal.tsx` — reescrita com etapas + novo visual.
-- `src/components/PaywallScreen.tsx` — ajustes mínimos (texto do CTA, nada estrutural).
-- (Opcional) `src/hooks/useSubscription.ts` — diminuir intervalo de refetch para 5s enquanto o modal estiver no estado "aguardando PIX".
-
-### 6. Self-hosted (SQL/Deploy)
-
-- Nenhuma migration de banco necessária — `subscription_state` já tem as colunas usadas.
-- Edge function precisa redeploy via `./scripts/deploy-selfhost.sh create-asaas-subscription` na VPS — eu mando o bloco copia-e-cola no final.
-- Secret `ASAAS_API_KEY` já está configurado no container `functions`.
-
-## Riscos / Observações
-
-- **Tokenização de cartão**: o Asaas aceita os dados do cartão direto no POST da subscription (sem precisar de SDK JS). Isso é PCI-compliant pelo lado deles, mas o cartão passa pela nossa edge function por TLS — é o padrão suportado pela API REST do Asaas.
-- **PIX polling**: webhook Asaas já trata `PAYMENT_RECEIVED` e marca `active`. O frontend só observa `useSubscription` mudar.
-- **Cartão recusado**: mostrar erro inline no modal sem fechar nem perder os dados preenchidos.
+- Trocar aba do Chrome, voltar 5min depois → PIX ainda visível, polling ativo, dados intactos.
+- Modal abre exibindo: progresso, bônus empilhados, urgência, garantia, plano destacado.
+- Zero `font-serif` no título; zero cor hardcoded; tudo via tokens HSL do design system.
+- Build passa, sem warnings novos.
