@@ -32,7 +32,7 @@ const queryClient = new QueryClient();
 
 function AppRoutes() {
   const { isAuthenticated, needsOnboarding, loading } = useUserProfile();
-  const { isActive, loading: subLoading } = useSubscription();
+  const { isActive, loading: subLoading, hasLoadedOnce: subLoaded } = useSubscription();
 
   // Rotas públicas que precisam renderizar ANTES de qualquer guard de auth/onboarding/access.
   // Adicione aqui qualquer nova tela disparada por link de email do Supabase (recovery, invite, etc).
