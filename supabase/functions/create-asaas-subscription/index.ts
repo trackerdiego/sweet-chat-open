@@ -94,7 +94,7 @@ serve(async (req) => {
       value,
       nextDueDate: dueDateStr,
       cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
-      description: plan === "yearly" ? "InfluLab Pro - Assinatura Anual" : "InfluLab Pro - Assinatura Mensal",
+      description: plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal",
       externalReference: userId,
     };
 

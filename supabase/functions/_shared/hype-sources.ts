@@ -12,7 +12,7 @@ export interface RawTrend {
   score?: number; // ranking relativo (maior = mais quente)
 }
 
-const UA = "Mozilla/5.0 (compatible; InfluLabHypeBot/1.0; +https://influlab.pro)";
+const UA = "Mozilla/5.0 (compatible; VyralLabHypeBot/1.0; +https://app.vyrallab.online)";
 
 // ---------- Google Trends BR (RSS público) ----------
 export async function fetchGoogleTrendsBR(): Promise<RawTrend[]> {

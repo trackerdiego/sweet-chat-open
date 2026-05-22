@@ -36,7 +36,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "InfluLab"
+const SITE_NAME = "Vyral Lab"
 const SENDER_DOMAIN = "notify.app.influlab.pro"
 const ROOT_DOMAIN = "app.influlab.pro"
 const FROM_DOMAIN = "app.influlab.pro"
