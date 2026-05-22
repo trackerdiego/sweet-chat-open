@@ -1,48 +1,62 @@
+## Objetivo
+
+Travar a seção **Hype do dia** como bônus anti-chargeback. Antes do dia 8 (contado a partir do primeiro `PAYMENT_RECEIVED` confirmado), o usuário vê apenas um card dourado pulsante com ícone de presente 🎁 + cadeado e contagem regressiva — sem skeletons, sem prévia do conteúdo. Após o dia 8, a seção desbloqueia automaticamente.
+
 ## Diagnóstico
 
-Confirmei no banco: seu `subscription_state` está **`status='active'`, `plan='monthly'`, `is_premium=true`**. Ou seja, do lado dos dados você é premium de verdade.
+A infraestrutura **já existe** e está conectada:
+- `src/components/GiftUnlockCard.tsx` — card dourado com `Gift` + `Lock` + sparkles + shimmer + contador `Xd Yh Zm`
+- `src/pages/Index.tsx:204` — já renderiza `<GiftUnlockCard />` no lugar do `<HypeOfTheDay />`
+- Lógica baseada em `firstPaidAt` do `useSubscription`, janela de 8 dias
 
-O problema é no **hook `useSubscription`**, que tem 2 falhas combinadas:
+O que está errado:
+1. A copy do card fala "Trends Virais do YouTube com thumbnails" — herdado de outro projeto pausado, não bate com **Hype do dia**
+2. O bypass `isManualPremium` (equipe sem `asaas_customer_id`) renderiza direto o `HypeOfTheDay` — por isso o admin vê o skeleton "Vasculhando tendências do Brasil pra você…" da imagem enviada, em vez do card de presente
 
-### Falha 1 — query falha em silêncio
-```ts
-const { data } = await supabase.from('subscription_state').select(...).maybeSingle();
-if (data) { setSub(...) }
-setLoading(false);
+## Mudanças
+
+### 1. `src/components/GiftUnlockCard.tsx` — recopy
+
+Trocar o texto do `small` em todos os 3 chamados de `GiftCard`:
+- De: `"Trends Virais do YouTube com thumbnails"`
+- Para: `"Hype do dia — tendências virais do Brasil"`
+
+Reforçar a promessa do bônus nos títulos/subtítulos:
+- Estado **sem firstPaidAt**: `title="Seu bônus tá chegando"`, `subtitle="Liberado após o primeiro pagamento confirmado"`, `bigText="Aguardando confirmação"`
+- Estado **contagem**: `title="Bônus exclusivo desbloqueando"`, `subtitle="Liberado em X dias"`
+- Estado **última hora**: `title="Liberando em instantes!"`, `subtitle="Atualize a página em algumas horas"`
+
+### 2. Bypass de equipe permanece
+
+Manter `isManualPremium` (equipe interna) com acesso direto ao `HypeOfTheDay`. **Mas** durante teste visual, você pode forçar o card aparecendo para sua conta de admin via um flag local — opcional, só se quiser revisar o visual ao vivo. Por padrão, equipe continua com bypass.
+
+### 3. Não mexer em
+
+- `HypeOfTheDay.tsx` continua intacto — só é montado pós-desbloqueio
+- `Index.tsx` já chama `<GiftUnlockCard />` no lugar certo, nenhuma mudança
+- Janela de 8 dias (`UNLOCK_DAYS = 8`) e fonte de verdade (`firstPaidAt` do webhook Asaas) permanecem
+
+## Resultado visual
+
+O usuário que acabou de pagar vê, no lugar dos 4 quadradinhos vazios da imagem:
+
+```text
+┌─────────────────────────────────┐
+│  ✨  [🎁 com cadeado dourado]  ✨ │
+│                                 │
+│   Bônus exclusivo desbloqueando │
+│      Liberado em 7 dias         │
+│                                 │
+│         6d 23h 12m              │ ← dourado, pulsante
+│                                 │
+│  HYPE DO DIA — TENDÊNCIAS       │
+│       VIRAIS DO BRASIL          │
+└─────────────────────────────────┘
 ```
-Não trata `error`. Quando a auth lock é "roubada" (`Lock "lock:sb-api-auth-token" was released because another request stole it` — está aparecendo no seu console agora), o `getUser()` ou o select retorna sem `data`. O hook então:
-- Mantém o `DEFAULT` (`status: 'trial'`, sem `trialEndsAt`)
-- Marca `loading=false`
-- `isActive` vira `false` → `App.tsx` cai em `<PaywallScreen />`
 
-Toda vez que isso acontece (lock contention típica de React Strict Mode / múltiplos componentes consumindo `supabase.auth` ao mesmo tempo), você vê o paywall por 1-2 segundos até refetch.
+Borda gradient dourada animada (shimmer 4s), ícone presente fazendo "bob" suave, sparkles decorativas, glow pulsante. Já está tudo implementado — só falta a copy bater com **Hype do dia**.
 
-### Falha 2 — sem fallback para admin
-Mesmo se a query falhar, o admin master deveria ter bypass. Hoje não tem nenhum.
+## Perguntas antes de implementar
 
-## Plano
-
-### 1. `src/hooks/useSubscription.ts` — tornar resiliente
-- Capturar `error` do `maybeSingle()`.
-- Se houver erro **OU** se `data` for `null` mas a sessão for válida, **não** marcar `loading=false` na primeira tentativa: fazer 1 retry com backoff curto (500ms).
-- Adicionar guard: enquanto não houve **nenhuma** resposta bem-sucedida (nem `data`, nem confirmação de "linha não existe"), manter `loading=true` em vez de assumir trial default. Isso evita flash de paywall em qualquer usuário, não só admin.
-- Expor um estado `hasLoadedOnce` interno para diferenciar "ainda não sei" de "sei que não tem assinatura".
-
-### 2. Bypass de admin
-- Em `useSubscription`, depois de pegar o user, se `user.email === 'agentevendeagente@gmail.com'`, retornar `isActive=true`, `hasAccess=true`, `status='active'` direto, sem depender da tabela. Você nunca mais vê paywall na sua conta mesmo se a query falhar.
-- (Alternativa mais limpa: tabela `admin_users` — mas como o admin é fixo e já tratado por email em outros lugares do app conforme a memória, manter por email é consistente.)
-
-### 3. `src/App.tsx` — não cair em paywall enquanto sub estiver indefinida
-Trocar:
-```ts
-if (!subLoading && !isActive) return <PaywallScreen />
-```
-por algo que só dispare quando temos certeza (`hasLoadedOnce && !isActive`). Combinado com #1, elimina o flash.
-
-### 4. Mitigar a causa raiz do lock
-O warning `Lock ... was released because another request stole it` vem de múltiplos `supabase.auth.getUser()` simultâneos (`useUserProfile`, `useSubscription`, `usePendingInvoice`, `AutoCheckoutOpener`, etc., todos chamando ao mesmo tempo no mount). Não vou refatorar todos agora — o fix #1+#3 já blinda contra o sintoma. Anoto como dívida técnica.
-
-## Resultado esperado
-- Você (admin) nunca mais vê paywall.
-- Qualquer usuário premium real para de ver flash de paywall quando a auth lock briga.
-- Comportamento para quem realmente não pagou: idêntico ao atual.
+1. Confirma o texto do bônus como **"Hype do dia — tendências virais do Brasil"**? Ou prefere outra frase (ex: "Hype do dia — as 10 tendências quentes do Brasil pro seu nicho")?
+2. Quer que eu force o card aparecer para você (admin) também durante o período de teste, ou mantém o bypass da equipe?
