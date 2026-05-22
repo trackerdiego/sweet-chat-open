@@ -1,4 +1,4 @@
-import { useMemo as _useMemo } from 'react';
+// platform detection no longer needed — sempre mostramos as instruções iOS-style
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { MoreVertical, Smartphone } from 'lucide-react';
