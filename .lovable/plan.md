@@ -1,40 +1,45 @@
-## Mudanças no `CheckoutModal`
+## Redesign da tela de retenção (`PaywallScreen`)
 
-### 1. Header com gradiente lilás (igual outras partes do app)
+A tela que aparece atrás do checkout (e que reaparece quando o user fecha o modal do PIX) ainda está no visual antigo: ícone de cadeado em círculo cinza, título em serifa preta, bullets de feature list **iguais** aos que já aparecem no `BonusStack` dentro do modal — repetição visual e perda de impacto.
 
-Já existe a classe `.gradient-header` em `src/index.css` (linha 142) usada em outras telas:
-```css
-background: linear-gradient(135deg, hsl(258 60% 55%), hsl(280 70% 45%));
-color: white;
+### Direção: alinhar com a nova identidade do checkout + remover redundância
+
+**1. Header lilás (mesma assinatura do modal)**
+- Substituir o card branco neutro por um card com **topo em `gradient-header` lilás** (mesmo do `CheckoutModal`).
+- Ícone `Crown` em pill branco translúcido (`bg-white/15 backdrop-blur ring-1 ring-white/30`) no lugar do cadeado cinza.
+- Título em `font-display` (Sora) branco, descrição em branco/80%.
+
+**2. Remover os 5 bullets de feature**
+Os bullets `BULLETS` repetem o que o `BonusStack` mostra no modal. Tirar.
+
+No lugar, usar **gatilhos de retenção** que o modal **não** mostra:
+
+- **Prova social compacta**: linha única com avatares empilhados + "+2.847 criadores ativos esta semana".
+- **Garantia de 7 dias**: bloco igual ao da imagem 1 que o user mandou (escudo + "7 dias de garantia / Se não amar, devolvemos 100%. Sem perguntas."). Reforça segurança sem repetir features.
+- **Selo de pagamento seguro**: linha discreta "🔒 Pagamento processado pela Asaas · PIX e Cartão".
+
+**3. CTA mais forte**
+- Botão `gold-gradient` mantido, mas com microcopy mudada para algo direto: "Continuar para pagamento" + chevron, em vez de "Assinar agora" (o user já entendeu que vai assinar — agora é só voltar pro fluxo).
+- Abaixo, link sutil "Sair da conta" mantido.
+
+**4. Layout final (esqueleto)**
+```text
+┌─────────────────────────────────┐
+│  [gradient lilás c/ Crown pill] │
+│  Falta só o último passo        │
+│  Finalize sua assinatura...     │
+├─────────────────────────────────┤
+│  [avatares] +2.847 criadores    │
+│                                  │
+│  🛡️ 7 dias de garantia          │
+│  Se não amar, devolvemos 100%   │
+│                                  │
+│  [ Continuar para pagamento → ] │
+│        Sair da conta            │
+└─────────────────────────────────┘
 ```
 
-Aplicar essa mesma faixa lilás como **bloco sólido** no topo do `DialogContent`, em vez do "aurora" branco-claro com blur que está hoje:
-- Faixa lilás full-width nas etapas **Dados**, **Pagamento** e **Resultado (PIX)**.
-- Ícone da coroa em pill branco translúcido (`bg-white/15 backdrop-blur`) sobre o lilás.
-- Título e descrição em branco/branco-80%.
-- Barra de progresso (3 segmentos) em branco semitransparente; ativo = branco sólido.
-- Cantos arredondados só no topo (`rounded-t-lg`), conteúdo abaixo continua no fundo claro do card.
-
-Resultado: o modal abre com a mesma "assinatura visual" lilás do resto do app (Navigation, Landing, gradient-header de outras páginas), em vez do header esmaecido atual.
-
-### 2. Fonte do título
-
-Hoje o título usa `font-sans` (Inter bold). Para diferenciar e dar peso editorial premium ao checkout, vou usar **Sora** — moderna, geométrica, ótima legibilidade em branco sobre lilás, combina com o tom premium sem ser séria demais como serifa.
-
-Passos:
-- `bun add @fontsource/sora` (pesos 600 e 700).
-- Importar em `src/main.tsx`: `import '@fontsource/sora/600.css'; import '@fontsource/sora/700.css';`
-- Adicionar `fontFamily.display: ['Sora', 'Inter', 'sans-serif']` em `tailwind.config.ts`.
-- Usar `font-display` no `DialogTitle` e também no rótulo do valor (`R$ 297`) dentro do `BonusStack` para hierarquia consistente.
-
-(Se preferir reutilizar a `Playfair Display` que já está carregada e dar um tom mais editorial/luxo, é só trocar `font-display` por `font-serif` no título — sem instalar nada. Me avisa qual prefere; default vou de Sora.)
-
 ### Arquivos afetados
+- `src/components/PaywallScreen.tsx` — reescrita do JSX: remove `BULLETS`, troca header, adiciona bloco de garantia + prova social.
 
-- `src/components/CheckoutModal.tsx` — troca do header e aplicação de `font-display` nos títulos.
-- `src/components/checkout/BonusStack.tsx` — `font-display` no valor "Você paga R$ X".
-- `tailwind.config.ts` — adição de `fontFamily.display`.
-- `src/main.tsx` — imports do `@fontsource/sora`.
-- `package.json` — dependência `@fontsource/sora`.
-
-Sem mudanças em backend, sem migration, sem deploy de edge function.
+Sem mudanças em backend, sem migration, sem deploy de edge function. Frontend puro.
