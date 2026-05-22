@@ -211,24 +211,24 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto border-primary/30 bg-card/95 backdrop-blur-xl shadow-[0_24px_70px_-20px_hsl(var(--primary)/0.5)] p-0">
-        {/* Aurora header */}
-        <div className="relative px-6 pt-6 pb-4 overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute -top-20 -left-10 w-60 h-60 rounded-full bg-primary/25 blur-3xl" />
-            <div className="absolute -top-16 right-0 w-56 h-56 rounded-full bg-accent/20 blur-3xl" />
+        {/* Lilac gradient header */}
+        <div className="relative px-6 pt-6 pb-5 gradient-header rounded-t-lg overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none opacity-60">
+            <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-white/15 blur-3xl" />
+            <div className="absolute -bottom-12 -left-8 w-44 h-44 rounded-full bg-white/10 blur-3xl" />
           </div>
           <DialogHeader className="relative space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl gold-gradient flex items-center justify-center shadow-lg">
-                <Crown className="h-5 w-5 text-primary-foreground" />
+            <div className="flex items-center gap-2.5">
+              <div className="h-10 w-10 rounded-xl bg-white/15 backdrop-blur-md ring-1 ring-white/30 flex items-center justify-center shadow-lg">
+                <Crown className="h-5 w-5 text-white" />
               </div>
               <div className="flex-1">
-                <DialogTitle className="font-sans font-bold text-lg tracking-tight">
+                <DialogTitle className="font-display font-bold text-lg tracking-tight text-white">
                   {draft.step === "data" && "Garanta seu acesso"}
                   {draft.step === "method" && "Escolha como pagar"}
                   {draft.step === "result" && (draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
                 </DialogTitle>
-                <DialogDescription className="text-xs">
+                <DialogDescription className="text-xs text-white/80">
                   {draft.step === "data" && "Dados para emitir a cobrança segura"}
                   {draft.step === "method" && "PIX libera na hora • Cartão é recorrente"}
                   {draft.step === "result" && (draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
@@ -241,18 +241,19 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
               {["Dados", "Pagamento", "Confirmação"].map((label, i) => (
                 <div key={label} className="flex-1 flex items-center gap-1.5">
                   <div className={`h-1.5 flex-1 rounded-full transition-all ${
-                    i <= stepIdx ? "gold-gradient" : "bg-border/60"
+                    i <= stepIdx ? "bg-white" : "bg-white/25"
                   }`} />
                 </div>
               ))}
             </div>
-            <div className="flex justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-              <span className={stepIdx >= 0 ? "text-primary" : ""}>Dados</span>
-              <span className={stepIdx >= 1 ? "text-primary" : ""}>Pagamento</span>
-              <span className={stepIdx >= 2 ? "text-primary" : ""}>Confirmação</span>
+            <div className="flex justify-between text-[10px] uppercase tracking-wider font-semibold">
+              <span className={stepIdx >= 0 ? "text-white" : "text-white/50"}>Dados</span>
+              <span className={stepIdx >= 1 ? "text-white" : "text-white/50"}>Pagamento</span>
+              <span className={stepIdx >= 2 ? "text-white" : "text-white/50"}>Confirmação</span>
             </div>
           </DialogHeader>
         </div>
+
 
         <div className="px-6 pb-6 space-y-4">
           <AnimatePresence mode="wait">
