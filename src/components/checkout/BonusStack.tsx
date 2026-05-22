@@ -36,7 +36,7 @@ export function BonusStack({ price }: { price: number }) {
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Você paga</div>
-          <div className="text-lg font-display font-bold text-primary">R$ {price}</div>
+          <div className="text-lg font-display font-bold text-primary text-orange-500">R$ {price}</div>
         </div>
       </div>
     </div>
