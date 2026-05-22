@@ -1,5 +1,5 @@
 // Service Worker — Push Notifications + Offline Cache
-const CACHE_NAME = 'influlab-v1';
+const CACHE_NAME = 'vyrallab-v2';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',

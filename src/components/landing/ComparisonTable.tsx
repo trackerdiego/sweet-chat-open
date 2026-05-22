@@ -2,14 +2,14 @@ import { Check, X, Minus } from "lucide-react";
 
 type Cell = "yes" | "partial" | "no" | string;
 
-const rows: { feature: string; influlab: Cell; chatgpt: Cell; sozinho: Cell }[] = [
-  { feature: "Estratégia personalizada por nicho", influlab: "yes", chatgpt: "partial", sozinho: "no" },
-  { feature: "Scripts prontos pra usar", influlab: "yes", chatgpt: "partial", sozinho: "no" },
-  { feature: "Análise visceral da audiência", influlab: "yes", chatgpt: "no", sozinho: "no" },
-  { feature: "Guia diário automático", influlab: "yes", chatgpt: "no", sozinho: "no" },
-  { feature: "Tempo de setup", influlab: "5 min", chatgpt: "Horas", sozinho: "Semanas" },
-  { feature: "Custo mensal", influlab: "R$47/mês ou R$24,75 no anual", chatgpt: "R$120+", sozinho: "Seu tempo" },
-  { feature: "Suporte humano", influlab: "yes", chatgpt: "no", sozinho: "no" },
+const rows: { feature: string; vyrallab: Cell; chatgpt: Cell; sozinho: Cell }[] = [
+  { feature: "Estratégia personalizada por nicho", vyrallab: "yes", chatgpt: "partial", sozinho: "no" },
+  { feature: "Scripts prontos pra usar", vyrallab: "yes", chatgpt: "partial", sozinho: "no" },
+  { feature: "Análise visceral da audiência", vyrallab: "yes", chatgpt: "no", sozinho: "no" },
+  { feature: "Guia diário automático", vyrallab: "yes", chatgpt: "no", sozinho: "no" },
+  { feature: "Tempo de setup", vyrallab: "5 min", chatgpt: "Horas", sozinho: "Semanas" },
+  { feature: "Custo mensal", vyrallab: "R$47/mês ou R$24,75 no anual", chatgpt: "R$120+", sozinho: "Seu tempo" },
+  { feature: "Suporte humano", vyrallab: "yes", chatgpt: "no", sozinho: "no" },
 ];
 
 function CellRender({ value }: { value: Cell }) {
@@ -45,7 +45,7 @@ export function ComparisonTable() {
               }`}
             >
               <div className="p-3 sm:p-4 text-left text-white/80">{r.feature}</div>
-              <div className="p-3 sm:p-4"><CellRender value={r.influlab} /></div>
+              <div className="p-3 sm:p-4"><CellRender value={r.vyrallab} /></div>
               <div className="p-3 sm:p-4"><CellRender value={r.chatgpt} /></div>
               <div className="p-3 sm:p-4"><CellRender value={r.sozinho} /></div>
             </div>
