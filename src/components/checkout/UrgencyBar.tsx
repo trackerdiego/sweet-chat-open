@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Flame, Zap } from "lucide-react";
+import { Flame, AlarmClockCheck } from "lucide-react";
 
 // Countdown reinicia a cada 48h baseado em timestamp local persistido
 const KEY = "checkout:deadline";
@@ -37,14 +37,14 @@ export function UrgencyBar() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
-        <Zap size={14} className="text-primary shrink-0" />
+      <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-amber-200 px-3 py-2 text-sm">
+        <AlarmClockCheck size={14} className="lucide lucide-zap text-primary shrink-0 bg-inherit" />
         <span className="flex-1 text-foreground/90">Oferta de lançamento — preço sobe em</span>
         <span className="font-mono font-bold text-primary tabular-nums">{fmt(left)}</span>
       </div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Flame size={12} className="text-accent" />
-        <span>+127 criadores assinaram nas últimas 24h</span>
+        <Flame size={12} className="lucide lucide-flame text-accent text-orange-600" />
+        <span className="text-orange-400">+127 criadores assinaram nas últimas 24h</span>
       </div>
     </div>
   );

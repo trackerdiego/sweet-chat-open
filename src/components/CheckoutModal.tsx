@@ -279,7 +279,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                           </span>
                         )}
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{p.label}</p>
-                        <p className="text-xl font-bold mt-0.5">R${p.price}</p>
+                        <p className="text-xl font-bold mt-0.5 text-orange-500">R${p.price}</p>
                         <p className="text-[10px] text-primary font-medium mt-0.5">{p.sub}</p>
                       </button>
                     );
