@@ -6,7 +6,7 @@ import { useUserUsage } from '@/hooks/useUserUsage';
 import { useWallet } from '@/hooks/useWallet';
 import { getPillarEmoji } from '@/data/strategies';
 import { NicheIcon } from '@/components/NicheIcon';
-import { HypeOfTheDay } from '@/components/HypeOfTheDay';
+import { GiftUnlockCard } from '@/components/GiftUnlockCard';
 import { QuickAccessGrid } from '@/components/QuickAccessGrid';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { ArrowRight, LogOut, Crown, HelpCircle, Sun, Moon, Flame, Coins } from 'lucide-react';
@@ -200,8 +200,8 @@ const Index = () => {
         {/* Acesso rápido */}
         <QuickAccessGrid />
 
-        {/* Hype do dia */}
-        <HypeOfTheDay />
+        {/* Presente bloqueado (libera Trends Virais do YouTube no D8) */}
+        <GiftUnlockCard />
 
         {/* Status (rodapé compacto) */}
         <motion.div
