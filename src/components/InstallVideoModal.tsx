@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Share, Plus, MoreVertical, Smartphone } from 'lucide-react';
+import { MoreVertical, Smartphone } from 'lucide-react';
 
 const SEEN_KEY = 'influlab.installVideoSeen';
 
@@ -20,11 +20,51 @@ function detectPlatform(): Platform {
   return 'other';
 }
 
-function InlineIcon({ children }: { children: React.ReactNode }) {
+// iOS native Share icon (square with up arrow)
+function IOSShareIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M12 3v13" />
+      <path d="M8 7l4-4 4 4" />
+      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+    </svg>
+  );
+}
+
+// iOS native "Add to Home Screen" icon (plus inside rounded square)
+function IOSAddIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      <path d="M12 8v8" />
+      <path d="M8 12h8" />
+    </svg>
+  );
+}
+
+function InlineSquare({ children }: { children: React.ReactNode }) {
   return (
     <span
       aria-hidden
-      className="inline-flex items-center justify-center align-middle h-8 w-8 mx-1 rounded-lg border-2 border-primary/30 bg-primary/5 text-primary shadow-sm"
+      className="inline-flex items-center justify-center align-[-0.25em] h-7 w-7 mx-1 text-foreground"
     >
       {children}
     </span>
@@ -33,31 +73,27 @@ function InlineIcon({ children }: { children: React.ReactNode }) {
 
 function IOSContent() {
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] leading-[1.7] text-foreground">
-        Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
-        <br />
-        Toque em <strong>Compartilhar</strong>
-        <InlineIcon><Share className="h-4 w-4" /></InlineIcon>
-        e depois em <strong>Adicionar à Tela de Início</strong>
-        <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
-      </p>
-    </div>
+    <p className="text-[16px] leading-[1.75] text-foreground">
+      Adicione o aplicativo <strong>Vyral Lab</strong> à sua tela inicial para receber atualizações regulares.
+      <br />
+      Toque em <strong>Compartilhar</strong>
+      <InlineSquare><IOSShareIcon className="h-6 w-6" /></InlineSquare>
+      e depois em <strong>Adicionar à Tela de Início</strong>
+      <InlineSquare><IOSAddIcon className="h-6 w-6" /></InlineSquare>
+    </p>
   );
 }
 
 function AndroidContent() {
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] leading-[1.7] text-foreground">
-        Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
-        <br />
-        Toque no menu
-        <InlineIcon><MoreVertical className="h-4 w-4" /></InlineIcon>
-        no canto superior direito e depois em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>
-        <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
-      </p>
-    </div>
+    <p className="text-[16px] leading-[1.75] text-foreground">
+      Adicione o aplicativo <strong>Vyral Lab</strong> à sua tela inicial para receber atualizações regulares.
+      <br />
+      Toque no menu
+      <InlineSquare><MoreVertical className="h-6 w-6" /></InlineSquare>
+      do navegador e depois em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>
+      <InlineSquare><IOSAddIcon className="h-6 w-6" /></InlineSquare>
+    </p>
   );
 }
 
