@@ -1,14 +1,18 @@
-// GiftUnlockCard — anti-chargeback. Trava as Trends Virais do YouTube por 8 dias
+// GiftUnlockCard — anti-chargeback. Trava o Hype do dia por 8 dias
 // a partir do primeiro PAYMENT_RECEIVED confirmado. Antes disso, mostra um
 // card dourado pulsante com contador regressivo.
+//
+// Inclui preview admin: o usuário agentevendeagente@gmail.com vê um chip
+// flutuante que força o card a renderizar com firstPaidAt simulado.
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Gift, Lock, Sparkles } from 'lucide-react';
+import { Eye, Gift, Lock, Sparkles, X } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { HypeOfTheDay } from '@/components/HypeOfTheDay';
 
 const UNLOCK_DAYS = 8;
+const PREVIEW_KEY = 'vyrallab.previewGiftCard';
 
 function formatRemaining(ms: number): { days: number; hours: number; minutes: number; underDay: boolean } {
   const totalMinutes = Math.max(0, Math.floor(ms / 60_000));
@@ -18,9 +22,27 @@ function formatRemaining(ms: number): { days: number; hours: number; minutes: nu
   return { days, hours, minutes, underDay: days === 0 };
 }
 
+function usePreviewFirstPaidAt(enabled: boolean): [string | null, (v: string | null) => void] {
+  const [value, setValue] = useState<string | null>(() => {
+    if (!enabled || typeof window === 'undefined') return null;
+    try { return localStorage.getItem(PREVIEW_KEY); } catch { return null; }
+  });
+
+  const update = (v: string | null) => {
+    setValue(v);
+    try {
+      if (v) localStorage.setItem(PREVIEW_KEY, v);
+      else localStorage.removeItem(PREVIEW_KEY);
+    } catch {}
+  };
+
+  return [enabled ? value : null, update];
+}
+
 export function GiftUnlockCard() {
-  const { firstPaidAt, isActive, asaasCustomerId, loading } = useSubscription();
+  const { firstPaidAt: realFirstPaidAt, isActive, asaasCustomerId, loading, isAdmin } = useSubscription();
   const [now, setNow] = useState(() => Date.now());
+  const [previewDate, setPreviewDate] = usePreviewFirstPaidAt(isAdmin);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
@@ -29,14 +51,25 @@ export function GiftUnlockCard() {
 
   if (loading) return null;
 
-  // Equipe (premium manual sem customer Asaas) ou sem primeira data de pagamento
-  // mas com is_premium=true via bypass → libera direto.
-  const isManualPremium = isActive && !asaasCustomerId && !firstPaidAt;
-  if (isManualPremium) return <HypeOfTheDay />;
+  // Preview admin tem prioridade sobre tudo
+  const firstPaidAt = previewDate || realFirstPaidAt;
 
-  // Sem assinatura paga ainda — mostra card "aguardando primeiro pagamento"
-  if (!firstPaidAt) {
+  // Equipe (premium manual sem customer Asaas) ou sem primeira data de pagamento
+  // mas com is_premium=true via bypass → libera direto (a menos que esteja em preview).
+  const isManualPremium = isActive && !asaasCustomerId && !firstPaidAt;
+  if (isManualPremium && !previewDate) {
     return (
+      <>
+        <HypeOfTheDay />
+        {isAdmin && <AdminPreviewPanel current={null} onChange={setPreviewDate} />}
+      </>
+    );
+  }
+
+  let content: React.ReactNode;
+
+  if (!firstPaidAt) {
+    content = (
       <GiftCard
         title="Seu bônus tá chegando"
         subtitle="Liberado após o primeiro pagamento confirmado"
@@ -44,32 +77,115 @@ export function GiftUnlockCard() {
         small="Hype do dia — tendências virais do Brasil"
       />
     );
+  } else {
+    const unlockAt = new Date(firstPaidAt).getTime() + UNLOCK_DAYS * 24 * 60 * 60 * 1000;
+    const remainingMs = unlockAt - now;
+
+    if (remainingMs <= 0) {
+      content = <HypeOfTheDay />;
+    } else {
+      const { days, hours, minutes, underDay } = formatRemaining(remainingMs);
+      const bigText = underDay
+        ? `${hours}h ${minutes}m`
+        : `${days}d ${hours}h ${minutes}m`;
+
+      const title = underDay ? 'Liberando em instantes!' : 'Bônus exclusivo desbloqueando';
+      const subtitle = underDay
+        ? 'Atualize a página em algumas horas'
+        : `Liberado em ${days + 1} ${days + 1 === 1 ? 'dia' : 'dias'}`;
+
+      content = (
+        <GiftCard
+          title={title}
+          subtitle={subtitle}
+          bigText={bigText}
+          small="Hype do dia — tendências virais do Brasil"
+        />
+      );
+    }
   }
-
-  const unlockAt = new Date(firstPaidAt).getTime() + UNLOCK_DAYS * 24 * 60 * 60 * 1000;
-  const remainingMs = unlockAt - now;
-
-  if (remainingMs <= 0) {
-    return <HypeOfTheDay />;
-  }
-
-  const { days, hours, minutes, underDay } = formatRemaining(remainingMs);
-  const bigText = underDay
-    ? `${hours}h ${minutes}m`
-    : `${days}d ${hours}h ${minutes}m`;
-
-  const title = underDay ? 'Liberando em instantes!' : 'Bônus exclusivo desbloqueando';
-  const subtitle = underDay
-    ? 'Atualize a página em algumas horas'
-    : `Liberado em ${days + 1} ${days + 1 === 1 ? 'dia' : 'dias'}`;
 
   return (
-    <GiftCard
-      title={title}
-      subtitle={subtitle}
-      bigText={bigText}
-      small="Hype do dia — tendências virais do Brasil"
-    />
+    <>
+      {content}
+      {isAdmin && <AdminPreviewPanel current={previewDate} onChange={setPreviewDate} />}
+    </>
+  );
+}
+
+function AdminPreviewPanel({
+  current,
+  onChange,
+}: {
+  current: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const setHoursAgo = (hours: number) => {
+    const d = new Date(Date.now() - hours * 60 * 60 * 1000);
+    onChange(d.toISOString());
+  };
+
+  return (
+    <div className="fixed bottom-20 right-3 z-[60] flex flex-col items-end gap-2 pointer-events-none">
+      {open && (
+        <div className="pointer-events-auto rounded-2xl border border-amber-500/40 bg-zinc-900/95 backdrop-blur p-3 shadow-2xl text-xs space-y-2 w-56">
+          <div className="flex items-center justify-between text-amber-300 font-semibold">
+            <span>👁 Preview admin</span>
+            <button onClick={() => setOpen(false)} className="text-zinc-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+          <p className="text-[10px] text-zinc-400 leading-snug">
+            Simula o card de bônus como um usuário pagante veria. Só você vê este painel.
+          </p>
+          <div className="grid grid-cols-1 gap-1">
+            <button
+              onClick={() => setHoursAgo(0)}
+              className="text-left px-2 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 border border-amber-500/30"
+            >
+              7 dias restantes
+            </button>
+            <button
+              onClick={() => setHoursAgo(4 * 24)}
+              className="text-left px-2 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 border border-amber-500/30"
+            >
+              3 dias restantes
+            </button>
+            <button
+              onClick={() => setHoursAgo(7 * 24 + 18)}
+              className="text-left px-2 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-100 border border-amber-500/30"
+            >
+              &lt; 1 dia restante
+            </button>
+            <button
+              onClick={() => onChange(null)}
+              className="text-left px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 mt-1"
+            >
+              Desativar preview
+            </button>
+          </div>
+          {current && (
+            <p className="text-[10px] text-amber-300/70 truncate">
+              Simulando pago em: {new Date(current).toLocaleString('pt-BR')}
+            </p>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold shadow-lg border transition ${
+          current
+            ? 'bg-amber-500 text-amber-950 border-amber-300'
+            : 'bg-zinc-900/90 text-amber-300 border-amber-500/40 hover:bg-zinc-800'
+        }`}
+      >
+        <Eye size={14} />
+        {current ? 'Preview ativo' : 'Preview admin'}
+      </button>
+    </div>
   );
 }
 
