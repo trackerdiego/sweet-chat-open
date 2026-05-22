@@ -111,8 +111,6 @@ function OtherContent() {
 }
 
 export function InstallVideoModal({ open, onOpenChange }: Props) {
-  const platform = useMemo(() => detectPlatform(), []);
-
   const handleDontShowAgain = () => {
     try { localStorage.setItem(SEEN_KEY, '1'); } catch {}
     onOpenChange(false);
@@ -127,21 +125,10 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
         {/* Handle visual de bottom sheet */}
         <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-muted-foreground/25" />
 
-        <SheetHeader className="space-y-1.5 text-left">
-          <SheetTitle className="font-serif text-xl flex items-center gap-2">
-            <span aria-hidden>📲</span>
-            Adicione à tela inicial
-          </SheetTitle>
-          <SheetDescription className="text-xs">
-            Em 30 segundos seu Vyral Lab vira app — push, acesso rápido e tela cheia.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="pt-4">
-          {platform === 'ios' && <IOSContent />}
-          {platform === 'android' && <AndroidContent />}
-          {platform === 'other' && <OtherContent />}
+        <div className="pt-1">
+          <IOSContent />
         </div>
+
 
         <div className="flex flex-col gap-2 pt-4">
           <Button
