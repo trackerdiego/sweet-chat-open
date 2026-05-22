@@ -8,6 +8,8 @@ export interface SubscriptionState {
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
   plan: 'monthly' | 'annual' | null;
+  firstPaidAt: string | null;
+  asaasCustomerId: string | null;
 }
 
 const DEFAULT: SubscriptionState = {
@@ -15,6 +17,8 @@ const DEFAULT: SubscriptionState = {
   trialEndsAt: null,
   currentPeriodEnd: null,
   plan: null,
+  firstPaidAt: null,
+  asaasCustomerId: null,
 };
 
 export function useSubscription() {
@@ -25,7 +29,7 @@ export function useSubscription() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
     const { data } = await (supabase.from as any)('subscription_state')
-      .select('status, trial_ends_at, current_period_end, plan')
+      .select('status, trial_ends_at, current_period_end, plan, first_paid_at, asaas_customer_id')
       .eq('user_id', user.id)
       .maybeSingle();
     if (data) {
@@ -34,6 +38,8 @@ export function useSubscription() {
         trialEndsAt: data.trial_ends_at,
         currentPeriodEnd: data.current_period_end,
         plan: data.plan,
+        firstPaidAt: data.first_paid_at ?? null,
+        asaasCustomerId: data.asaas_customer_id ?? null,
       });
     }
     setLoading(false);
@@ -43,14 +49,10 @@ export function useSubscription() {
 
   const now = Date.now();
   const trialEndMs = sub.trialEndsAt ? new Date(sub.trialEndsAt).getTime() : 0;
-  // Trial removido do modelo público — sempre falso para bloquear acesso
-  // sem pagamento. Mantido como variável para compatibilidade com componentes
-  // legados, mas nunca libera o app.
   const isTrialing = false;
   const isActive = sub.status === 'active';
   const isExpired = sub.status === 'trial' && trialEndMs <= now;
   const isPastDueOrCanceled = sub.status === 'past_due' || sub.status === 'canceled';
-  // Acesso só com assinatura ativa confirmada via webhook Asaas.
   const hasAccess = isActive;
   const daysLeftInTrial = 0;
 

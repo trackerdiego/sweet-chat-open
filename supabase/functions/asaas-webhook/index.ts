@@ -386,6 +386,20 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
       await admin.from("user_usage").insert({ user_id: userId, is_premium: true });
     }
 
+    // first_paid_at: grava APENAS na primeira confirmação. Usado pelo
+    // GiftUnlockCard pra liberar bônus só após D8 (anti-chargeback).
+    const { data: existingSub } = await admin
+      .from("subscription_state")
+      .select("first_paid_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!existingSub?.first_paid_at) {
+      await admin
+        .from("subscription_state")
+        .update({ first_paid_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("user_id", userId);
+    }
+
     await syncSubscriptionState(admin, {
       userId,
       status: "active",
