@@ -1,62 +1,37 @@
 ## Objetivo
 
-Travar a seção **Hype do dia** como bônus anti-chargeback. Antes do dia 8 (contado a partir do primeiro `PAYMENT_RECEIVED` confirmado), o usuário vê apenas um card dourado pulsante com ícone de presente 🎁 + cadeado e contagem regressiva — sem skeletons, sem prévia do conteúdo. Após o dia 8, a seção desbloqueia automaticamente.
+Permitir que você (admin/equipe) visualize o card de bônus dourado com contagem regressiva exatamente como um usuário pagante veria nos primeiros 7 dias — sem perder seu bypass premium nas outras telas.
 
-## Diagnóstico
+## Abordagem
 
-A infraestrutura **já existe** e está conectada:
-- `src/components/GiftUnlockCard.tsx` — card dourado com `Gift` + `Lock` + sparkles + shimmer + contador `Xd Yh Zm`
-- `src/pages/Index.tsx:204` — já renderiza `<GiftUnlockCard />` no lugar do `<HypeOfTheDay />`
-- Lógica baseada em `firstPaidAt` do `useSubscription`, janela de 8 dias
+Adicionar um **toggle de preview** acoplado ao próprio `GiftUnlockCard`, visível só para o email `agentevendeagente@gmail.com`. Quando ligado, força o card a renderizar simulando "primeiro pagamento foi há X horas", em vez de pular direto pro `HypeOfTheDay`.
 
-O que está errado:
-1. A copy do card fala "Trends Virais do YouTube com thumbnails" — herdado de outro projeto pausado, não bate com **Hype do dia**
-2. O bypass `isManualPremium` (equipe sem `asaas_customer_id`) renderiza direto o `HypeOfTheDay` — por isso o admin vê o skeleton "Vasculhando tendências do Brasil pra você…" da imagem enviada, em vez do card de presente
+Sem mexer em banco, sem afetar usuários reais, sem deploy de edge function.
 
 ## Mudanças
 
-### 1. `src/components/GiftUnlockCard.tsx` — recopy
+### `src/components/GiftUnlockCard.tsx`
 
-Trocar o texto do `small` em todos os 3 chamados de `GiftCard`:
-- De: `"Trends Virais do YouTube com thumbnails"`
-- Para: `"Hype do dia — tendências virais do Brasil"`
+1. Importar `useAuth` (ou `supabase.auth.getUser`) e detectar se o email logado é `agentevendeagente@gmail.com`.
+2. Ler um flag de localStorage `vyrallab.previewGiftCard` (valores: `null` = off, ou ISO date string = "fingir que pagou nesta data").
+3. Se admin **e** flag setada, usar essa data como `firstPaidAt` simulado e renderizar o `GiftCard` com a contagem real.
+4. Adicionar um pequeno painel flutuante (só visível pro admin) com 4 botões:
+   - **Desativar preview** (limpa o flag, volta ao `HypeOfTheDay`)
+   - **7 dias restantes** (firstPaidAt = agora)
+   - **3 dias restantes** (firstPaidAt = agora − 4d)
+   - **< 1 dia** (firstPaidAt = agora − 7d 18h)
+5. Painel discreto: chip fixo no canto, com label "👁 Preview admin" — não polui a UI real, e qualquer não-admin nem vê.
 
-Reforçar a promessa do bônus nos títulos/subtítulos:
-- Estado **sem firstPaidAt**: `title="Seu bônus tá chegando"`, `subtitle="Liberado após o primeiro pagamento confirmado"`, `bigText="Aguardando confirmação"`
-- Estado **contagem**: `title="Bônus exclusivo desbloqueando"`, `subtitle="Liberado em X dias"`
-- Estado **última hora**: `title="Liberando em instantes!"`, `subtitle="Atualize a página em algumas horas"`
+### Não mexer em
 
-### 2. Bypass de equipe permanece
+- Lógica de `useSubscription` / `firstPaidAt` real
+- Bypass `isManualPremium` para qualquer outro user
+- Banco, edge functions, RLS
 
-Manter `isManualPremium` (equipe interna) com acesso direto ao `HypeOfTheDay`. **Mas** durante teste visual, você pode forçar o card aparecendo para sua conta de admin via um flag local — opcional, só se quiser revisar o visual ao vivo. Por padrão, equipe continua com bypass.
+## Resultado
 
-### 3. Não mexer em
+Você abre o painel, clica "3 dias restantes", e o card dourado pulsante aparece no lugar do `HypeOfTheDay` com `3d 0h 0m` contando. Desativa quando quiser e volta ao normal.
 
-- `HypeOfTheDay.tsx` continua intacto — só é montado pós-desbloqueio
-- `Index.tsx` já chama `<GiftUnlockCard />` no lugar certo, nenhuma mudança
-- Janela de 8 dias (`UNLOCK_DAYS = 8`) e fonte de verdade (`firstPaidAt` do webhook Asaas) permanecem
+## Pergunta
 
-## Resultado visual
-
-O usuário que acabou de pagar vê, no lugar dos 4 quadradinhos vazios da imagem:
-
-```text
-┌─────────────────────────────────┐
-│  ✨  [🎁 com cadeado dourado]  ✨ │
-│                                 │
-│   Bônus exclusivo desbloqueando │
-│      Liberado em 7 dias         │
-│                                 │
-│         6d 23h 12m              │ ← dourado, pulsante
-│                                 │
-│  HYPE DO DIA — TENDÊNCIAS       │
-│       VIRAIS DO BRASIL          │
-└─────────────────────────────────┘
-```
-
-Borda gradient dourada animada (shimmer 4s), ícone presente fazendo "bob" suave, sparkles decorativas, glow pulsante. Já está tudo implementado — só falta a copy bater com **Hype do dia**.
-
-## Perguntas antes de implementar
-
-1. Confirma o texto do bônus como **"Hype do dia — tendências virais do Brasil"**? Ou prefere outra frase (ex: "Hype do dia — as 10 tendências quentes do Brasil pro seu nicho")?
-2. Quer que eu force o card aparecer para você (admin) também durante o período de teste, ou mantém o bypass da equipe?
+Confirma a abordagem? Posso implementar agora — leva 1 edit no `GiftUnlockCard.tsx`.
