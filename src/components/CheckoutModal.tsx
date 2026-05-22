@@ -13,11 +13,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, Crown, QrCode, CreditCard, Copy, CheckCircle2,
-  ArrowRight, ArrowLeft, Sparkles, ShieldCheck,
+  ArrowRight, ArrowLeft, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useCheckoutDraft } from "@/hooks/useCheckoutDraft";
+import { BonusStack } from "@/components/checkout/BonusStack";
+import { UrgencyBar } from "@/components/checkout/UrgencyBar";
 
 interface CheckoutModalProps {
   open: boolean;
@@ -26,12 +29,11 @@ interface CheckoutModalProps {
 }
 
 type Plan = "monthly" | "yearly";
-type Step = "data" | "method" | "result";
 type Method = "PIX" | "CREDIT_CARD";
 
 const plans = {
-  monthly: { label: "Mensal", price: 47 },
-  yearly: { label: "Anual", price: 297 },
+  monthly: { label: "Mensal", price: 47, sub: "cobrado mensalmente" },
+  yearly: { label: "Anual", price: 297, sub: "≈ R$ 24,75/mês • 47% OFF" },
 };
 
 const fmt = {
@@ -58,25 +60,9 @@ const fmt = {
 export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModalProps) {
   const { toast } = useToast();
   const { isActive, refresh } = useSubscription();
+  const { draft, update, setDraft, clear } = useCheckoutDraft(initialPlan);
 
-  const [step, setStep] = useState<Step>("data");
-  const [selectedPlan, setSelectedPlan] = useState<Plan>(initialPlan ?? "yearly");
-  const [method, setMethod] = useState<Method>("PIX");
-
-  // dados
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [cpfCnpj, setCpfCnpj] = useState("");
-  const [phone, setPhone] = useState("");
-  const [cep, setCep] = useState("");
-  const [address, setAddress] = useState("");
-  const [addressNumber, setAddressNumber] = useState("");
-  const [complement, setComplement] = useState("");
-  const [bairro, setBairro] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-
-  // cartão
+  // dados do cartão ficam só em memória (PCI — nunca persistir)
   const [ccName, setCcName] = useState("");
   const [ccNumber, setCcNumber] = useState("");
   const [ccExp, setCcExp] = useState("");
@@ -84,23 +70,28 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
 
   const [loading, setLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
-  const [pix, setPix] = useState<{ encodedImage: string; payload: string } | null>(null);
   const [cardApproved, setCardApproved] = useState(false);
   const pollRef = useRef<number | null>(null);
 
-  useEffect(() => { if (open && initialPlan) setSelectedPlan(initialPlan); }, [open, initialPlan]);
-
+  // ajusta plano quando initialPlan muda
   useEffect(() => {
-    if (open) {
+    if (open && initialPlan && draft.step === "data" && !draft.pix) {
+      update("selectedPlan", initialPlan);
+    }
+  }, [open, initialPlan]);
+
+  // preenche email do user logado
+  useEffect(() => {
+    if (open && !draft.email) {
       supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user?.email && !email) setEmail(user.email);
+        if (user?.email) update("email", user.email);
       });
     }
   }, [open]);
 
   // CEP autofill
   useEffect(() => {
-    const raw = cep.replace(/\D/g, "");
+    const raw = draft.cep.replace(/\D/g, "");
     if (raw.length !== 8) return;
     const ctrl = new AbortController();
     setCepLoading(true);
@@ -108,48 +99,52 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
       .then((r) => r.json())
       .then((d) => {
         if (!d.erro) {
-          setAddress(d.logradouro || "");
-          setBairro(d.bairro || "");
-          setCity(d.localidade || "");
-          setState(d.uf || "");
+          setDraft((cur) => ({
+            ...cur,
+            address: d.logradouro || cur.address,
+            bairro: d.bairro || cur.bairro,
+            city: d.localidade || cur.city,
+            state: d.uf || cur.state,
+          }));
         }
       })
       .catch(() => {})
       .finally(() => setCepLoading(false));
     return () => ctrl.abort();
-  }, [cep]);
+  }, [draft.cep]);
 
-  // Polling enquanto aguarda PIX/Cartão confirmar
+  // Polling enquanto aguarda confirmar
   useEffect(() => {
-    if (step !== "result") return;
+    if (draft.step !== "result") return;
     pollRef.current = window.setInterval(() => { refresh(); }, 4000);
     return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
-  }, [step, refresh]);
+  }, [draft.step, refresh]);
 
   // Fecha sozinho quando vira ativo
   useEffect(() => {
-    if (isActive && step === "result") {
+    if (isActive && draft.step === "result") {
       toast({ title: "Pagamento confirmado!", description: "Liberando seu acesso..." });
-      setTimeout(() => onOpenChange(false), 1200);
+      setTimeout(() => { clear(); onOpenChange(false); }, 1200);
     }
-  }, [isActive, step]);
-
-  const resetAll = () => {
-    setStep("data"); setMethod("PIX"); setName(""); setEmail(""); setCpfCnpj("");
-    setPhone(""); setCep(""); setAddress(""); setAddressNumber(""); setComplement("");
-    setBairro(""); setCity(""); setState(""); setCcName(""); setCcNumber("");
-    setCcExp(""); setCcCvv(""); setPix(null); setCardApproved(false);
-  };
+  }, [isActive, draft.step]);
 
   const handleClose = (val: boolean) => {
-    if (!val) { if (pollRef.current) window.clearInterval(pollRef.current); resetAll(); }
+    if (!val && pollRef.current) window.clearInterval(pollRef.current);
     onOpenChange(val);
+    // NÃO limpa o draft ao fechar — preserva pra próxima abertura
+  };
+
+  const handleReset = () => {
+    clear();
+    setCcName(""); setCcNumber(""); setCcExp(""); setCcCvv("");
+    setCardApproved(false);
   };
 
   const validateData = () => {
-    const ok = name.trim() && email.trim() && cpfCnpj.replace(/\D/g, "")
-      && phone.replace(/\D/g, "") && cep.replace(/\D/g, "")
-      && address.trim() && addressNumber.trim() && bairro.trim() && city.trim() && state.trim();
+    const d = draft;
+    const ok = d.name.trim() && d.email.trim() && d.cpfCnpj.replace(/\D/g, "")
+      && d.phone.replace(/\D/g, "") && d.cep.replace(/\D/g, "")
+      && d.address.trim() && d.addressNumber.trim() && d.bairro.trim() && d.city.trim() && d.state.trim();
     if (!ok) toast({ title: "Preencha todos os campos", variant: "destructive" });
     return !!ok;
   };
@@ -158,16 +153,16 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     setLoading(true);
     try {
       const payload: any = {
-        name: name.trim(), email: email.trim(),
-        cpfCnpj: cpfCnpj.replace(/\D/g, ""),
-        phone: phone.replace(/\D/g, ""),
-        postalCode: cep.replace(/\D/g, ""),
-        address: address.trim(), addressNumber: addressNumber.trim(),
-        complement: complement.trim() || undefined,
-        province: bairro.trim(), plan: selectedPlan,
-        paymentMethod: method,
+        name: draft.name.trim(), email: draft.email.trim(),
+        cpfCnpj: draft.cpfCnpj.replace(/\D/g, ""),
+        phone: draft.phone.replace(/\D/g, ""),
+        postalCode: draft.cep.replace(/\D/g, ""),
+        address: draft.address.trim(), addressNumber: draft.addressNumber.trim(),
+        complement: draft.complement.trim() || undefined,
+        province: draft.bairro.trim(), plan: draft.selectedPlan,
+        paymentMethod: draft.method,
       };
-      if (method === "CREDIT_CARD") {
+      if (draft.method === "CREDIT_CARD") {
         if (!ccName.trim() || !ccNumber || !ccExp || !ccCvv) {
           toast({ title: "Preencha os dados do cartão", variant: "destructive" });
           setLoading(false); return;
@@ -183,16 +178,19 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      if (method === "PIX" && data?.pix?.encodedImage) {
-        setPix({ encodedImage: data.pix.encodedImage, payload: data.pix.payload });
-        setStep("result");
-      } else if (method === "CREDIT_CARD") {
+      if (draft.method === "PIX" && data?.pix?.encodedImage) {
+        setDraft((c) => ({
+          ...c,
+          pix: { encodedImage: data.pix.encodedImage, payload: data.pix.payload },
+          step: "result",
+        }));
+      } else if (draft.method === "CREDIT_CARD") {
         setCardApproved(true);
-        setStep("result");
+        update("step", "result");
         refresh();
       } else {
         toast({ title: "Pagamento iniciado", description: "Aguardando confirmação." });
-        setStep("result");
+        update("step", "result");
       }
     } catch (err: any) {
       toast({ title: "Erro no pagamento", description: err.message || "Tente novamente.", variant: "destructive" });
@@ -200,182 +198,236 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   };
 
   const copyPix = async () => {
-    if (!pix?.payload) return;
+    if (!draft.pix?.payload) return;
     try {
-      await navigator.clipboard.writeText(pix.payload);
+      await navigator.clipboard.writeText(draft.pix.payload);
       toast({ title: "Código PIX copiado!" });
     } catch { toast({ title: "Não foi possível copiar", variant: "destructive" }); }
   };
 
-  const planPrice = plans[selectedPlan].price;
+  const planPrice = plans[draft.selectedPlan].price;
+  const stepIdx = draft.step === "data" ? 0 : draft.step === "method" ? 1 : 2;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto border-primary/20 bg-card/95 backdrop-blur-xl shadow-[0_20px_60px_-15px_hsl(var(--primary)/0.35)]">
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/15 via-primary/5 to-transparent pointer-events-none rounded-t-lg" />
-        <DialogHeader className="relative">
-          <DialogTitle className="flex items-center gap-2 font-serif text-xl">
-            <Crown className="h-5 w-5 text-primary" />
-            {step === "data" && "Comece sua jornada"}
-            {step === "method" && "Como prefere pagar?"}
-            {step === "result" && (pix ? "Pague com PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
-          </DialogTitle>
-          <DialogDescription>
-            {step === "data" && "Seus dados para gerar a cobrança segura."}
-            {step === "method" && "PIX libera na hora. Cartão é recorrente."}
-            {step === "result" && (pix ? "Escaneie ou copie o código abaixo." : "Aguarde a confirmação.")}
-          </DialogDescription>
-        </DialogHeader>
-
-        <AnimatePresence mode="wait">
-          {step === "data" && (
-            <motion.div key="data" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4 pt-2">
-              {/* Plano */}
-              <div className="grid grid-cols-2 gap-3">
-                {(["yearly", "monthly"] as Plan[]).map((pl) => {
-                  const p = plans[pl]; const sel = selectedPlan === pl;
-                  return (
-                    <button key={pl} type="button" onClick={() => setSelectedPlan(pl)}
-                      className={`relative rounded-xl border-2 p-4 text-left transition-all ${
-                        sel
-                          ? "border-primary bg-primary/10 shadow-[0_0_24px_-6px_hsl(var(--primary)/0.5)]"
-                          : "border-border/60 hover:border-primary/40 bg-background/40"
-                      }`}>
-                      {pl === "yearly" && (
-                        <span className="absolute -top-2.5 right-3 text-[10px] font-bold gold-gradient text-primary-foreground px-2 py-0.5 rounded-full shadow">
-                          47% OFF
-                        </span>
-                      )}
-                      <p className="text-sm font-semibold">{p.label}</p>
-                      <p className="text-xl font-bold mt-1">R${p.price}
-                        <span className="text-xs font-normal text-muted-foreground">/{pl === "yearly" ? "ano" : "mês"}</span>
-                      </p>
-                      {pl === "yearly" && <p className="text-[11px] text-primary font-medium mt-0.5">≈ R$24,75/mês</p>}
-                      {pl === "monthly" && <p className="text-[11px] text-muted-foreground mt-0.5">cobrado mensalmente</p>}
-                    </button>
-                  );
-                })}
+      <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto border-primary/30 bg-card/95 backdrop-blur-xl shadow-[0_24px_70px_-20px_hsl(var(--primary)/0.5)] p-0">
+        {/* Aurora header */}
+        <div className="relative px-6 pt-6 pb-4 overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute -top-20 -left-10 w-60 h-60 rounded-full bg-primary/25 blur-3xl" />
+            <div className="absolute -top-16 right-0 w-56 h-56 rounded-full bg-accent/20 blur-3xl" />
+          </div>
+          <DialogHeader className="relative space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl gold-gradient flex items-center justify-center shadow-lg">
+                <Crown className="h-5 w-5 text-primary-foreground" />
               </div>
-
-              {/* Dados pessoais */}
-              <div className="space-y-3">
-                <Field label="Nome completo"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="Seu nome" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-                <Field label="E-mail"><Input type="email" className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="CPF ou CNPJ"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="000.000.000-00" value={cpfCnpj} onChange={(e) => setCpfCnpj(fmt.cpf(e.target.value))} /></Field>
-                  <Field label="Telefone"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="(00) 00000-0000" value={phone} onChange={(e) => setPhone(fmt.phone(e.target.value))} /></Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="CEP">
-                    <div className="relative">
-                      <Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="00000-000" value={cep} onChange={(e) => setCep(fmt.cep(e.target.value))} />
-                      {cepLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
-                    </div>
-                  </Field>
-                  <Field label="Estado"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="SP" maxLength={2} value={state} onChange={(e) => setState(e.target.value.toUpperCase())} /></Field>
-                </div>
-                <Field label="Rua"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="Rua Exemplo" value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Número"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="123" value={addressNumber} onChange={(e) => setAddressNumber(e.target.value)} /></Field>
-                  <Field label="Complemento"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="Apto 4B" value={complement} onChange={(e) => setComplement(e.target.value)} /></Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Bairro"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="Centro" value={bairro} onChange={(e) => setBairro(e.target.value)} /></Field>
-                  <Field label="Cidade"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="São Paulo" value={city} onChange={(e) => setCity(e.target.value)} /></Field>
-                </div>
+              <div className="flex-1">
+                <DialogTitle className="font-sans font-bold text-lg tracking-tight">
+                  {draft.step === "data" && "Garanta seu acesso"}
+                  {draft.step === "method" && "Escolha como pagar"}
+                  {draft.step === "result" && (draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {draft.step === "data" && "Dados para emitir a cobrança segura"}
+                  {draft.step === "method" && "PIX libera na hora • Cartão é recorrente"}
+                  {draft.step === "result" && (draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
+                </DialogDescription>
               </div>
+            </div>
 
-              <Button onClick={() => validateData() && setStep("method")}
-                className="w-full gold-gradient text-primary-foreground gap-2 h-11 hover:scale-[1.01] transition-transform">
-                Continuar <ArrowRight size={18} />
-              </Button>
-              <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
-                <ShieldCheck size={12} /> Pagamento processado pela Asaas. Cancele quando quiser.
-              </p>
-            </motion.div>
-          )}
+            {/* Progress dots */}
+            <div className="flex items-center gap-1.5">
+              {["Dados", "Pagamento", "Confirmação"].map((label, i) => (
+                <div key={label} className="flex-1 flex items-center gap-1.5">
+                  <div className={`h-1.5 flex-1 rounded-full transition-all ${
+                    i <= stepIdx ? "gold-gradient" : "bg-border/60"
+                  }`} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+              <span className={stepIdx >= 0 ? "text-primary" : ""}>Dados</span>
+              <span className={stepIdx >= 1 ? "text-primary" : ""}>Pagamento</span>
+              <span className={stepIdx >= 2 ? "text-primary" : ""}>Confirmação</span>
+            </div>
+          </DialogHeader>
+        </div>
 
-          {step === "method" && (
-            <motion.div key="method" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4 pt-2">
-              <Tabs value={method} onValueChange={(v) => setMethod(v as Method)}>
-                <TabsList className="grid grid-cols-2 w-full bg-background/40 border border-border/60">
-                  <TabsTrigger value="PIX" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
-                    <QrCode size={16} /> PIX
-                  </TabsTrigger>
-                  <TabsTrigger value="CREDIT_CARD" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
-                    <CreditCard size={16} /> Cartão
-                  </TabsTrigger>
-                </TabsList>
+        <div className="px-6 pb-6 space-y-4">
+          <AnimatePresence mode="wait">
+            {draft.step === "data" && (
+              <motion.div key="data" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4">
+                <UrgencyBar />
+                <BonusStack price={planPrice} />
 
-                <TabsContent value="PIX" className="space-y-3 pt-4">
-                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-2">
-                    <p className="font-medium flex items-center gap-2"><Sparkles size={14} className="text-primary" /> Libera o acesso em segundos</p>
-                    <p className="text-muted-foreground text-xs">Você verá o QR Code e o código copia-e-cola na próxima tela. Renovação por PIX a cada ciclo.</p>
-                  </div>
-                </TabsContent>
+                {/* Plano */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {(["yearly", "monthly"] as Plan[]).map((pl) => {
+                    const p = plans[pl]; const sel = draft.selectedPlan === pl;
+                    return (
+                      <button key={pl} type="button" onClick={() => update("selectedPlan", pl)}
+                        className={`relative rounded-xl border-2 p-3 text-left transition-all ${
+                          sel
+                            ? "border-primary bg-primary/10 shadow-[0_0_24px_-6px_hsl(var(--primary)/0.5)]"
+                            : "border-border/60 hover:border-primary/40 bg-background/40"
+                        }`}>
+                        {pl === "yearly" && (
+                          <span className="absolute -top-2 right-2 text-[9px] font-bold gold-gradient text-primary-foreground px-2 py-0.5 rounded-full shadow">
+                            MAIS ESCOLHIDO
+                          </span>
+                        )}
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{p.label}</p>
+                        <p className="text-xl font-bold mt-0.5">R${p.price}</p>
+                        <p className="text-[10px] text-primary font-medium mt-0.5">{p.sub}</p>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                <TabsContent value="CREDIT_CARD" className="space-y-3 pt-4">
-                  <Field label="Nome no cartão"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="Como está impresso" value={ccName} onChange={(e) => setCcName(e.target.value)} /></Field>
-                  <Field label="Número do cartão"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="0000 0000 0000 0000" value={ccNumber} onChange={(e) => setCcNumber(fmt.card(e.target.value))} /></Field>
+                {/* Dados pessoais */}
+                <div className="space-y-3">
+                  <Field label="Nome completo"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="Seu nome" value={draft.name} onChange={(e) => update("name", e.target.value)} /></Field>
+                  <Field label="E-mail"><Input type="email" className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="seu@email.com" value={draft.email} onChange={(e) => update("email", e.target.value)} /></Field>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Validade"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="MM/AA" value={ccExp} onChange={(e) => setCcExp(fmt.exp(e.target.value))} /></Field>
-                    <Field label="CVV"><Input className="bg-background/60 border-border/60 focus-visible:border-primary" placeholder="123" maxLength={4} value={ccCvv} onChange={(e) => setCcCvv(e.target.value.replace(/\D/g, ""))} /></Field>
+                    <Field label="CPF / CNPJ"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="000.000.000-00" value={draft.cpfCnpj} onChange={(e) => update("cpfCnpj", fmt.cpf(e.target.value))} /></Field>
+                    <Field label="Telefone"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="(00) 00000-0000" value={draft.phone} onChange={(e) => update("phone", fmt.phone(e.target.value))} /></Field>
                   </div>
-                  <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                    <ShieldCheck size={12} /> Cobrança recorrente segura via Asaas.
-                  </p>
-                </TabsContent>
-              </Tabs>
-
-              <div className="flex gap-2 pt-2">
-                <Button variant="ghost" onClick={() => setStep("data")} className="gap-1" disabled={loading}>
-                  <ArrowLeft size={16} /> Voltar
-                </Button>
-                <Button onClick={submit} disabled={loading}
-                  className="flex-1 gold-gradient text-primary-foreground gap-2 h-11 hover:scale-[1.01] transition-transform">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
-                    : <>{method === "PIX" ? "Gerar PIX" : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === "result" && (
-            <motion.div key="result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 pt-2">
-              {pix && (
-                <>
-                  <div className="mx-auto rounded-2xl bg-white p-4 w-fit shadow-[0_8px_30px_-10px_hsl(var(--primary)/0.4)]">
-                    <img src={`data:image/png;base64,${pix.encodedImage}`} alt="QR Code PIX" className="w-56 h-56" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="CEP">
+                      <div className="relative">
+                        <Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="00000-000" value={draft.cep} onChange={(e) => update("cep", fmt.cep(e.target.value))} />
+                        {cepLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                      </div>
+                    </Field>
+                    <Field label="Estado"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="SP" maxLength={2} value={draft.state} onChange={(e) => update("state", e.target.value.toUpperCase())} /></Field>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">PIX copia-e-cola</Label>
-                    <div className="flex gap-2">
-                      <Input readOnly value={pix.payload} className="bg-background/60 border-border/60 text-xs font-mono" />
-                      <Button type="button" variant="outline" size="icon" onClick={copyPix}><Copy size={16} /></Button>
+                  <Field label="Rua"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="Rua Exemplo" value={draft.address} onChange={(e) => update("address", e.target.value)} /></Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Número"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="123" value={draft.addressNumber} onChange={(e) => update("addressNumber", e.target.value)} /></Field>
+                    <Field label="Complemento"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="Apto 4B" value={draft.complement} onChange={(e) => update("complement", e.target.value)} /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Bairro"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="Centro" value={draft.bairro} onChange={(e) => update("bairro", e.target.value)} /></Field>
+                    <Field label="Cidade"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="São Paulo" value={draft.city} onChange={(e) => update("city", e.target.value)} /></Field>
+                  </div>
+                </div>
+
+                <Button onClick={() => validateData() && update("step", "method")}
+                  className="w-full gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform">
+                  Continuar <ArrowRight size={18} />
+                </Button>
+
+                <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 flex items-start gap-2.5">
+                  <ShieldCheck size={16} className="text-primary mt-0.5 shrink-0" />
+                  <div className="text-xs">
+                    <p className="font-semibold text-foreground">7 dias de garantia</p>
+                    <p className="text-muted-foreground">Se não amar, devolvemos 100%. Sem perguntas.</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {draft.step === "method" && (
+              <motion.div key="method" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4">
+                <BonusStack price={planPrice} />
+
+                <Tabs value={draft.method} onValueChange={(v) => update("method", v as Method)}>
+                  <TabsList className="grid grid-cols-2 w-full bg-background/40 border border-border/60">
+                    <TabsTrigger value="PIX" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
+                      <QrCode size={16} /> PIX
+                    </TabsTrigger>
+                    <TabsTrigger value="CREDIT_CARD" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
+                      <CreditCard size={16} /> Cartão
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="PIX" className="space-y-3 pt-4">
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-2">
+                      <p className="font-semibold flex items-center gap-2"><Sparkles size={14} className="text-primary" /> Libera o acesso em segundos</p>
+                      <p className="text-muted-foreground text-xs">Você verá o QR Code e o código copia-e-cola na próxima tela. Renovação por PIX a cada ciclo.</p>
                     </div>
-                  </div>
-                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-muted-foreground">Aguardando confirmação do pagamento...</span>
-                  </div>
-                </>
-              )}
-              {cardApproved && !isActive && (
-                <div className="text-center py-6 space-y-3">
-                  <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-                  <p className="text-sm text-muted-foreground">Confirmando seu cartão com o banco...</p>
+                  </TabsContent>
+
+                  <TabsContent value="CREDIT_CARD" className="space-y-3 pt-4">
+                    <Field label="Nome no cartão"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="Como está impresso" value={ccName} onChange={(e) => setCcName(e.target.value)} /></Field>
+                    <Field label="Número do cartão"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="0000 0000 0000 0000" value={ccNumber} onChange={(e) => setCcNumber(fmt.card(e.target.value))} /></Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Validade"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="MM/AA" value={ccExp} onChange={(e) => setCcExp(fmt.exp(e.target.value))} /></Field>
+                      <Field label="CVV"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="123" maxLength={4} value={ccCvv} onChange={(e) => setCcCvv(e.target.value.replace(/\D/g, ""))} /></Field>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                      <ShieldCheck size={12} /> Cobrança recorrente segura via Asaas.
+                    </p>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="flex gap-2 pt-2">
+                  <Button variant="ghost" onClick={() => update("step", "data")} className="gap-1" disabled={loading}>
+                    <ArrowLeft size={16} /> Voltar
+                  </Button>
+                  <Button onClick={submit} disabled={loading}
+                    className="flex-1 gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform">
+                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
+                      : <>{draft.method === "PIX" ? "Gerar PIX" : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
+                  </Button>
                 </div>
-              )}
-              {isActive && (
-                <div className="text-center py-6 space-y-3">
-                  <CheckCircle2 className="h-12 w-12 text-primary mx-auto" />
-                  <p className="font-semibold">Pagamento aprovado!</p>
-                  <p className="text-sm text-muted-foreground">Liberando seu acesso...</p>
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            )}
+
+            {draft.step === "result" && (
+              <motion.div key="result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                {draft.pix && !isActive && (
+                  <>
+                    <div className="mx-auto rounded-2xl bg-white p-4 w-fit shadow-[0_8px_30px_-10px_hsl(var(--primary)/0.5)] ring-1 ring-primary/20">
+                      <img src={`data:image/png;base64,${draft.pix.encodedImage}`} alt="QR Code PIX" className="w-56 h-56" />
+                    </div>
+
+                    <ol className="space-y-2 text-sm">
+                      {["Abra o app do seu banco", "Escolha PIX → Pagar com QR Code ou Copia e Cola", "Confirme — acesso libera automaticamente"].map((t, i) => (
+                        <li key={t} className="flex gap-2.5 items-start">
+                          <span className="h-5 w-5 rounded-full gold-gradient text-primary-foreground text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i+1}</span>
+                          <span className="text-foreground/90">{t}</span>
+                        </li>
+                      ))}
+                    </ol>
+
+                    <Button onClick={copyPix} className="w-full gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)]">
+                      <Copy size={18} /> Copiar código PIX
+                    </Button>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Ou copie manualmente</Label>
+                      <Input readOnly value={draft.pix.payload} className="bg-background/60 border-border/60 text-xs font-mono" onFocus={(e) => e.currentTarget.select()} />
+                    </div>
+
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm flex items-center gap-2.5">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                      <span className="text-muted-foreground">Aguardando confirmação — costuma cair em até 10s.</span>
+                    </div>
+
+                    <button onClick={handleReset} className="w-full text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                      Recomeçar com outros dados
+                    </button>
+                  </>
+                )}
+                {cardApproved && !isActive && (
+                  <div className="text-center py-6 space-y-3">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
+                    <p className="text-sm text-muted-foreground">Confirmando seu cartão com o banco...</p>
+                  </div>
+                )}
+                {isActive && (
+                  <div className="text-center py-8 space-y-3">
+                    <CheckCircle2 className="h-14 w-14 text-primary mx-auto" />
+                    <p className="font-bold text-lg">Pagamento aprovado!</p>
+                    <p className="text-sm text-muted-foreground">Liberando seu acesso...</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -384,7 +436,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</Label>
       {children}
     </div>
   );
