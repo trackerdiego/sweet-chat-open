@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo as _useMemo } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { MoreVertical, Smartphone } from 'lucide-react';
