@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Share, Plus, MoreVertical, Smartphone } from 'lucide-react';
 
@@ -24,7 +24,7 @@ function InlineIcon({ children }: { children: React.ReactNode }) {
   return (
     <span
       aria-hidden
-      className="inline-flex items-center justify-center align-middle h-7 w-7 mx-1 rounded-md border border-border bg-muted text-foreground"
+      className="inline-flex items-center justify-center align-middle h-8 w-8 mx-1 rounded-lg border-2 border-primary/30 bg-primary/5 text-primary shadow-sm"
     >
       {children}
     </span>
@@ -33,8 +33,8 @@ function InlineIcon({ children }: { children: React.ReactNode }) {
 
 function IOSContent() {
   return (
-    <div className="space-y-5">
-      <p className="text-[15px] leading-relaxed text-foreground">
+    <div className="space-y-4">
+      <p className="text-[15px] leading-[1.7] text-foreground">
         Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
         <br />
         Toque em <strong>Compartilhar</strong>
@@ -42,23 +42,14 @@ function IOSContent() {
         e depois em <strong>Adicionar à Tela de Início</strong>
         <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
       </p>
-
-      {/* Mockup da barra inferior do Safari */}
-      <div className="rounded-2xl bg-muted/40 border border-border p-3 flex items-center justify-center">
-        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted-foreground/20 text-foreground text-sm font-medium">
-          <span className="opacity-70">aA</span>
-          <span>app.vyrallab.online</span>
-          <Share className="h-4 w-4 text-primary" />
-        </div>
-      </div>
     </div>
   );
 }
 
 function AndroidContent() {
   return (
-    <div className="space-y-5">
-      <p className="text-[15px] leading-relaxed text-foreground">
+    <div className="space-y-4">
+      <p className="text-[15px] leading-[1.7] text-foreground">
         Adicione o <strong>Vyral Lab</strong> à sua tela inicial para receber notificações e acesso rápido.
         <br />
         Toque no menu
@@ -66,26 +57,18 @@ function AndroidContent() {
         no canto superior direito e depois em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>
         <InlineIcon><Plus className="h-4 w-4" /></InlineIcon>
       </p>
-
-      {/* Mockup da barra superior do Chrome */}
-      <div className="rounded-2xl bg-muted/40 border border-border p-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted-foreground/20 text-foreground text-sm font-medium flex-1 truncate">
-          <span className="truncate">app.vyrallab.online</span>
-        </div>
-        <div className="h-9 w-9 rounded-full bg-muted-foreground/20 flex items-center justify-center">
-          <MoreVertical className="h-5 w-5 text-primary" />
-        </div>
-      </div>
     </div>
   );
 }
 
 function OtherContent() {
   return (
-    <div className="space-y-3 text-center">
-      <Smartphone className="h-10 w-10 text-primary mx-auto" />
-      <p className="text-sm text-muted-foreground">
-        Abra o <strong>Vyral Lab</strong> no seu celular para instalar como app na tela inicial.
+    <div className="flex items-start gap-3">
+      <div className="shrink-0 h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+        <Smartphone className="h-6 w-6 text-primary" />
+      </div>
+      <p className="text-[15px] leading-relaxed text-foreground pt-1">
+        Abra o <strong>Vyral Lab</strong> no seu celular para instalar como app na tela inicial e receber notificações.
       </p>
     </div>
   );
@@ -100,38 +83,47 @@ export function InstallVideoModal({ open, onOpenChange }: Props) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[400px] p-5 sm:p-6">
-        <DialogHeader className="space-y-1.5 text-center">
-          <DialogTitle className="font-serif text-xl">📲 Adicione à tela inicial</DialogTitle>
-          <DialogDescription className="text-xs">
-            Em 30 segundos seu Vyral Lab vira app — push, acesso rápido e tela cheia.
-          </DialogDescription>
-        </DialogHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className="rounded-t-2xl border-t border-border/60 px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-w-[520px] sm:mx-auto sm:left-0 sm:right-0"
+      >
+        {/* Handle visual de bottom sheet */}
+        <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-muted-foreground/25" />
 
-        <div className="pt-2">
+        <SheetHeader className="space-y-1.5 text-left">
+          <SheetTitle className="font-serif text-xl flex items-center gap-2">
+            <span aria-hidden>📲</span>
+            Adicione à tela inicial
+          </SheetTitle>
+          <SheetDescription className="text-xs">
+            Em 30 segundos seu Vyral Lab vira app — push, acesso rápido e tela cheia.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="pt-4">
           {platform === 'ios' && <IOSContent />}
           {platform === 'android' && <AndroidContent />}
           {platform === 'other' && <OtherContent />}
         </div>
 
-        <div className="flex flex-col gap-2 pt-3">
+        <div className="flex flex-col gap-2 pt-4">
           <Button
             onClick={handleDontShowAgain}
-            className="gold-gradient text-primary-foreground"
+            className="gold-gradient text-primary-foreground h-11"
           >
             Já instalei
           </Button>
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            className="text-xs text-muted-foreground"
+            className="text-xs text-muted-foreground h-9"
           >
             Ver depois
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 
