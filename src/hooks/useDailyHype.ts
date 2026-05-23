@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAiJob } from './useAiJob';
+import { HYPE_GLOBAL_RELEASE } from '@/lib/featureFlags';
 
 export interface HypeItem {
   tema: string;
