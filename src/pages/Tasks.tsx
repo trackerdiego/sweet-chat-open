@@ -1,18 +1,19 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
 import { useInfluencer } from '@/hooks/useInfluencer';
 import { useUserStrategies } from '@/hooks/useUserStrategies';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserUsage } from '@/hooks/useUserUsage';
+import { useDailyGuideCache } from '@/hooks/useDailyGuideCache';
 import { DailySchedule } from '@/components/DailySchedule';
 import { DailyGuide, AiGuideContent } from '@/components/DailyGuide';
 import { PremiumGate } from '@/components/PremiumGate';
-import { CheckoutModal } from '@/components/CheckoutModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpButton } from '@/components/HelpButton';
 import { PageBackdrop } from '@/components/PageBackdrop';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState } from 'react';
 
 const Tasks = () => {
   const { strategies, loading } = useUserStrategies();
@@ -20,11 +21,33 @@ const Tasks = () => {
   const { profile } = useUserProfile();
   const { canAccessDay } = useUserUsage();
   const todayStrategy = strategies[state.currentDay - 1];
-  const [aiContent, setAiContent] = useState<AiGuideContent | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
+  const cache = useDailyGuideCache({
+    enabled: !!todayStrategy && !!userId,
+    userId,
+    day: state.currentDay,
+    pillar: todayStrategy?.pillar || '',
+    pillarLabel: todayStrategy?.pillarLabel || '',
+    dayTitle: todayStrategy?.title || '',
+    weeklyTheme: schedule?.weeklyTheme.name || '',
+    primaryNiche: profile?.primary_niche,
+    contentStyle: profile?.content_style,
+    visceralElement: todayStrategy?.visceralElement,
+  });
+
+  // Permite que o DailySchedule sobrescreva taskExamples (via job de diversificação)
+  const [overrideTaskExamples, setOverrideTaskExamples] = useState<Record<string, string[]> | null>(null);
   const handleAiTaskExamples = (examples: Record<string, string[]>) => {
-    setAiContent((prev) => ({ ...(prev || {}), taskExamples: { ...(prev?.taskExamples || {}), ...examples } }));
+    setOverrideTaskExamples((prev) => ({ ...(prev || {}), ...examples }));
   };
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const effectiveAi: AiGuideContent | null = cache.content
+    ? { ...cache.content, taskExamples: { ...(cache.content.taskExamples || {}), ...(overrideTaskExamples || {}) } }
+    : (overrideTaskExamples ? { taskExamples: overrideTaskExamples } : null);
 
   const dayLocked = !canAccessDay(state.currentDay);
 
@@ -69,10 +92,11 @@ const Tasks = () => {
           {todayStrategy && (
             <DailyGuide
               strategy={todayStrategy}
-              weeklyTheme={schedule?.weeklyTheme.name}
-              onAiContent={setAiContent}
-              primaryNiche={profile?.primary_niche}
-              contentStyle={profile?.content_style}
+              aiContent={effectiveAi}
+              isGenerating={cache.isGenerating}
+              isFirstLoad={cache.isFirstLoad}
+              onRegenerate={cache.regenerate}
+              errorMessage={cache.error}
             />
           )}
 
@@ -82,7 +106,7 @@ const Tasks = () => {
               tasks={todayTasks}
               progress={dailyProgress}
               onComplete={completeTask}
-              aiContent={aiContent}
+              aiContent={effectiveAi}
               day={state.currentDay}
               pillar={todayStrategy.pillar}
               pillarLabel={todayStrategy.pillarLabel}
@@ -94,8 +118,6 @@ const Tasks = () => {
           )}
         </PremiumGate>
       </div>
-
-      <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
     </div>
   );
 };

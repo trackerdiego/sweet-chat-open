@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 import { corsHeaders, jsonResponse, enqueueJob, runInBackground, JobError } from "../_shared/ai-job-runner.ts";
 
-const FUNCTION_VERSION = "2026-04-28-async-daily-guide";
+const FUNCTION_VERSION = "2026-05-23-async-daily-guide-cache";
 console.log(`[start-daily-guide-job] boot v=${FUNCTION_VERSION}`);
 
 serve(async (req) => {
@@ -23,6 +23,28 @@ serve(async (req) => {
       const GOOGLE_GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
       if (!GOOGLE_GEMINI_API_KEY) throw new JobError("Configuração do servidor incompleta (chave da IA ausente).");
 
+      const persistCache = payload.persistCache === true;
+      const force = payload.force === true;
+      const dayNum = Number(payload.day) || 0;
+      const todayCache = new Date().toISOString().split("T")[0];
+
+      // Se já existe cache pro dia+data e não é force, retorna ele direto.
+      if (persistCache && !force && dayNum > 0) {
+        const { data: cached } = await admin
+          .from("daily_guide_cache")
+          .select("content, task_examples")
+          .eq("user_id", userId)
+          .eq("day", dayNum)
+          .eq("date", todayCache)
+          .maybeSingle();
+        if (cached?.content) {
+          console.log(`[start-daily-guide-job] job ${jobId} cache HIT`, { dayNum });
+          const cachedContent = cached.content as Record<string, unknown>;
+          const cachedTaskExamples = (cached.task_examples as Record<string, unknown>) ?? {};
+          return { ...cachedContent, taskExamples: cachedTaskExamples };
+        }
+      }
+
       const [usageRes, audienceRes] = await Promise.all([
         admin.from("user_usage").select("is_premium, tool_generations, last_tool_date").eq("user_id", userId).maybeSingle(),
         userClient.from("audience_profiles").select("avatar_profile").eq("user_id", userId).maybeSingle(),
@@ -34,7 +56,10 @@ serve(async (req) => {
       const today = new Date().toISOString().split("T")[0];
       const isNewDay = usageData?.last_tool_date !== today;
       const currentCount = isNewDay ? 0 : (usageData?.tool_generations ?? 0);
-      if (!isPremium && currentCount >= 2) {
+      // Auto-personalização (persistCache=true sem force): NÃO conta cota — é UX padrão.
+      // Botão "regenerar" (force=true): conta cota normalmente.
+      const shouldChargeQuota = !persistCache || force;
+      if (shouldChargeQuota && !isPremium && currentCount >= 2) {
         throw new JobError("Você atingiu o limite de 2 gerações gratuitas. Assine o plano premium para uso ilimitado.");
       }
 
@@ -130,11 +155,28 @@ serve(async (req) => {
 
       const content = { ...partA, taskExamples };
 
+      // Upsert cache pra próxima visita do dia ser instantânea
+      if (persistCache && dayNum > 0) {
+        try {
+          await admin.from("daily_guide_cache").upsert({
+            user_id: userId, day: dayNum, date: todayCache,
+            content: partA, task_examples: taskExamples,
+          }, { onConflict: "user_id,day,date" });
+        } catch (e) {
+          console.warn(`[start-daily-guide-job] cache upsert failed for job ${jobId}`, e);
+        }
+      }
+
       try {
-        await Promise.all([
-          admin.from("user_usage").update({ tool_generations: currentCount + 1, last_tool_date: today }).eq("user_id", userId),
+        const updates: Promise<unknown>[] = [
           admin.from("usage_logs").insert({ user_id: userId, feature: "daily_guide" }),
-        ]);
+        ];
+        if (shouldChargeQuota) {
+          updates.push(
+            admin.from("user_usage").update({ tool_generations: currentCount + 1, last_tool_date: today }).eq("user_id", userId),
+          );
+        }
+        await Promise.all(updates);
       } catch (e) {
         console.warn(`[start-daily-guide-job] usage update failed for job ${jobId}`, e);
       }

@@ -109,7 +109,7 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
   const handleCliffhangerSelect = (idx: number) => { if (!tasks.cliffhanger) { setSelectedCliffhanger(idx); onComplete('cliffhanger'); fireConfetti(); } };
 
   const taskExamplesJob = useAiJob<{ taskExamples?: Record<string, string[]> }>('task_examples');
-  const aiExamplesReady = !!aiContent?.taskExamples && Object.keys(aiContent.taskExamples).length > 0;
+  // aiExamplesReady removido — botão agora é sempre "trocar ideias"
 
   const handleDiversifyExamples = async () => {
     try {
@@ -149,20 +149,18 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
         <Button
           onClick={handleDiversifyExamples}
           disabled={taskExamplesJob.isLoading}
-          variant={aiExamplesReady ? 'outline' : 'default'}
-          className={`w-full mt-3 ${!aiExamplesReady ? 'gold-gradient text-primary-foreground' : ''}`}
+          variant="outline"
+          className="w-full mt-3"
           size="sm"
         >
           {taskExamplesJob.isLoading ? (
-            <><Loader2 size={14} className="animate-spin" /> Gerando sugestões...</>
-          ) : aiExamplesReady ? (
-            <><Shuffle size={14} /> Diversificar novamente com IA</>
+            <><Loader2 size={14} className="animate-spin" /> Gerando ideias...</>
           ) : (
-            <><Sparkles size={14} /> ✨ Diversificar sugestões dos horários</>
+            <><Shuffle size={14} /> Trocar ideias dos horários</>
           )}
         </Button>
         <p className="text-[10px] text-muted-foreground text-center mt-1.5 leading-tight">
-          Gera novas sugestões personalizadas para cada horário do dia — independente do Guia do Dia.
+          Gera novas sugestões para cada horário do dia — só os exemplos.
         </p>
       </div>
       {schedule.blocks.map((block) => <ScheduleBlock key={block.id} block={block} tasks={tasks} onComplete={onComplete} aiContent={aiContent} day={day} />)}
@@ -170,8 +168,8 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
         <div className="flex items-start gap-3">
           {tasks.cliffhanger ? <CheckCircle2 size={18} className="text-primary shrink-0 mt-0.5" /> : <Lock size={18} className="text-primary shrink-0 mt-0.5" />}
           <div className="flex-1">
-            <h3 className="font-serif text-sm font-semibold flex items-center gap-2">🔒 Ciclo do Vício{aiContent?.cliffhangers && aiContent.cliffhangers.length > 0 && <Badge variant="outline" className="text-[10px] border-primary/30 text-primary/70">✨ IA</Badge>}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-3">{tasks.cliffhanger ? 'Cliffhanger do dia ✅' : `Escolha 1 das ${cliffhangerOptions.length} opções`}</p>
+            <h3 className="font-serif text-sm font-semibold flex items-center gap-2">🪤 Gancho pro próximo post{aiContent?.cliffhangers && aiContent.cliffhangers.length > 0 && <Badge variant="outline" className="text-[10px] border-primary/30 text-primary/70">✨ Feito pra você</Badge>}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-3">{tasks.cliffhanger ? 'Gancho do dia escolhido ✅' : `Escolha 1 das ${cliffhangerOptions.length} frases pra deixar o público esperando o próximo post`}</p>
             <div className="space-y-2">
               {cliffhangerOptions.map((text, idx) => {
                 const isSelected = selectedCliffhanger === idx; const isDisabled = tasks.cliffhanger && !isSelected;
