@@ -155,11 +155,28 @@ serve(async (req) => {
 
       const content = { ...partA, taskExamples };
 
+      // Upsert cache pra próxima visita do dia ser instantânea
+      if (persistCache && dayNum > 0) {
+        try {
+          await admin.from("daily_guide_cache").upsert({
+            user_id: userId, day: dayNum, date: todayCache,
+            content: partA, task_examples: taskExamples,
+          }, { onConflict: "user_id,day,date" });
+        } catch (e) {
+          console.warn(`[start-daily-guide-job] cache upsert failed for job ${jobId}`, e);
+        }
+      }
+
       try {
-        await Promise.all([
-          admin.from("user_usage").update({ tool_generations: currentCount + 1, last_tool_date: today }).eq("user_id", userId),
+        const updates: Promise<unknown>[] = [
           admin.from("usage_logs").insert({ user_id: userId, feature: "daily_guide" }),
-        ]);
+        ];
+        if (shouldChargeQuota) {
+          updates.push(
+            admin.from("user_usage").update({ tool_generations: currentCount + 1, last_tool_date: today }).eq("user_id", userId),
+          );
+        }
+        await Promise.all(updates);
       } catch (e) {
         console.warn(`[start-daily-guide-job] usage update failed for job ${jobId}`, e);
       }
