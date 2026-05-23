@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { Eye, Gift, Lock, Sparkles, X } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { HypeOfTheDay } from '@/components/HypeOfTheDay';
+import { HYPE_GLOBAL_RELEASE } from '@/lib/featureFlags';
 
 const UNLOCK_DAYS = 8;
 const PREVIEW_KEY = 'vyrallab.previewGiftCard';
