@@ -187,33 +187,33 @@ function generateCliffhangers(strategy: DayStrategy): string[] {
 export function getDailyGuideContent(strategy: DayStrategy): GuideSection[] {
   return [
     {
-      icon: '🎯',
-      title: 'Tipos de Conteúdo',
+      icon: '📱',
+      title: 'O que postar hoje',
       items: contentTypesByPillar[strategy.pillar] || defaultContent,
     },
     {
-      icon: '🪝',
-      title: 'Hooks Virais',
+      icon: '👀',
+      title: 'Frases que prendem a atenção',
       items: generateHooks(strategy),
     },
     {
       icon: '🎬',
-      title: 'Formatos de Vídeo',
+      title: 'Como gravar (formatos prontos)',
       items: videoFormatsByPillar[strategy.pillar] || defaultFormats,
     },
     {
-      icon: '📖',
-      title: 'Storytelling + Conexão',
+      icon: '💬',
+      title: 'Histórias que conectam',
       items: generateStorytelling(strategy),
     },
     {
-      icon: '💰',
-      title: 'CTAs de Conversão',
+      icon: '🎯',
+      title: 'Chamadas pra ação',
       items: generateCTAs(strategy),
     },
     {
-      icon: '🔥',
-      title: 'Cliffhangers',
+      icon: '🪤',
+      title: 'Ganchos pro próximo post',
       items: generateCliffhangers(strategy),
     },
   ];
