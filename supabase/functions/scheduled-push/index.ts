@@ -467,6 +467,8 @@ Deno.serve(async (req) => {
 
     let totalSent = 0;
     let skipped = sentSet.size;
+    let noSubs = 0;
+    let sendErrors = 0;
     const segmentCounts: Record<Segment, number> = {
       PREMIUM: 0, FREE_EARLY: 0, FREE_TRIAL_END: 0, FREE_LOCKED: 0, FREE_EXHAUSTED: 0, FREE_INACTIVE: 0, NEW_USER: 0,
     };
@@ -482,15 +484,6 @@ Deno.serve(async (req) => {
         const message = getMessage(segment, block, day, streak);
         const url = getUrl(segment);
 
-        const { error: logErr } = await supabase
-          .from('push_send_log')
-          .insert({ user_id: userId, send_date: todayBR, block });
-
-        if (logErr) {
-          skipped++;
-          continue;
-        }
-
         const response = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
           method: 'POST',
           headers: {
@@ -500,14 +493,28 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ user_id: userId, title: message.title, body: message.body, url }),
         });
 
-        const result = await response.json();
-        totalSent += result.sent || 0;
+        const result = await response.json().catch(() => ({ sent: 0 }));
+        const delivered = result.sent || 0;
+
+        if (delivered > 0) {
+          totalSent += delivered;
+          // Só marca dedup APÓS entrega confirmada
+          const { error: logErr } = await supabase
+            .from('push_send_log')
+            .insert({ user_id: userId, send_date: todayBR, block });
+          if (logErr) console.warn(`[scheduled-push] log insert failed for ${userId}:`, logErr.message);
+        } else {
+          // Sem assinatura válida ou push provider falhou — NÃO bloqueia próximo cron
+          if (result.message === 'No subscriptions found') noSubs++;
+          else sendErrors++;
+        }
       } catch (e) {
+        sendErrors++;
         console.error(`Failed for user ${userId}:`, e);
       }
     }
 
-    console.log(`[scheduled-push] Block: ${block}, Segments: ${JSON.stringify(segmentCounts)}, Sent: ${totalSent}, Skipped(dedup): ${skipped}`);
+    console.log(`[scheduled-push] Block: ${block}, Segments: ${JSON.stringify(segmentCounts)}, Sent: ${totalSent}, Skipped(dedup): ${skipped}, NoSubs: ${noSubs}, SendErrors: ${sendErrors}`);
 
     return new Response(JSON.stringify({ block, users: uniqueUserIds.length, sent: totalSent, skipped, segments: segmentCounts }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
