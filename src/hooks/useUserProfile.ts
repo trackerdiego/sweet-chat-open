@@ -41,6 +41,11 @@ export function useUserProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Garante que só rodamos fetchProfile uma vez por user_id. Sem isso, todo
+  // TOKEN_REFRESHED do supabase-js dispara setSession (novo ref) → re-fetch
+  // → re-executa a trava de integridade, que em corrida pode flipar
+  // onboarding_completed e causar redirect inesperado.
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -77,14 +82,18 @@ export function useUserProfile() {
   }, [stopPolling]);
 
   useEffect(() => {
-    if (session?.user) {
-      fetchProfile(session.user.id);
+    const uid = session?.user?.id ?? null;
+    if (uid) {
+      if (lastFetchedUserIdRef.current === uid) return;
+      lastFetchedUserIdRef.current = uid;
+      fetchProfile(uid);
     } else {
+      lastFetchedUserIdRef.current = null;
       setProfile(null);
       setLoading(false);
       stopPolling();
     }
-  }, [session, stopPolling]);
+  }, [session?.user?.id, stopPolling]);
 
   const fetchProfile = async (userId: string) => {
     try {
