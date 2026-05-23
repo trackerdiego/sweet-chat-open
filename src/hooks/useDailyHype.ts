@@ -44,6 +44,7 @@ export function useDailyHype() {
       setLoading(false);
       return;
     }
+    try {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
