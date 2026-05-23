@@ -35,7 +35,16 @@ export function useDailyHype() {
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
-    try {
+
+    // Kill-switch global: se a feature não foi liberada, NUNCA dispara start-hype-job.
+    // Evita queimar tokens Gemini caso o componente seja renderizado por engano.
+    if (!HYPE_GLOBAL_RELEASE) {
+      setItems(null);
+      setError('Em breve');
+      setLoading(false);
+      return;
+    }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 
