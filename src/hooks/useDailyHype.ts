@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAiJob } from './useAiJob';
+import { HYPE_GLOBAL_RELEASE } from '@/lib/featureFlags';
 
 export interface HypeItem {
   tema: string;
@@ -34,7 +35,17 @@ export function useDailyHype() {
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
+
+    // Kill-switch global: se a feature não foi liberada, NUNCA dispara start-hype-job.
+    // Evita queimar tokens Gemini caso o componente seja renderizado por engano.
+    if (!HYPE_GLOBAL_RELEASE) {
+      setItems(null);
+      setError('Em breve');
+      setLoading(false);
+      return;
+    }
     try {
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 

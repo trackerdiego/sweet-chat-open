@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { Eye, Gift, Lock, Sparkles, X } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { HypeOfTheDay } from '@/components/HypeOfTheDay';
+import { HYPE_GLOBAL_RELEASE } from '@/lib/featureFlags';
 
 const UNLOCK_DAYS = 8;
 const PREVIEW_KEY = 'vyrallab.previewGiftCard';
@@ -53,6 +54,23 @@ export function GiftUnlockCard() {
 
   // Preview admin tem prioridade sobre tudo
   const firstPaidAt = previewDate || realFirstPaidAt;
+
+  // Kill-switch global: enquanto a ferramenta de thumbs não estiver pronta,
+  // ninguém dispara start-hype-job — todos veem GiftCard "Em breve".
+  // O preview admin continua funcionando pra você testar contador/HypeOfTheDay localmente.
+  if (!HYPE_GLOBAL_RELEASE && !previewDate) {
+    return (
+      <>
+        <GiftCard
+          title="Hype do dia chegando em breve"
+          subtitle="Liberando para todos quando a ferramenta de tendências estiver pronta"
+          bigText="Em preparação"
+          small="Hype do dia — tendências virais do Brasil"
+        />
+        {isAdmin && <AdminPreviewPanel current={null} onChange={setPreviewDate} />}
+      </>
+    );
+  }
 
   // Equipe (premium manual sem customer Asaas) ou sem primeira data de pagamento
   // mas com is_premium=true via bypass → libera direto (a menos que esteja em preview).
