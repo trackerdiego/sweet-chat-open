@@ -109,7 +109,7 @@ export function DailySchedule({ schedule, tasks, progress, onComplete, aiContent
   const handleCliffhangerSelect = (idx: number) => { if (!tasks.cliffhanger) { setSelectedCliffhanger(idx); onComplete('cliffhanger'); fireConfetti(); } };
 
   const taskExamplesJob = useAiJob<{ taskExamples?: Record<string, string[]> }>('task_examples');
-  const aiExamplesReady = !!aiContent?.taskExamples && Object.keys(aiContent.taskExamples).length > 0;
+  // aiExamplesReady removido — botão agora é sempre "trocar ideias"
 
   const handleDiversifyExamples = async () => {
     try {
