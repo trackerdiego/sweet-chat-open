@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callGeminiNative, GeminiError } from "../_shared/gemini.ts";
 import { corsHeaders, jsonResponse, enqueueJob, runInBackground, JobError } from "../_shared/ai-job-runner.ts";
 
-const FUNCTION_VERSION = "2026-04-28-async-daily-guide";
+const FUNCTION_VERSION = "2026-05-23-async-daily-guide-cache";
 console.log(`[start-daily-guide-job] boot v=${FUNCTION_VERSION}`);
 
 serve(async (req) => {
