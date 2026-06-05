@@ -1,5 +1,5 @@
 // Service Worker — Push Notifications + Offline Cache
-const CACHE_NAME = 'vyrallab-v2';
+const CACHE_NAME = 'vyrallab-v3';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
@@ -9,7 +9,7 @@ const PRECACHE_URLS = [
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[sw] Installing...');
+  console.log('[sw] Installing v3...');
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
   );
@@ -17,12 +17,25 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[sw] Activating...');
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  console.log('[sw] Activating v3...');
+  event.waitUntil((async () => {
+    // Wipe old caches
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+
+    // Force unsubscribe stale push subscription (created under old VAPID/SW)
+    try {
+      const oldSub = await self.registration.pushManager.getSubscription();
+      if (oldSub) {
+        await oldSub.unsubscribe();
+        console.log('[sw] Unsubscribed stale push subscription');
+      }
+    } catch (e) {
+      console.warn('[sw] Could not unsubscribe stale push:', e);
+    }
+
+    await self.clients.claim();
+  })());
 });
 
 // Network First with cache fallback

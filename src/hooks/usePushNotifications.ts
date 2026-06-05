@@ -41,13 +41,43 @@ export function usePushNotifications() {
 
     if (supported) {
       navigator.serviceWorker.ready
-        .then((reg) => {
+        .then(async (reg) => {
           console.log('[push] SW ready:', reg.scope);
           setRegistration(reg);
-          return reg.pushManager.getSubscription();
-        })
-        .then((sub) => {
+          // Force SW update check every load — picks up v3 on returning devices
+          try { await reg.update(); } catch (e) { console.warn('[push] SW update failed:', e); }
+
+          const sub = await reg.pushManager.getSubscription();
           setIsSubscribed(!!sub);
+
+          // Auto re-subscribe silently: permission already granted but no sub
+          // (happens after SW bump unsubscribes stale subs in activate handler)
+          if (!sub && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            console.log('[push] No sub but permission granted → silent re-subscribe');
+            try {
+              const newSub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
+              });
+              const subJson = newSub.toJSON();
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                await (supabase.from as any)('push_subscriptions').upsert(
+                  {
+                    user_id: user.id,
+                    endpoint: subJson.endpoint!,
+                    p256dh: subJson.keys!.p256dh!,
+                    auth: subJson.keys!.auth!,
+                  },
+                  { onConflict: 'endpoint' }
+                );
+                setIsSubscribed(true);
+                console.log('[push] Silent re-subscribe OK');
+              }
+            } catch (e) {
+              console.error('[push] Silent re-subscribe failed:', e);
+            }
+          }
         })
         .catch((err) => console.error('[push] SW ready failed:', err));
     }
