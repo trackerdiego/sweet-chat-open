@@ -567,7 +567,14 @@ export function getDailySchedule(day: number, strategy: DayStrategy, startDate: 
   const current = new Date(start);
   current.setDate(current.getDate() + day - 1);
   const dayOfWeek = current.getDay();
-  const theme = weeklyThemes[dayOfWeek];
+  // Tema do dia vem da MATRIZ personalizada do usuário, não do dia da semana civil.
+  // Assim, "Sexta" deixa de mostrar "Estética & Luxo" hardcoded e passa a refletir
+  // o pilar/tópico real que a IA gerou para aquele dia da matriz.
+  const theme: WeeklyTheme = {
+    name: strategy.pillarLabel,
+    emoji: getPillarEmoji(strategy.pillar),
+    objective: strategy.title,
+  };
   const isFeedDay = feedPostDays.includes(dayOfWeek);
 
   const morningTasks: ScheduleTask[] = [
