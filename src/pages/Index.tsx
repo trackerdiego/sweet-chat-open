@@ -169,7 +169,7 @@ const Index = () => {
                 <div className="space-y-3 min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] uppercase tracking-wider font-semibold text-white/70">
-                      Dia {state.currentDay}/30
+                      Dia {state.currentDay}/30{state.cycle && state.cycle > 1 ? ` · Ciclo ${state.cycle}` : ''}
                     </span>
                     <span className="w-1 h-1 rounded-full bg-white/40" />
                     <span className="text-[11px] uppercase tracking-wider font-semibold text-white/90">

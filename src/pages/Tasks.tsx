@@ -80,7 +80,7 @@ const Tasks = () => {
           <div>
             <h1 className="font-serif text-3xl font-bold text-foreground">Tarefas</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Dia {state.currentDay} de 30 — {displayDate}
+              Dia {state.currentDay} de 30{state.cycle && state.cycle > 1 ? ` · Ciclo ${state.cycle}` : ''} — {displayDate}
             </p>
           </div>
           <HelpButton topic="tarefas" />
