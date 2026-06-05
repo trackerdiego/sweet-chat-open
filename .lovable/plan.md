@@ -1,13 +1,30 @@
-Diagnóstico a partir dos logs:
-- O cron está chamando `scheduled-push` corretamente a cada 15 minutos.
-- A function está respondendo e classificando o bloco `evening`.
-- `Sent: 0, Skipped(dedup): 3` indica que há 3 usuários/assinaturas já marcados em `push_send_log` para esse mesmo bloco/data, então a function não tenta enviar de novo.
-- O comando `env | grep VAPID` vazio não explica essa falha, porque o código atual usa VAPID hardcoded em `send-push`, não via env.
-- Há um bug provável: `scheduled-push` grava no `push_send_log` antes de confirmar que `send-push` realmente entregou. Se `send-push` falhar ou retornar `sent: 0`, o usuário fica bloqueado por dedup naquele bloco e o log mostra “skipped” nas próximas execuções.
+# Reels Description — Modo fiel ao vídeo
 
-Plano de implementação:
-1. Ajustar `scheduled-push` para só registrar `push_send_log` depois de `send-push` retornar `sent > 0`.
-2. Se `send-push` retornar `sent: 0`, não criar dedup, permitindo nova tentativa no próximo cron.
-3. Melhorar logs de `scheduled-push` com contadores separados: usuários dedupados, tentativas sem assinatura/sem entrega, erros de envio e entregues.
-4. Opcionalmente adicionar limpeza de log falso já existente via SQL manual para você rodar no self-hosted, porque migrations Lovable não afetam seu backend.
-5. Te entregar também os comandos de VPS para redeploy das edge functions no self-hosted.
+## Problema
+Hoje o `reelsDescription` em `supabase/functions/start-tools-job/index.ts` injeta no prompt:
+- `niche` (vindo da matriz do usuário)
+- `style` (estilo de conteúdo do usuário)
+- Bloco inteiro do `audience_profile` (avatar, feridas, desejo oculto, gatilhos verbais, objeções, relatabilidade)
+- Regra de hashtags que pede "5 do nicho"
+
+Resultado: a legenda é reescrita pra encaixar no nicho da matriz em vez de refletir o que o usuário falou no Reel.
+
+## Mudança
+Reescrever apenas o prompt da chave `reelsDescription` (system + user) pra:
+
+1. **Ignorar** `ap` (audience profile), `niche` e `style` — não passar nada disso pro Gemini nesta tool.
+2. **Instrução central**: a legenda deve ser FIEL ao conteúdo transcrito/tema enviado. A IA é copy de Instagram, não estrategista de nicho. Não pode inventar produto, público, autoridade, oferta ou ângulo que não esteja no texto.
+3. **Hook**: extraído do que o usuário efetivamente diz no vídeo (primeiros segundos ou ideia central), não de gatilhos do avatar.
+4. **Hashtags**: derivadas do TEMA do vídeo (palavras-chave do próprio conteúdo) — remover a regra "5 do nicho". Manter: 8-15 hashtags, mix de amplas + específicas do tema + cauda longa, minúsculas, sem acento, sem `#`.
+5. **Manter**: regras de formato (2200 chars, quebras curtas mobile-first, emojis com propósito, CTA conversacional, 3 hooks alternativos, schema de saída inalterado, `PT_BR_RULES`).
+
+Nada muda no schema `TOOL_SCHEMAS.reelsDescription`, no frontend (`Tools.tsx`), nem no fluxo de job.
+
+## Entrega
+- Editar `supabase/functions/start-tools-job/index.ts`: substituir só o bloco `reelsDescription` em `TOOL_PROMPTS` (system + user) pela versão niche-agnostic.
+- Bloco copia-e-cola pra VPS no fim:
+  ```
+  ./scripts/deploy-selfhost.sh start-tools-job
+  ```
+
+Sem migrations, sem mudança em outras tools (dissonance/patterns/hooks/viral continuam usando nicho — é o comportamento correto delas).
