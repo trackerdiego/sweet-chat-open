@@ -57,20 +57,27 @@ export function useInfluencer(strategies?: DayStrategy[]) {
   const { progress, loading, updateProgress, resetProgress: resetDB } = useUserProgress();
   const { optimisticAdd, refreshWallet } = useWallet();
 
+  const absoluteDay = progress.current_day;
+  const matrixDay = ((absoluteDay - 1) % 30) + 1; // 1..30 cíclico
+  const cycle = Math.floor((absoluteDay - 1) / 30) + 1; // 1, 2, 3...
+
   const state = {
-    currentDay: progress.current_day,
+    currentDay: matrixDay,        // dia da matriz (1..30) — usado em UI/strategies
+    absoluteDay,                  // dia absoluto desde start_date
+    cycle,
     startDate: progress.start_date,
     tasksCompleted: progress.tasks_completed,
     streak: progress.streak,
     influencePoints: progress.influence_points,
   };
 
-  const todayTasks: DailyTaskState = migrateTasks(state.tasksCompleted[state.currentDay]);
+  // tasks_completed continua chaveado pelo dia ABSOLUTO — ciclo 2 começa zerado.
+  const todayTasks: DailyTaskState = migrateTasks(state.tasksCompleted[absoluteDay]);
 
-  const strategy = strats[state.currentDay - 1];
+  const strategy = strats[matrixDay - 1];
   const schedule = useMemo(
-    () => strategy ? getDailySchedule(state.currentDay, strategy, state.startDate) : null,
-    [state.currentDay, strategy, state.startDate]
+    () => strategy ? getDailySchedule(matrixDay, strategy, state.startDate) : null,
+    [matrixDay, strategy, state.startDate]
   );
 
   const dailyProgress = useMemo(() => {
