@@ -1,4 +1,4 @@
-import { DayStrategy, Pillar } from './strategies';
+import { DayStrategy, Pillar, getPillarEmoji } from './strategies';
 
 export interface WeeklyTheme {
   name: string;
