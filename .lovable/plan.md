@@ -1,102 +1,103 @@
-# Fix: Aba Tarefas — destrava após dia 30 e respeita matriz do usuário
+# Push notifications voltarem a funcionar — diagnóstico + correção
 
-## Problemas identificados
+## Estado atual (lendo código + último log que você colou)
 
-### 1. Trava no dia 30/30
-Em `src/hooks/useUserProgress.ts` (linha 26):
-```ts
-return Math.max(1, Math.min(30, diffDays + 1));
-```
-O `Math.min(30, ...)` clampa o `current_day` em 30 pra sempre. A partir do 31º dia o usuário fica congelado em "Dia 30 de 30" e o mesmo conteúdo se repete indefinidamente.
+- `scheduled-push` rodou: `Block: evening · Sent: 0 · Skipped(dedup): 3`
+- `send-push` está estruturalmente correto (VAPID + aes128gcm + JWT ES256)
+- VAPID pub key bate entre frontend (`usePushNotifications.ts`), backend (`send-push/index.ts`) e SW
+- 2 subscriptions Apple ativas no banco (`web.push.apple.com/…`), criadas em 20/04 e 26/04
+- SW no repo já é `vyrallab-v2`
 
-### 2. Tema da semana descolado do nicho
-Em `src/data/dailySchedule.ts` (linha 9 e 570):
-```ts
-weeklyThemes[dayOfWeek] // sexta = "Estética & Luxo", sábado = "Família & Lazer"...
-```
-São temas **fixos por dia da semana do calendário**, totalmente independentes da matriz personalizada. Por isso uma sexta-feira mostra "Estética & Luxo" mesmo o nicho do usuário sendo "digital". O card também não reflete o tópico real do dia da matriz (ex.: `strategy.pillarLabel` + `strategy.title`).
-
-### 3. Visão semanal recorta por bloco fixo
-`WeeklyView.tsx` usa `weekStart = floor((currentDay-1)/7)*7+1`, sempre dias 1-7, 8-14, ..., independente de qual dia da matriz o usuário está hoje. Combinado com #1, depois do dia 30 também trava na última fatia (29-30 + lixo).
+O sintoma é **`sent: 0` em todas as tentativas, e dedup pulando os mesmos users**. O código abaixo é o que precisa ser confirmado/destravado.
 
 ---
 
-## Solução
+## Etapa 1 — Diagnóstico (não muda nada, só lê)
 
-### A. Ciclar a matriz a cada 30 dias (não travar mais)
+Você roda **3 blocos** na VPS e me cola o output. Sem isso, qualquer correção é chute.
 
-`useUserProgress.ts` — `calcRealDay` passa a retornar o **dia absoluto** sem clamp:
-```ts
-return Math.max(1, diffDays + 1); // pode crescer além de 30
+### 1.1 — O que a Apple está respondendo HOJE
+```bash
+# Pega o endpoint completo de 1 subscription
+docker exec supabase-db psql -U postgres -d postgres -c \
+  "SELECT user_id, endpoint, created_at FROM push_subscriptions ORDER BY created_at DESC;"
+
+# Chama send-push direto pra esse user_id e olha a resposta
+curl -sS -X POST "https://api.influlab.pro/functions/v1/send-push" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(grep SUPABASE_SERVICE_ROLE_KEY ~/supabase/docker/.env | cut -d= -f2)" \
+  -d '{"user_id":"COLAR_USER_ID_AQUI","title":"Teste manual","body":"Voltei!","url":"/"}'
+
+# E olha os logs REAIS dessa execução (status code que veio da Apple)
+docker logs $(docker ps -qf "name=supabase-edge-functions") 2>&1 | grep send-push | tail -30
 ```
 
-`useInfluencer.ts` — deriva o dia da matriz a partir do absoluto:
-```ts
-const absoluteDay = progress.current_day;
-const matrixDay = ((absoluteDay - 1) % 30) + 1; // 1..30 cíclico
-const cycle = Math.floor((absoluteDay - 1) / 30) + 1; // 1, 2, 3...
+### 1.2 — Estado real do dedup
+```bash
+docker exec supabase-db psql -U postgres -d postgres -c \
+  "SELECT send_date, block, COUNT(*) FROM push_send_log
+   WHERE send_date >= CURRENT_DATE - 7 GROUP BY 1,2 ORDER BY 1 DESC, 2;"
 ```
-- `strategies[matrixDay - 1]` indexa a matriz.
-- `tasks_completed` continua chaveado pelo `absoluteDay` (não pelo matrixDay), então quando entra no ciclo 2 o checklist do novo dia "1 do ciclo 2" começa zerado — não herda os checks do dia 1 original.
-- `completedDays` continua funcionando com a chave absoluta.
 
-Expor no retorno do hook: `matrixDay`, `cycle`, além do `currentDay` (absoluto).
-
-### B. Header e UI refletem o ciclo
-
-`Tasks.tsx`:
-- Subtítulo passa a ser `Dia {matrixDay} de 30` quando `cycle === 1`, e `Dia {matrixDay} · Ciclo {cycle}` a partir do ciclo 2.
-
-`DailySchedule.tsx`:
-- Usa `matrixDay` (não `currentDay`) ao montar prompts de `task_examples` e ao gerar exemplos rotacionados em `pickExamplesForDay`. Isso garante que dois dias seguidos do mesmo ciclo nunca caiam no mesmo conjunto de exemplos.
-
-`useDailyGuideCache` em `Tasks.tsx`: passa `matrixDay` no campo `day` pra cache do guia ficar coerente com o dia da matriz, e adicionalmente inclui `cycle` no payload (cacheia separadamente por ciclo).
-
-### C. Tema do dia = pilar real da matriz (não o dia da semana)
-
-`src/data/dailySchedule.ts` — em `getDailySchedule`, substituir:
-```ts
-const theme = weeklyThemes[dayOfWeek];
+### 1.3 — Cron está realmente disparando
+```bash
+docker exec supabase-db psql -U postgres -d postgres -c \
+  "SELECT runid, jobid, start_time, end_time, status, return_message
+   FROM cron.job_run_details
+   WHERE start_time > NOW() - INTERVAL '6 hours'
+   ORDER BY start_time DESC LIMIT 20;"
 ```
-por um tema **derivado da própria entrada da matriz**:
-```ts
-const theme: WeeklyTheme = {
-  name: strategy.pillarLabel,        // ex.: "Digital — Autoridade"
-  emoji: getPillarEmoji(strategy.pillar),
-  objective: strategy.title,         // título exato do dia X da matriz
-};
-```
-- `dayOfWeekName` (Sexta, Sábado…) **continua sendo o nome real do dia da semana civil** — usuário enxerga "Sexta — Digital — Autoridade" em vez de "Sexta — Estética & Luxo".
-- `isFeedDay` deixa de depender de `dayOfWeek` fixo e passa a usar `strategy.isFeedDay` se existir, com fallback pra `[1,3,5]` do `dayOfWeek` (mantém compat).
-- `weeklyThemes` (objeto hardcoded) pode permanecer no arquivo como fallback, mas não é mais a fonte primária.
 
-### D. Visão semanal segue o ciclo atual
-
-`WeeklyView.tsx`:
-- Recebe `currentDay` que agora é o `matrixDay` (1..30) — semantically clean para a fatia da semana.
-- `weekStart = floor((matrixDay - 1) / 7) * 7 + 1` continua válido e nunca passa de 30.
-- Pinta como "hoje" o card onde `day.day === matrixDay`.
-- Em `Tasks.tsx` e demais consumidores (`Index.tsx`, `Script.tsx`, `Matrix.tsx`) onde hoje passam `state.currentDay` pro `WeeklyView`/strategy lookup, passar `matrixDay`.
-
-### E. Gating freemium
-
-`useUserUsage.canAccessDay(day)` — chamar com `matrixDay` em vez do absoluto. Assim o usuário não-premium que estaria no dia 31 absoluto recai no dia 1 do ciclo 2 e o gate não dispara incorretamente.
+Esses 3 outputs me dizem exatamente em qual dos cenários abaixo estamos.
 
 ---
 
-## Arquivos modificados
+## Etapa 2 — Correção, por cenário
 
-- `src/hooks/useUserProgress.ts` — remover clamp `Math.min(30, ...)`.
-- `src/hooks/useInfluencer.ts` — derivar `matrixDay`/`cycle`, indexar `strategies` por `matrixDay`, expor ambos no retorno, manter `tasks_completed` chaveado pelo absoluto.
-- `src/data/dailySchedule.ts` — `getDailySchedule` monta `weeklyTheme` a partir de `strategy` (pillarLabel/title/pillar emoji) e usa `isFeedDay` da própria estratégia quando disponível.
-- `src/pages/Tasks.tsx` — usar `matrixDay` para `todayStrategy`, cache do guia, gating; header mostra "Dia X de 30" ou "Dia X · Ciclo Y".
-- `src/components/DailySchedule.tsx` — usar `matrixDay` no payload do job `task_examples` e em `pickExamplesForDay`.
-- `src/components/WeeklyView.tsx` — receber e usar `matrixDay` para a fatia/destaque.
-- `src/pages/Index.tsx`, `src/pages/Script.tsx`, `src/pages/Matrix.tsx` — onde leem `state.currentDay` para indexar a matriz ou pintar a visão semanal, trocar por `matrixDay` (sem mexer em lógica de pontos/streak, que ficam no absoluto).
+Cada cenário tem fix isolado. Não aplico nada antes da Etapa 1 voltar.
 
-## Não muda
+### Cenário A — Apple devolve `403 BadJwt`/`InvalidVapidKey`
+**Causa:** subscriptions foram criadas com uma VAPID antiga que não casa mais com a atual.
+**Fix:** invalidar TUDO em `push_subscriptions` e mostrar o botão "Ativar notificações" pra todo mundo de novo.
+```sql
+TRUNCATE push_send_log;
+TRUNCATE push_subscriptions;
+```
+Mais: no `usePushNotifications.ts` adicionar comparação de `applicationServerKey` no `useEffect` — se o `subscription.options.applicationServerKey` do device for diferente da `VAPID_PUBLIC_KEY` atual, força `unsubscribe()` + `setIsSubscribed(false)` automaticamente. Isso evita que aconteça de novo na próxima rotação.
 
-- Backend / edge functions / schema: nenhuma migração.
-- `useUserStrategies` continua entregando 30 dias.
-- Geração da matriz, prompts da IA, push, paywall: intocados.
-- Coins, streak, pontos: continuam baseados no dia absoluto (não regenera coins quando o ciclo dá a volta).
+### Cenário B — Apple devolve `410 Gone` mas `send-push` deleta corretamente
+**Causa:** subscriptions caducaram e foram limpas. `push_send_log` ficou populado por execuções antigas que entregaram quando tudo funcionava.
+**Fix:**
+```sql
+DELETE FROM push_send_log WHERE send_date >= CURRENT_DATE;
+```
+Pedir aos 2 users que reativem push no app. Se o frontend já mostra o `PushNotificationButton`, basta abrir.
+
+### Cenário C — `send-push` retorna `sent: 1` no curl manual da 1.1, mas device não recebe
+**Causa:** SW velho (v1) ainda no device — `push` event nem dispara ou dispara silencioso.
+**Fix:**
+- Bump `CACHE_NAME` pra `vyrallab-v3` no `public/sw-push.js`
+- Adicionar `self.skipWaiting()` + `clients.claim()` (já estão lá ✓)
+- No `usePushNotifications.ts`, registrar `navigator.serviceWorker.register('/sw-push.js', { updateViaCache: 'none' })` e chamar `reg.update()` no mount pra forçar refresh.
+
+### Cenário D — Cron parou de rodar
+A query 1.3 vai mostrar gap nas execuções.
+**Fix:** reagendar `cron.schedule` com a URL self-hosted + anon key correta (SQL que você roda no Studio).
+
+### Cenário E — Tudo funciona no curl, dedup vazio, mas cron diz `Sent: 0`
+**Causa:** o `scheduled-push` chama `send-push` por HTTP usando `${supabaseUrl}/functions/v1/send-push` com SERVICE_ROLE como Bearer — pode estar batendo no Kong sem auth válida.
+**Fix:** trocar a chamada HTTP por invocação interna com `supabase.functions.invoke('send-push', { body })` usando o client já criado, OU adicionar header `apikey` além de `Authorization`.
+
+---
+
+## Não toco em (deixar como está)
+
+- VAPID keys atuais — funcionam, problema não é geração.
+- Lógica de segmentação/mensagens — irrelevante pra entrega.
+- Frontend de UI do botão — só ajustar registro do SW se cenário C.
+
+---
+
+## Entregável final
+
+Depois da Etapa 1, te mando **só o fix do cenário correto** + bloco copia-e-cola pra VPS (deploy `send-push` + `scheduled-push` se preciso, e/ou SQL no Studio). Sem chutar.
