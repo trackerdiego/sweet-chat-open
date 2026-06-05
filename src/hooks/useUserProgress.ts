@@ -23,7 +23,8 @@ function calcRealDay(startDate: string): number {
   today.setHours(0, 0, 0, 0);
   const diffMs = today.getTime() - start.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  return Math.max(1, Math.min(30, diffDays + 1));
+  // Dia absoluto sem clamp — a ciclagem 1..30 (matriz) é feita em useInfluencer.
+  return Math.max(1, diffDays + 1);
 }
 
 export function useUserProgress() {
