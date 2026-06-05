@@ -1,54 +1,41 @@
-# Por que push parou de chegar
+# Fix: "Invalid API key" no login
 
-O backend está 100% saudável: `send-push` loga `✓ delivered` (Apple/FCM retornam 200/201). Mas no device, nada aparece.
+## Causa raiz
 
-**Causa:** as 3 subscriptions no banco foram criadas em abril, quando o app era "Influ Lab" e o SW era `v1`. Depois o repo subiu o SW `vyrallab-v2` e o nome "Vyral Lab", mas:
+O Lovable auto-populou `.env` com as credenciais do projeto Supabase Cloud dele:
 
-1. Apple/FCM continuam aceitando o endpoint antigo por inércia (por isso o log diz "delivered") — só vão devolver `410 Gone` depois de muitos dias de falha.
-2. No device, o SW novo (`v2`) ativou e fez `clients.claim()`, mas a `pushManager.subscription` antiga continua "viva" apontando pra um keypair que o SW velho conhecia. O `push` event chega no SW novo, mas a decifragem/handler nem sempre casa, e em alguns devices o SW v2 nem registrou a mesma sub.
-3. O frontend só re-subscreve se o usuário clicar o botão de novo — ninguém faz isso.
-
-Resultado: scheduled-push manda → Apple aceita → device não mostra nada.
-
-## Fix (frontend only — sem mexer em backend nem banco)
-
-### 1. `public/sw-push.js`
-- Bump `CACHE_NAME` de `vyrallab-v2` → `vyrallab-v3` (força reinstall em todo device).
-- No `activate`, depois de limpar caches antigos, chamar `self.registration.pushManager.getSubscription()` e dar `unsubscribe()` nela. Isso obriga o device a pedir uma sub nova na próxima visita.
-- Garantir fallback do `data.title` como `'Vyral Lab'` (já está, manter).
-
-### 2. `src/hooks/usePushNotifications.ts`
-- No `useEffect` inicial, depois de `navigator.serviceWorker.ready`, chamar `reg.update()` pra forçar checagem de SW novo a cada visita.
-- Adicionar lógica: se `reg.pushManager.getSubscription()` retornar `null` MAS já existir registro no banco pra esse `user_id` (ou seja, user já tinha permitido push antes) → re-subscrever silenciosamente e fazer upsert. Sem clique, sem prompt, sem toast.
-  - Permission já está `granted` → `pushManager.subscribe` não pede nada de novo.
-  - O `upsert` com `onConflict: 'endpoint'` já cobre duplicatas.
-- Se permission for `denied` ou `default`, NÃO faz nada (não tem como re-subscrever sem clique).
-
-### 3. SQL pro user rodar no Studio self-hosted (limpa zumbis)
-Depois do deploy frontend, as subs antigas vão ficar órfãs. Limpar:
-```sql
-TRUNCATE push_send_log;
-TRUNCATE push_subscriptions;
 ```
-Aí no próximo carregamento do app em cada device, o passo 2 re-cria a sub limpa com VAPID atual + SW v3.
+VITE_SUPABASE_URL="https://gchncrlrmsyzumgmbplh.supabase.co"   ← Cloud Lovable (errado)
+VITE_SUPABASE_PUBLISHABLE_KEY="eyJ...gchncrlrmsyzumgmbplh..."  ← anon do Cloud
+```
 
-## O que NÃO toco
+Mas `src/integrations/supabase/client.ts` lê:
+- `VITE_SUPABASE_URL` → pega o **URL do Cloud Lovable**
+- `VITE_SUPABASE_ANON_KEY` → **não existe no .env**, cai no fallback hard-coded do self-hosted
 
-- `send-push`, `scheduled-push` — funcionam.
-- VAPID keys — funcionam.
-- Backend, cron, banco — funcionam.
-- Manifest — já está "Vyral Lab".
+Resultado: URL aponta para `gchncrlrmsyzumgmbplh.supabase.co` e a key é a do `api.influlab.pro`. Mistura projetos → **invalid apikey**.
 
-## Entrega final (depois de aprovar)
+Isso é crítico porque o backend real do app é **self-hosted** (`api.influlab.pro`), e o Lovable Cloud não deve ser usado. Toda vez que o Lovable regenerar o `.env`, o problema volta.
 
-- Edits nos 2 arquivos frontend.
-- Bloco copia-e-cola pra VPS: só o SQL acima no Studio + esperar Vercel auto-deployar frontend do GitHub. Sem rebuild de edge function.
+## Fix
+
+Reescrever `src/integrations/supabase/client.ts` para **hard-codar** URL e anon key do self-hosted, sem ler nenhuma `VITE_SUPABASE_*` do ambiente. Como o backend é fixo (api.influlab.pro), não há motivo para ler envs.
+
+```ts
+const SUPABASE_URL = "https://api.influlab.pro";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc2NTY3NjAwLCJleHAiOjE5MzQzMzQwMDB9.B5yEiG4ONDq_CSW9kIClLddKkKxNOEgLcsBNQYryJck";
+
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: localStorage, persistSession: true, autoRefreshToken: true },
+});
+```
 
 ## Validação
 
-Depois do deploy, abrir o app em 1 device (com push já permitido antes), esperar ~10s, e rodar:
-```bash
-docker exec supabase-db psql -U postgres -d postgres -c \
-  "SELECT user_id, created_at FROM push_subscriptions ORDER BY created_at DESC LIMIT 5;"
-```
-Deve aparecer sub nova com `created_at` de agora. Aí dispara `curl` manual no `send-push` com esse user_id e o device DEVE mostrar a notificação "Vyral Lab".
+1. Recarregar preview → tentar login → não deve mais retornar "invalid apikey".
+2. Confirmar no DevTools (Network) que as chamadas vão para `https://api.influlab.pro/auth/v1/...` e retornam 200.
+
+## Sem mudanças
+
+- Nenhuma mudança em edge function, SQL, secrets, ou backend.
+- Apenas 1 arquivo frontend.
