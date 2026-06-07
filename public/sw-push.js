@@ -1,5 +1,5 @@
 // Service Worker — Push Notifications + Offline Cache
-const CACHE_NAME = 'vyrallab-v3';
+const CACHE_NAME = 'vyrallab-v4';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
