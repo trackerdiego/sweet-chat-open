@@ -5,3 +5,5 @@ project_id = "default"
     verify_jwt = false
   [functions.check-email-exists]
     verify_jwt = false
+  [functions.keep-alive]
+    verify_jwt = false

@@ -26,6 +26,7 @@ PUBLIC_FNS=(
   scheduled-push
   process-email-queue
   auth-email-hook
+  keep-alive
 )
 
 PRIVATE_FNS=(
