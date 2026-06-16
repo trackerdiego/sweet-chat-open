@@ -1,44 +1,63 @@
-## Testar se o keep-alive está funcionando
+## Objetivo
 
-Três checagens independentes — rode em ordem, qualquer uma já confirma se está vivo.
+Quando o upload de vídeo retornar uma transcrição vazia ou muito curta (provavelmente um vídeo sem fala — dancinha, trend puramente visual, etc.), avisar o user de forma honesta e deixar ele decidir se quer prosseguir com a análise mesmo assim ou cancelar e tentar outro vídeo.
 
-### 1. VPS — confirmar que o cron existe e está agendado
+Tudo client-side. **Zero mudança de infra, zero edge function, zero SQL, zero alteração no fluxo de upload ou no limite de transcrições.**
 
-```bash
-crontab -l | grep keep-alive
+## Escopo
+
+Mudança em um único arquivo: `src/pages/Tools.tsx`, dentro de `handleFileUpload`. Afeta as duas tools que aceitam upload (`viral` — Roubar Trend Viral, e `reelsDescription` — Descrição de Reels) automaticamente, porque o handler é compartilhado.
+
+## Comportamento novo
+
+Hoje (Tools.tsx linha 364):
+```text
+transcrição retorna → insere no textarea → toast "Transcrição concluída"
 ```
 
-Esperado: a linha `0 0 */5 * * curl ... /functions/v1/keep-alive ...`. Se não aparecer, o cron sumiu.
-
-### 2. VPS — disparar o ping AGORA (não esperar 5 dias)
-
-```bash
-curl -i "https://gchncrlrmsyzumgmbplh.supabase.co/functions/v1/keep-alive" \
-  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjaG5jcmxybXN5enVtZ21icGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MjQ1NDksImV4cCI6MjA5MDQwMDU0OX0.oAXmnjsdcnNPEBq76s2236_J_fKFNtjUnrQFX8JeQ_I"
+Depois:
+```text
+transcrição retorna
+  ├─ vazia OU < 50 chars → abre AlertDialog:
+  │     título: "Esse vídeo parece não ter fala"
+  │     corpo: explica que a análise depende de texto falado e pode
+  │            ficar fraca em vídeos puramente visuais (dancinhas, trends
+  │            sem narração). Sugere tentar vídeo com narração/diálogo.
+  │     botões:
+  │       - "Tentar outro vídeo" (cancela, limpa input)
+  │       - "Analisar mesmo assim" (insere o que veio + segue normal)
+  └─ >= 50 chars → fluxo atual inalterado
 ```
 
-Esperado: `HTTP/2 200` + `{"ok":true,"ts":"..."}`. Se vier 503/504, o Supabase Cloud já está pausado/lento (raro, mas é o sinal pra rodar manualmente e ajustar a frequência do cron).
+A transcrição **já consumiu** a cota (worker incrementa server-side), então não tem como "estornar" — isso fica explícito no aviso: "essa transcrição já foi contabilizada no seu uso diário".
 
-### 3. VPS — provar que o cron disparou de verdade (não só manualmente)
+## Implementação técnica
 
-```bash
-grep CRON /var/log/syslog | grep keep-alive | tail -20
-```
+1. **Estado novo em `Tools.tsx`**:
+   - `lowQualityTranscription: string | null` — guarda o texto que veio curto/vazio, controla abertura do dialog.
 
-Em distros sem syslog (Ubuntu 22+ comum): 
+2. **No `handleFileUpload`** (após receber `transcribeResult`):
+   - Calcular `text = (transcribeResult.transcription ?? "").trim()`.
+   - Se `text.length < 50`: setar `lowQualityTranscription` (usar `""` quando vazio pra ainda abrir o dialog) e **não** inserir no textarea ainda. Não exibir o toast de sucesso. Ainda chamar `refreshUsage()`.
+   - Se `text.length >= 50`: comportamento atual (insere + toast).
 
-```bash
-journalctl -u cron --since "30 days ago" | grep keep-alive | tail -20
-```
+3. **Novo `<AlertDialog>`** no JSX (usar `@/components/ui/alert-dialog` que já existe no shadcn padrão):
+   - Aberto quando `lowQualityTranscription !== null`.
+   - Confirmação ("Analisar mesmo assim") insere o texto no `userInput` (mesma lógica de concat atual) e fecha.
+   - Cancelamento ("Tentar outro vídeo") só fecha; não mexe no input.
 
-Esperado: ver execuções nos dias 5, 10, 15... do mês. Sem linhas = cron daemon não está rodando (`systemctl status cron`).
+4. **Sem mudanças** em: extração de áudio, upload pro Storage, `start-transcription-job`, contagem de uso, prompts das tools, limites, ou qualquer outra coisa.
 
-### 4. (opcional) Cloud — ver hits chegando pelo lado do Supabase
+## O que NÃO entra neste plano
 
-No dashboard Supabase Cloud → Edge Functions → `keep-alive` → Logs. Deve ter invocações nos mesmos dias do passo 3. Se eu consigo chamar pelo curl mas o cron não aparece nos logs, é problema do cron local — não do endpoint.
+- Detecção visual / análise multimodal de vídeos sem fala.
+- Aumento de limite de upload, mudança de bucket, ou envio do .mp4 cru pro Gemini.
+- Diferenciar threshold por tool (ambas tools tratam vídeos sem fala da mesma forma).
+- Persistir métricas de "quantos uploads bateram o aviso" (pode ser adicionado depois se você quiser sinal pra decidir investir em análise visual).
 
-### Veredito
+## Verificação após implementar
 
-- Passos 1 + 2 OK → endpoint vivo, configuração presente.
-- Passo 3 com pelo menos 1 entrada nos últimos 6 dias → estratégia 100% funcional.
-- Passo 3 vazio → cron daemon parado ou crontab perdido após reboot; me avisa que ajusto.
+- Subir um vídeo curto sem fala (ou cancelar a fala) → dialog deve aparecer.
+- Clicar "Analisar mesmo assim" → texto (mesmo curto) entra no input, fluxo de geração funciona.
+- Clicar "Tentar outro vídeo" → input fica intacto, pode subir outro arquivo.
+- Subir vídeo com narração normal → fluxo idêntico ao atual, sem dialog.

@@ -18,6 +18,16 @@ import { HelpButton } from '@/components/HelpButton';
 import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { PageBackdrop } from '@/components/PageBackdrop';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const SOCIAL_LINK_REGEX = /(https?:\/\/)?(www\.)?(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|kwai\.com)\/\S+/i;
 
@@ -293,6 +303,7 @@ const Tools = () => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isStandalone } = useInstallPrompt();
   const [linkInstallOpen, setLinkInstallOpen] = useState(false);
+  const [lowQualityTranscription, setLowQualityTranscription] = useState<string | null>(null);
   const linkWarnedRef = useRef(false);
 
   // Detecta link de rede social colado no input do "Roubar Trend Viral".
@@ -361,11 +372,15 @@ const Tools = () => {
       setProcessingStep('transcribing');
       // Job assíncrono: start-transcription-job + polling get-ai-job-status (imune a timeout Kong/Cloudflare)
       const transcribeResult = await runAiJob<{ transcription?: string }>('start-transcription-job', { filePath, mimeType });
-      if (transcribeResult?.transcription) {
-        setUserInput(prev => prev ? `${prev}\n\n${transcribeResult.transcription}` : transcribeResult.transcription!);
+      const text = (transcribeResult?.transcription ?? '').trim();
+      // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+      await refreshUsage();
+      if (text.length < 50) {
+        // Vídeo provavelmente sem fala (dancinha, trend visual). Avisa e deixa user decidir.
+        setLowQualityTranscription(text);
+      } else {
+        setUserInput(prev => prev ? `${prev}\n\n${text}` : text);
         toast.success('Transcrição concluída! ✨');
-        // Worker já incrementou user_usage server-side; resincroniza UI/admin.
-        await refreshUsage();
       }
     } catch (err) {
       console.error('Transcription error:', err);
@@ -411,6 +426,37 @@ const Tools = () => {
       {selectedTool?.id !== 'chat' && <PageBackdrop />}
       <div className="relative z-10">
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <AlertDialog open={lowQualityTranscription !== null} onOpenChange={(open) => { if (!open) setLowQualityTranscription(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esse vídeo parece não ter fala</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  A análise depende de texto falado pra extrair a estrutura do vídeo. Vídeos puramente visuais (dancinhas, transições, trends sem narração) tendem a gerar resultados fracos ou genéricos.
+                </p>
+                <p>
+                  Recomendamos tentar um vídeo com narração, diálogo ou voz em off. Essa transcrição já foi contabilizada no seu uso diário.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setLowQualityTranscription(null)}>
+              Tentar outro vídeo
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const text = lowQualityTranscription ?? '';
+                if (text) setUserInput(prev => prev ? `${prev}\n\n${text}` : text);
+                setLowQualityTranscription(null);
+              }}
+            >
+              Analisar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <InstallInstructionsModal
         open={linkInstallOpen}
         onOpenChange={setLinkInstallOpen}
