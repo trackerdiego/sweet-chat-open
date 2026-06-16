@@ -426,6 +426,37 @@ const Tools = () => {
       {selectedTool?.id !== 'chat' && <PageBackdrop />}
       <div className="relative z-10">
       <CheckoutModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
+      <AlertDialog open={lowQualityTranscription !== null} onOpenChange={(open) => { if (!open) setLowQualityTranscription(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esse vídeo parece não ter fala</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  A análise depende de texto falado pra extrair a estrutura do vídeo. Vídeos puramente visuais (dancinhas, transições, trends sem narração) tendem a gerar resultados fracos ou genéricos.
+                </p>
+                <p>
+                  Recomendamos tentar um vídeo com narração, diálogo ou voz em off. Essa transcrição já foi contabilizada no seu uso diário.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setLowQualityTranscription(null)}>
+              Tentar outro vídeo
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const text = lowQualityTranscription ?? '';
+                if (text) setUserInput(prev => prev ? `${prev}\n\n${text}` : text);
+                setLowQualityTranscription(null);
+              }}
+            >
+              Analisar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <InstallInstructionsModal
         open={linkInstallOpen}
         onOpenChange={setLinkInstallOpen}
