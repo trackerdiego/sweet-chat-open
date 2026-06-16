@@ -372,11 +372,15 @@ const Tools = () => {
       setProcessingStep('transcribing');
       // Job assíncrono: start-transcription-job + polling get-ai-job-status (imune a timeout Kong/Cloudflare)
       const transcribeResult = await runAiJob<{ transcription?: string }>('start-transcription-job', { filePath, mimeType });
-      if (transcribeResult?.transcription) {
-        setUserInput(prev => prev ? `${prev}\n\n${transcribeResult.transcription}` : transcribeResult.transcription!);
+      const text = (transcribeResult?.transcription ?? '').trim();
+      // Worker já incrementou user_usage server-side; resincroniza UI/admin.
+      await refreshUsage();
+      if (text.length < 50) {
+        // Vídeo provavelmente sem fala (dancinha, trend visual). Avisa e deixa user decidir.
+        setLowQualityTranscription(text);
+      } else {
+        setUserInput(prev => prev ? `${prev}\n\n${text}` : text);
         toast.success('Transcrição concluída! ✨');
-        // Worker já incrementou user_usage server-side; resincroniza UI/admin.
-        await refreshUsage();
       }
     } catch (err) {
       console.error('Transcription error:', err);
