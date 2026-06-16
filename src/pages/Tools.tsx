@@ -303,6 +303,7 @@ const Tools = () => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const { isStandalone } = useInstallPrompt();
   const [linkInstallOpen, setLinkInstallOpen] = useState(false);
+  const [lowQualityTranscription, setLowQualityTranscription] = useState<string | null>(null);
   const linkWarnedRef = useRef(false);
 
   // Detecta link de rede social colado no input do "Roubar Trend Viral".
