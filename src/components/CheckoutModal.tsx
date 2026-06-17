@@ -175,6 +175,9 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
           number: ccNumber.replace(/\s/g, ""),
           expiryMonth: mm, expiryYear: yy, ccv: ccCvv,
         };
+        if (draft.selectedPlan === "yearly") {
+          payload.installmentCount = draft.installmentCount || 1;
+        }
       }
       const { data, error } = await supabase.functions.invoke("create-asaas-subscription", { body: payload });
       if (error) throw error;
