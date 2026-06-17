@@ -21,6 +21,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { useCheckoutDraft } from "@/hooks/useCheckoutDraft";
 import { BonusStack } from "@/components/checkout/BonusStack";
 import { UrgencyBar } from "@/components/checkout/UrgencyBar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { calcInstallment, formatBRL, MAX_INSTALLMENTS } from "@/lib/installments";
 
 interface CheckoutModalProps {
   open: boolean;
@@ -173,6 +175,9 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
           number: ccNumber.replace(/\s/g, ""),
           expiryMonth: mm, expiryYear: yy, ccv: ccCvv,
         };
+        if (draft.selectedPlan === "yearly") {
+          payload.installmentCount = draft.installmentCount || 1;
+        }
       }
       const { data, error } = await supabase.functions.invoke("create-asaas-subscription", { body: payload });
       if (error) throw error;
@@ -357,8 +362,33 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                       <Field label="Validade"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="MM/AA" value={ccExp} onChange={(e) => setCcExp(fmt.exp(e.target.value))} /></Field>
                       <Field label="CVV"><Input className="bg-background/60 border-border/60 focus-visible:border-primary focus-visible:ring-primary/30" placeholder="123" maxLength={4} value={ccCvv} onChange={(e) => setCcCvv(e.target.value.replace(/\D/g, ""))} /></Field>
                     </div>
+                    {draft.selectedPlan === "yearly" && (
+                      <Field label="Parcelas">
+                        <Select
+                          value={String(draft.installmentCount || 1)}
+                          onValueChange={(v) => update("installmentCount", Number(v))}
+                        >
+                          <SelectTrigger className="bg-background/60 border-border/60 focus:border-primary focus:ring-primary/30">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-64">
+                            {Array.from({ length: MAX_INSTALLMENTS }, (_, i) => {
+                              const c = calcInstallment(i + 1);
+                              return (
+                                <SelectItem key={c.installments} value={String(c.installments)}>
+                                  {c.installments}x de {formatBRL(c.per)}{" "}
+                                  {c.hasInterest
+                                    ? `(total ${formatBRL(c.total)})`
+                                    : "sem juros"}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    )}
                     <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                      <ShieldCheck size={12} /> Cobrança recorrente segura via Asaas.
+                      <ShieldCheck size={12} /> Cobrança segura via Asaas. Renovação automática a cada ciclo.
                     </p>
                   </TabsContent>
                 </Tabs>
@@ -370,7 +400,11 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                   <Button onClick={submit} disabled={loading}
                     className="flex-1 gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform">
                     {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
-                      : <>{draft.method === "PIX" ? "Gerar PIX" : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
+                      : <>{draft.method === "PIX"
+                            ? "Gerar PIX"
+                            : draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1
+                              ? `Pagar ${draft.installmentCount}x de ${formatBRL(calcInstallment(draft.installmentCount).per)}`
+                              : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
                   </Button>
                 </div>
               </motion.div>

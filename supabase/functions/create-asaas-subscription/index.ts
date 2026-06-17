@@ -9,6 +9,16 @@ const corsHeaders = {
 
 const ASAAS_BASE_URL = "https://api.asaas.com/v3";
 
+// Tabela de juros do plano anual (em %, acréscimo TOTAL sobre R$297).
+// Default: SEM JUROS até 12x (lojista absorve a taxa Asaas).
+// Para repassar juros, ajuste aqui (e mantenha igual em src/lib/installments.ts).
+const YEARLY_INTEREST_PCT: Record<number, number> = {
+  1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
+  7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+};
+const MAX_INSTALLMENTS = 12;
+const YEARLY_BASE_PRICE = 297.0;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -25,6 +35,13 @@ async function asaas(path: string, init: RequestInit, key: string) {
       ...(init.headers || {}),
     },
   });
+}
+
+function calcInstallment(n: number) {
+  const inst = Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(n || 1)));
+  const pct = YEARLY_INTEREST_PCT[inst] ?? 0;
+  const total = +(YEARLY_BASE_PRICE * (1 + pct / 100)).toFixed(2);
+  return { installments: inst, total, interestPct: pct };
 }
 
 serve(async (req) => {
@@ -52,6 +69,7 @@ serve(async (req) => {
       complement, province, plan,
       paymentMethod, // "PIX" | "CREDIT_CARD"
       creditCard,    // { holderName, number, expiryMonth, expiryYear, ccv }
+      installmentCount, // só plano anual + cartão (1-12)
     } = body;
 
     if (!name || !email || !cpfCnpj) return json({ error: "name, email e cpfCnpj são obrigatórios" }, 400);
@@ -80,13 +98,125 @@ serve(async (req) => {
     }
     const customerId = customerData.id;
 
-    // 2) Subscription
     const nextDueDate = new Date();
     nextDueDate.setDate(nextDueDate.getDate() + 1);
     const dueDateStr = nextDueDate.toISOString().split("T")[0];
-    const value = plan === "yearly" ? 297.0 : 47.0;
-
     const remoteIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "127.0.0.1";
+
+    // ===== FLUXO ESPECIAL: anual + cartão + parceladas (>1x) =====
+    const wantsInstallment =
+      plan === "yearly" &&
+      billingType === "CREDIT_CARD" &&
+      Number(installmentCount) > 1;
+
+    if (wantsInstallment) {
+      if (!creditCard?.number || !creditCard?.holderName || !creditCard?.expiryMonth || !creditCard?.expiryYear || !creditCard?.ccv) {
+        return json({ error: "Dados do cartão incompletos" }, 400);
+      }
+      const calc = calcInstallment(Number(installmentCount));
+
+      const ccPayload = {
+        holderName: creditCard.holderName,
+        number: String(creditCard.number).replace(/\s/g, ""),
+        expiryMonth: String(creditCard.expiryMonth).padStart(2, "0"),
+        expiryYear: String(creditCard.expiryYear).length === 2 ? `20${creditCard.expiryYear}` : String(creditCard.expiryYear),
+        ccv: String(creditCard.ccv),
+      };
+      const ccHolderInfo = {
+        name, email, cpfCnpj,
+        postalCode: postalCode || "",
+        addressNumber: addressNumber || "",
+        addressComplement: complement || undefined,
+        phone: phone || undefined,
+        mobilePhone: phone || undefined,
+      };
+
+      // 1ª etapa: cobrança parcelada via /payments
+      const payBody: Record<string, unknown> = {
+        customer: customerId,
+        billingType: "CREDIT_CARD",
+        dueDate: dueDateStr,
+        totalValue: calc.total,
+        installmentCount: calc.installments,
+        description: `Vyral Lab Pro - Assinatura Anual (${calc.installments}x)`,
+        externalReference: userId,
+        creditCard: ccPayload,
+        creditCardHolderInfo: ccHolderInfo,
+        remoteIp,
+      };
+
+      const payRes = await asaas("/payments", { method: "POST", body: JSON.stringify(payBody) }, ASAAS_API_KEY);
+      const payData = await payRes.json();
+      if (!payRes.ok) {
+        console.error("Asaas installment payment error:", payData);
+        return json({ error: payData.errors?.[0]?.description || "Erro ao processar pagamento parcelado" }, 400);
+      }
+
+      const ccToken = payData?.creditCard?.creditCardToken ?? null;
+      const installmentId = payData?.installment ?? payData?.id ?? null;
+
+      // 2ª etapa: subscription para renovação em +365d com token tokenizado
+      let subData: any = null;
+      try {
+        const renewDate = new Date();
+        renewDate.setDate(renewDate.getDate() + 365);
+        const renewStr = renewDate.toISOString().split("T")[0];
+
+        const subBody: Record<string, unknown> = {
+          customer: customerId,
+          billingType: "CREDIT_CARD",
+          value: YEARLY_BASE_PRICE,
+          nextDueDate: renewStr,
+          cycle: "YEARLY",
+          description: "Vyral Lab Pro - Renovação Anual",
+          externalReference: userId,
+          creditCardHolderInfo: ccHolderInfo,
+          remoteIp,
+        };
+        if (ccToken) {
+          subBody.creditCardToken = ccToken;
+        } else {
+          subBody.creditCard = ccPayload;
+        }
+
+        const subRes = await asaas("/subscriptions", { method: "POST", body: JSON.stringify(subBody) }, ASAAS_API_KEY);
+        subData = await subRes.json();
+        if (!subRes.ok) {
+          console.warn("renewal subscription failed (continuing):", subData);
+          subData = null;
+        }
+      } catch (e) {
+        console.warn("renewal subscription exception:", e);
+      }
+
+      // Espelha em subscription_state
+      try {
+        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        await admin.from("subscription_state").upsert({
+          user_id: userId,
+          asaas_subscription_id: subData?.id ?? null,
+          asaas_customer_id: customerId,
+          plan: "annual",
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+      } catch (e) { console.warn("subscription_state upsert failed:", e); }
+
+      return json({
+        subscriptionId: subData?.id ?? null,
+        installmentId,
+        paymentId: payData?.id ?? null,
+        paymentMethod: "CREDIT_CARD",
+        paymentStatus: payData?.status ?? null,
+        invoiceUrl: payData?.invoiceUrl ?? null,
+        installmentCount: calc.installments,
+        installmentValue: +(calc.total / calc.installments).toFixed(2),
+        totalValue: calc.total,
+        interestApplied: calc.interestPct > 0,
+      });
+    }
+
+    // ===== FLUXO PADRÃO: subscription (PIX, mensal ou anual 1x) =====
+    const value = plan === "yearly" ? YEARLY_BASE_PRICE : 47.0;
 
     const subBody: Record<string, unknown> = {
       customer: customerId,
