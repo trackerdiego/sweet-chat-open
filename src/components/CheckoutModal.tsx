@@ -398,15 +398,13 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                     <ArrowLeft size={16} /> Voltar
                   </Button>
                   <Button onClick={submit} disabled={loading}
-                    className={`flex-1 ${testMode ? "bg-amber-500 hover:bg-amber-600 text-white" : "gold-gradient text-primary-foreground"} gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform`}>
+                    className="flex-1 gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform">
                     {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
-                      : testMode
-                        ? <>🧪 Pagar R$5 (TESTE){draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1 ? ` em ${draft.installmentCount}x` : ""} <ArrowRight size={18} /></>
-                        : <>{draft.method === "PIX"
-                              ? "Gerar PIX"
-                              : draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1
-                                ? `Pagar ${draft.installmentCount}x de ${formatBRL(calcInstallment(draft.installmentCount).per)}`
-                                : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
+                      : <>{draft.method === "PIX"
+                            ? "Gerar PIX"
+                            : draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1
+                              ? `Pagar ${draft.installmentCount}x de ${formatBRL(calcInstallment(draft.installmentCount).per)}`
+                              : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
                   </Button>
                 </div>
               </motion.div>
