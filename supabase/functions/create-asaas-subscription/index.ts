@@ -39,10 +39,10 @@ async function asaas(path: string, init: RequestInit, key: string) {
   });
 }
 
-function calcInstallment(n: number) {
+function calcInstallment(n: number, basePrice = YEARLY_BASE_PRICE) {
   const inst = Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(n || 1)));
   const pct = YEARLY_INTEREST_PCT[inst] ?? 0;
-  const total = +(YEARLY_BASE_PRICE * (1 + pct / 100)).toFixed(2);
+  const total = +(basePrice * (1 + pct / 100)).toFixed(2);
   return { installments: inst, total, interestPct: pct };
 }
 
