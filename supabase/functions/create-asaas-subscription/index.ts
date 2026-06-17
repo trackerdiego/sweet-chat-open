@@ -72,7 +72,16 @@ serve(async (req) => {
       paymentMethod, // "PIX" | "CREDIT_CARD"
       creditCard,    // { holderName, number, expiryMonth, expiryYear, ccv }
       installmentCount, // só plano anual + cartão (1-12)
+      __testMode,    // admin-only: força R$5 pra validar fluxo de parcelamento
     } = body;
+
+    // Modo teste só liberado para o admin autenticado
+    const testMode = __testMode === true && (user.email?.toLowerCase() === ADMIN_EMAIL);
+    if (__testMode === true && !testMode) {
+      return json({ error: "Modo teste não autorizado para este usuário" }, 403);
+    }
+    const yearlyPrice = testMode ? TEST_MODE_PRICE : YEARLY_BASE_PRICE;
+    if (testMode) console.log("[TEST MODE] forcing yearly price = R$", TEST_MODE_PRICE, "for", user.email);
 
     if (!name || !email || !cpfCnpj) return json({ error: "name, email e cpfCnpj são obrigatórios" }, 400);
     const billingType: "PIX" | "CREDIT_CARD" = paymentMethod === "CREDIT_CARD" ? "CREDIT_CARD" : "PIX";
