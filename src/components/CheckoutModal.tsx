@@ -163,7 +163,6 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
         province: draft.bairro.trim(), plan: draft.selectedPlan,
         paymentMethod: draft.method,
       };
-      if (hasTestToken && testMode) payload.__testMode = true;
       if (draft.method === "CREDIT_CARD") {
         if (!ccName.trim() || !ccNumber || !ccExp || !ccCvv) {
           toast({ title: "Preencha os dados do cartão", variant: "destructive" });
@@ -179,11 +178,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
           payload.installmentCount = draft.installmentCount || 1;
         }
       }
-      const invokeOpts: any = { body: payload };
-      if (hasTestToken && testMode) {
-        invokeOpts.headers = { "x-test-mode-token": localStorage.getItem("__test_mode_token") || "" };
-      }
-      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", invokeOpts);
+      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", { body: payload });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
