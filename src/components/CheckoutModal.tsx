@@ -82,12 +82,9 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     }
   }, [open, initialPlan]);
 
-  // preenche email do user logado + detecta token de teste
+  // preenche email do user logado
   useEffect(() => {
     if (!open) return;
-    try {
-      setHasTestToken(!!localStorage.getItem("__test_mode_token"));
-    } catch { /* ignore */ }
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.email && !draft.email) update("email", user.email);
     });
