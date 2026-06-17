@@ -21,6 +21,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { useCheckoutDraft } from "@/hooks/useCheckoutDraft";
 import { BonusStack } from "@/components/checkout/BonusStack";
 import { UrgencyBar } from "@/components/checkout/UrgencyBar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { calcInstallment, formatBRL, MAX_INSTALLMENTS } from "@/lib/installments";
 
 interface CheckoutModalProps {
   open: boolean;
