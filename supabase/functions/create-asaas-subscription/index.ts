@@ -170,7 +170,7 @@ serve(async (req) => {
           value: yearlyPrice,
           nextDueDate: renewStr,
           cycle: "YEARLY",
-          description: `${testMode ? "[TESTE] " : ""}Vyral Lab Pro - Renovação Anual`,
+          description: `Vyral Lab Pro - Renovação Anual`,
           externalReference: userId,
           creditCardHolderInfo: ccHolderInfo,
           remoteIp,
