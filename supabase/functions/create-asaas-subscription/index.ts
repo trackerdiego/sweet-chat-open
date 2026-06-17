@@ -18,6 +18,8 @@ const YEARLY_INTEREST_PCT: Record<number, number> = {
 };
 const MAX_INSTALLMENTS = 12;
 const YEARLY_BASE_PRICE = 297.0;
+const ADMIN_EMAIL = "agentevendeagente@gmail.com";
+const TEST_MODE_PRICE = 5.0;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
