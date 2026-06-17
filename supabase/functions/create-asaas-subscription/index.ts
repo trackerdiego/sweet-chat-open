@@ -176,10 +176,10 @@ serve(async (req) => {
         const subBody: Record<string, unknown> = {
           customer: customerId,
           billingType: "CREDIT_CARD",
-          value: YEARLY_BASE_PRICE,
+          value: yearlyPrice,
           nextDueDate: renewStr,
           cycle: "YEARLY",
-          description: "Vyral Lab Pro - Renovação Anual",
+          description: `${testMode ? "[TESTE] " : ""}Vyral Lab Pro - Renovação Anual`,
           externalReference: userId,
           creditCardHolderInfo: ccHolderInfo,
           remoteIp,
