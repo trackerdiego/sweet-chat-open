@@ -6,6 +6,7 @@ export interface CheckoutDraft {
   step: "data" | "method" | "result";
   selectedPlan: "monthly" | "yearly";
   method: "PIX" | "CREDIT_CARD";
+  installmentCount: number;
   name: string;
   email: string;
   cpfCnpj: string;
@@ -21,7 +22,7 @@ export interface CheckoutDraft {
 }
 
 export const emptyDraft: CheckoutDraft = {
-  step: "data", selectedPlan: "yearly", method: "PIX",
+  step: "data", selectedPlan: "yearly", method: "PIX", installmentCount: 1,
   name: "", email: "", cpfCnpj: "", phone: "", cep: "",
   address: "", addressNumber: "", complement: "", bairro: "", city: "", state: "",
   pix: null,
