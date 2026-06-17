@@ -356,7 +356,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                       className="h-4 w-4 accent-amber-500"
                     />
                     <div className="text-xs">
-                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE (admin)</p>
+                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE</p>
                       <p className="text-muted-foreground">Cobra R$5 em vez do valor real. Use pra validar fluxo de parcelamento sem gastar.</p>
                     </div>
                   </label>
