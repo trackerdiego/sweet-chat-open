@@ -227,7 +227,7 @@ serve(async (req) => {
     }
 
     // ===== FLUXO PADRÃO: subscription (PIX, mensal ou anual 1x) =====
-    const value = plan === "yearly" ? YEARLY_BASE_PRICE : 47.0;
+    const value = plan === "yearly" ? yearlyPrice : (testMode ? TEST_MODE_PRICE : 47.0);
 
     const subBody: Record<string, unknown> = {
       customer: customerId,
@@ -235,7 +235,7 @@ serve(async (req) => {
       value,
       nextDueDate: dueDateStr,
       cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
-      description: plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal",
+      description: `${testMode ? "[TESTE] " : ""}${plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal"}`,
       externalReference: userId,
     };
 
