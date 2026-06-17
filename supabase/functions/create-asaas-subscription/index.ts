@@ -226,7 +226,7 @@ serve(async (req) => {
       value,
       nextDueDate: dueDateStr,
       cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
-      description: `${testMode ? "[TESTE] " : ""}${plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal"}`,
+      description: `${plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal"}`,
       externalReference: userId,
     };
 
