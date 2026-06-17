@@ -70,19 +70,9 @@ serve(async (req) => {
       paymentMethod, // "PIX" | "CREDIT_CARD"
       creditCard,    // { holderName, number, expiryMonth, expiryYear, ccv }
       installmentCount, // só plano anual + cartão (1-12)
-      __testMode,    // força R$5 pra validar fluxo de parcelamento (requer header x-test-mode-token)
     } = body;
 
-    // Modo teste liberado apenas se o header bater com o secret TEST_MODE_SECRET
-    const TEST_MODE_SECRET = Deno.env.get("TEST_MODE_SECRET");
-    const providedToken = req.headers.get("x-test-mode-token");
-    const tokenValid = !!TEST_MODE_SECRET && !!providedToken && providedToken === TEST_MODE_SECRET;
-    const testMode = __testMode === true && tokenValid;
-    if (__testMode === true && !testMode) {
-      return json({ error: "Modo teste não autorizado (token inválido ou ausente)" }, 403);
-    }
-    const yearlyPrice = testMode ? TEST_MODE_PRICE : YEARLY_BASE_PRICE;
-    if (testMode) console.log("[TEST MODE] forcing yearly price = R$", TEST_MODE_PRICE, "for", user.email);
+    const yearlyPrice = YEARLY_BASE_PRICE;
 
     if (!name || !email || !cpfCnpj) return json({ error: "name, email e cpfCnpj são obrigatórios" }, 400);
     const billingType: "PIX" | "CREDIT_CARD" = paymentMethod === "CREDIT_CARD" ? "CREDIT_CARD" : "PIX";
