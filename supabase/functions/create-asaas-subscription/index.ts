@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-test-mode-token, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const ASAAS_BASE_URL = "https://api.asaas.com/v3";
@@ -18,7 +18,6 @@ const YEARLY_INTEREST_PCT: Record<number, number> = {
 };
 const MAX_INSTALLMENTS = 12;
 const YEARLY_BASE_PRICE = 297.0;
-const ADMIN_EMAIL = "agentevendeagente@gmail.com";
 const TEST_MODE_PRICE = 5.0;
 
 function json(body: unknown, status = 200) {
@@ -72,13 +71,16 @@ serve(async (req) => {
       paymentMethod, // "PIX" | "CREDIT_CARD"
       creditCard,    // { holderName, number, expiryMonth, expiryYear, ccv }
       installmentCount, // só plano anual + cartão (1-12)
-      __testMode,    // admin-only: força R$5 pra validar fluxo de parcelamento
+      __testMode,    // força R$5 pra validar fluxo de parcelamento (requer header x-test-mode-token)
     } = body;
 
-    // Modo teste só liberado para o admin autenticado
-    const testMode = __testMode === true && (user.email?.toLowerCase() === ADMIN_EMAIL);
+    // Modo teste liberado apenas se o header bater com o secret TEST_MODE_SECRET
+    const TEST_MODE_SECRET = Deno.env.get("TEST_MODE_SECRET");
+    const providedToken = req.headers.get("x-test-mode-token");
+    const tokenValid = !!TEST_MODE_SECRET && !!providedToken && providedToken === TEST_MODE_SECRET;
+    const testMode = __testMode === true && tokenValid;
     if (__testMode === true && !testMode) {
-      return json({ error: "Modo teste não autorizado para este usuário" }, 403);
+      return json({ error: "Modo teste não autorizado (token inválido ou ausente)" }, 403);
     }
     const yearlyPrice = testMode ? TEST_MODE_PRICE : YEARLY_BASE_PRICE;
     if (testMode) console.log("[TEST MODE] forcing yearly price = R$", TEST_MODE_PRICE, "for", user.email);

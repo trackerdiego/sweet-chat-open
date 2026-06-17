@@ -73,7 +73,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   const [loading, setLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [cardApproved, setCardApproved] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [hasTestToken, setHasTestToken] = useState(false);
   const [testMode, setTestMode] = useState(false);
   const pollRef = useRef<number | null>(null);
 
@@ -84,14 +84,14 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     }
   }, [open, initialPlan]);
 
-  // preenche email do user logado + detecta admin
+  // preenche email do user logado + detecta token de teste
   useEffect(() => {
     if (!open) return;
+    try {
+      setHasTestToken(!!localStorage.getItem("__test_mode_token"));
+    } catch { /* ignore */ }
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) {
-        if (!draft.email) update("email", user.email);
-        setIsAdmin(user.email.toLowerCase() === "agentevendeagente@gmail.com");
-      }
+      if (user?.email && !draft.email) update("email", user.email);
     });
   }, [open]);
 
@@ -168,7 +168,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
         province: draft.bairro.trim(), plan: draft.selectedPlan,
         paymentMethod: draft.method,
       };
-      if (isAdmin && testMode) payload.__testMode = true;
+      if (hasTestToken && testMode) payload.__testMode = true;
       if (draft.method === "CREDIT_CARD") {
         if (!ccName.trim() || !ccNumber || !ccExp || !ccCvv) {
           toast({ title: "Preencha os dados do cartão", variant: "destructive" });
@@ -184,7 +184,11 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
           payload.installmentCount = draft.installmentCount || 1;
         }
       }
-      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", { body: payload });
+      const invokeOpts: any = { body: payload };
+      if (hasTestToken && testMode) {
+        invokeOpts.headers = { "x-test-mode-token": localStorage.getItem("__test_mode_token") || "" };
+      }
+      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", invokeOpts);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
@@ -343,7 +347,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
               <motion.div key="method" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4">
                 <BonusStack price={planPrice} />
 
-                {isAdmin && (
+                {hasTestToken && (
                   <label className="flex items-center gap-2 rounded-xl border-2 border-dashed border-amber-500/60 bg-amber-500/10 p-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -352,7 +356,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                       className="h-4 w-4 accent-amber-500"
                     />
                     <div className="text-xs">
-                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE (admin)</p>
+                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE</p>
                       <p className="text-muted-foreground">Cobra R$5 em vez do valor real. Use pra validar fluxo de parcelamento sem gastar.</p>
                     </div>
                   </label>
