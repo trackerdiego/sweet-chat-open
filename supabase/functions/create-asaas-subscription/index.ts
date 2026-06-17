@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-test-mode-token, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const ASAAS_BASE_URL = "https://api.asaas.com/v3";
@@ -18,7 +18,6 @@ const YEARLY_INTEREST_PCT: Record<number, number> = {
 };
 const MAX_INSTALLMENTS = 12;
 const YEARLY_BASE_PRICE = 297.0;
-const TEST_MODE_PRICE = 5.0;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
