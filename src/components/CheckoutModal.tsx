@@ -343,6 +343,21 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
               <motion.div key="method" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4">
                 <BonusStack price={planPrice} />
 
+                {isAdmin && (
+                  <label className="flex items-center gap-2 rounded-xl border-2 border-dashed border-amber-500/60 bg-amber-500/10 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={testMode}
+                      onChange={(e) => setTestMode(e.target.checked)}
+                      className="h-4 w-4 accent-amber-500"
+                    />
+                    <div className="text-xs">
+                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE (admin)</p>
+                      <p className="text-muted-foreground">Cobra R$5 em vez do valor real. Use pra validar fluxo de parcelamento sem gastar.</p>
+                    </div>
+                  </label>
+                )}
+
                 <Tabs value={draft.method} onValueChange={(v) => update("method", v as Method)}>
                   <TabsList className="grid grid-cols-2 w-full bg-background/40 border border-border/60">
                     <TabsTrigger value="PIX" className="data-[state=active]:bg-primary/15 data-[state=active]:text-primary gap-2">
