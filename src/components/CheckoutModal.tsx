@@ -84,13 +84,15 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     }
   }, [open, initialPlan]);
 
-  // preenche email do user logado
+  // preenche email do user logado + detecta admin
   useEffect(() => {
-    if (open && !draft.email) {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user?.email) update("email", user.email);
-      });
-    }
+    if (!open) return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.email) {
+        if (!draft.email) update("email", user.email);
+        setIsAdmin(user.email.toLowerCase() === "agentevendeagente@gmail.com");
+      }
+    });
   }, [open]);
 
   // CEP autofill
