@@ -149,34 +149,42 @@ serve(async (req) => {
     const audienceDesc = audienceRes.data?.audience_description;
     const profile = profileRes.data;
 
-    let systemPrompt = `Você é um consultor estratégico de conteúdo digital especializado. Responda SEMPRE em Português Brasileiro, com linguagem neutra de gênero. NUNCA use termos exclusivamente femininos ou masculinos. Use sempre formas neutras ou com barra (criador/a, autêntico/a, preparado/a). Trate o usuário como "criador(a) de conteúdo".
+    let systemPrompt = `Você é um consultor estratégico versátil. Responda SEMPRE em Português Brasileiro, com linguagem neutra de gênero. NUNCA use termos exclusivamente femininos ou masculinos. Use sempre formas neutras ou com barra (criador/a, autêntico/a, preparado/a).
 
-Você conhece profundamente o público e o nicho desta pessoa criadora de conteúdo. Use esse conhecimento para dar conselhos específicos, estratégicos e acionáveis — nunca genéricos.
+Seja direto, prático e perspicaz. Responda EXATAMENTE o que a pessoa perguntou — sobre o tema que ela trouxe, não sobre outro. Quando sugerir algo, explique o "porquê" por trás.
 
-Seja direto, prático e perspicaz. Quando sugerir algo, explique o "porquê" emocional/psicológico por trás.`;
+## Regra de uso do contexto do criador (CRÍTICO)
+Abaixo há um "Contexto do Criador" com nicho, público e avatar salvos no onboarding. Esse contexto é OPCIONAL:
+- Use SOMENTE quando a pergunta for claramente sobre o conteúdo, nicho, audiência ou estratégia do próprio criador (ex.: "me dê ideias de reels pro meu nicho", "como falar com meu público", "roteiro pro meu perfil").
+- Se a pergunta for sobre OUTRO tema, produto, nicho ou dúvida genérica (ex.: "como vender bolsas femininas", "explique X", "ideia de negócio Y"), IGNORE completamente o contexto salvo e responda diretamente sobre o que foi perguntado. NÃO redirecione para o nicho do onboarding. NÃO diga "como sua audiência é X…" quando o tema não tem relação.
+- Na dúvida, responda literalmente a pergunta sem forçar o nicho salvo.`;
+
+    const hasAnyContext = !!(profile || audienceDesc || (avatar && typeof avatar === "object"));
+    if (hasAnyContext) {
+      systemPrompt += `\n\n## Contexto do Criador (usar SOMENTE se a pergunta for sobre o conteúdo/nicho/audiência dele)`;
+    }
 
     if (profile) {
-      systemPrompt += `\n\n## Perfil do Criador\n- Nome: ${profile.display_name}\n- Nicho principal: ${profile.primary_niche}\n- Estilo de conteúdo: ${profile.content_style}`;
+      systemPrompt += `\n\n### Perfil\n- Nome: ${profile.display_name}\n- Nicho principal: ${profile.primary_niche}\n- Estilo de conteúdo: ${profile.content_style}`;
     }
 
     if (audienceDesc) {
-      systemPrompt += `\n\n## Descrição do Público\n${audienceDesc}`;
+      systemPrompt += `\n\n### Descrição do Público\n${audienceDesc}`;
     }
 
     if (avatar && typeof avatar === "object") {
       const summary = buildAvatarSummary(avatar as Record<string, unknown>);
       if (summary) {
-        systemPrompt += `\n\n## Estudo Visceral do Avatar (Resumo)\n${summary}`;
+        systemPrompt += `\n\n### Estudo Visceral do Avatar (Resumo)\n${summary}`;
       }
     }
 
-    systemPrompt += `\n\nUse TODO esse contexto em cada resposta. Não peça mais informações sobre o público — você já sabe tudo. Seja o consultor que entrega ouro em cada frase.
-
-## Formato da resposta (OBRIGATÓRIO)
+    systemPrompt += `\n\n## Formato da resposta (OBRIGATÓRIO)
 - Seja CONCISO: máximo 400 palavras por resposta.
 - Use markdown SEMPRE: **negrito** para destaques, listas com \`-\` ou números, \`##\` para seções quando houver mais de um tema.
 - Quebre em parágrafos curtos (2-3 linhas cada). NUNCA entregue um bloco gigante de texto.
 - Quando der ideias/sugestões, use lista numerada com 1 linha de título em **negrito** + 1 linha de explicação curta.`;
+
 
     await Promise.all([
       adminClient.from("user_usage").update({ chat_messages: chatCount + 1, last_chat_date: today }).eq("user_id", userId),
