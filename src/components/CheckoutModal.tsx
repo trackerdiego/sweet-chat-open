@@ -168,6 +168,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
         province: draft.bairro.trim(), plan: draft.selectedPlan,
         paymentMethod: draft.method,
       };
+      if (isAdmin && testMode) payload.__testMode = true;
       if (draft.method === "CREDIT_CARD") {
         if (!ccName.trim() || !ccNumber || !ccExp || !ccCvv) {
           toast({ title: "Preencha os dados do cartão", variant: "destructive" });
