@@ -73,8 +73,6 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   const [loading, setLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [cardApproved, setCardApproved] = useState(false);
-  const [hasTestToken, setHasTestToken] = useState(false);
-  const [testMode, setTestMode] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   // ajusta plano quando initialPlan muda
@@ -84,12 +82,9 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     }
   }, [open, initialPlan]);
 
-  // preenche email do user logado + detecta token de teste
+  // preenche email do user logado
   useEffect(() => {
     if (!open) return;
-    try {
-      setHasTestToken(!!localStorage.getItem("__test_mode_token"));
-    } catch { /* ignore */ }
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.email && !draft.email) update("email", user.email);
     });
@@ -168,7 +163,6 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
         province: draft.bairro.trim(), plan: draft.selectedPlan,
         paymentMethod: draft.method,
       };
-      if (hasTestToken && testMode) payload.__testMode = true;
       if (draft.method === "CREDIT_CARD") {
         if (!ccName.trim() || !ccNumber || !ccExp || !ccCvv) {
           toast({ title: "Preencha os dados do cartão", variant: "destructive" });
@@ -184,11 +178,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
           payload.installmentCount = draft.installmentCount || 1;
         }
       }
-      const invokeOpts: any = { body: payload };
-      if (hasTestToken && testMode) {
-        invokeOpts.headers = { "x-test-mode-token": localStorage.getItem("__test_mode_token") || "" };
-      }
-      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", invokeOpts);
+      const { data, error } = await supabase.functions.invoke("create-asaas-subscription", { body: payload });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
@@ -347,20 +337,6 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
               <motion.div key="method" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-4">
                 <BonusStack price={planPrice} />
 
-                {hasTestToken && (
-                  <label className="flex items-center gap-2 rounded-xl border-2 border-dashed border-amber-500/60 bg-amber-500/10 p-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={testMode}
-                      onChange={(e) => setTestMode(e.target.checked)}
-                      className="h-4 w-4 accent-amber-500"
-                    />
-                    <div className="text-xs">
-                      <p className="font-bold text-amber-600 dark:text-amber-400">🧪 MODO TESTE</p>
-                      <p className="text-muted-foreground">Cobra R$5 em vez do valor real. Use pra validar fluxo de parcelamento sem gastar.</p>
-                    </div>
-                  </label>
-                )}
 
                 <Tabs value={draft.method} onValueChange={(v) => update("method", v as Method)}>
                   <TabsList className="grid grid-cols-2 w-full bg-background/40 border border-border/60">
@@ -422,15 +398,13 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                     <ArrowLeft size={16} /> Voltar
                   </Button>
                   <Button onClick={submit} disabled={loading}
-                    className={`flex-1 ${testMode ? "bg-amber-500 hover:bg-amber-600 text-white" : "gold-gradient text-primary-foreground"} gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform`}>
+                    className="flex-1 gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform">
                     {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</>
-                      : testMode
-                        ? <>🧪 Pagar R$5 (TESTE){draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1 ? ` em ${draft.installmentCount}x` : ""} <ArrowRight size={18} /></>
-                        : <>{draft.method === "PIX"
-                              ? "Gerar PIX"
-                              : draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1
-                                ? `Pagar ${draft.installmentCount}x de ${formatBRL(calcInstallment(draft.installmentCount).per)}`
-                                : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
+                      : <>{draft.method === "PIX"
+                            ? "Gerar PIX"
+                            : draft.selectedPlan === "yearly" && (draft.installmentCount || 1) > 1
+                              ? `Pagar ${draft.installmentCount}x de ${formatBRL(calcInstallment(draft.installmentCount).per)}`
+                              : `Pagar R$${planPrice}`} <ArrowRight size={18} /></>}
                   </Button>
                 </div>
               </motion.div>
