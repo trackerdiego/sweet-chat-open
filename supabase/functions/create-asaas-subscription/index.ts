@@ -18,6 +18,8 @@ const YEARLY_INTEREST_PCT: Record<number, number> = {
 };
 const MAX_INSTALLMENTS = 12;
 const YEARLY_BASE_PRICE = 297.0;
+const ADMIN_EMAIL = "agentevendeagente@gmail.com";
+const TEST_MODE_PRICE = 5.0;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -37,10 +39,10 @@ async function asaas(path: string, init: RequestInit, key: string) {
   });
 }
 
-function calcInstallment(n: number) {
+function calcInstallment(n: number, basePrice = YEARLY_BASE_PRICE) {
   const inst = Math.max(1, Math.min(MAX_INSTALLMENTS, Math.floor(n || 1)));
   const pct = YEARLY_INTEREST_PCT[inst] ?? 0;
-  const total = +(YEARLY_BASE_PRICE * (1 + pct / 100)).toFixed(2);
+  const total = +(basePrice * (1 + pct / 100)).toFixed(2);
   return { installments: inst, total, interestPct: pct };
 }
 
@@ -70,7 +72,16 @@ serve(async (req) => {
       paymentMethod, // "PIX" | "CREDIT_CARD"
       creditCard,    // { holderName, number, expiryMonth, expiryYear, ccv }
       installmentCount, // só plano anual + cartão (1-12)
+      __testMode,    // admin-only: força R$5 pra validar fluxo de parcelamento
     } = body;
+
+    // Modo teste só liberado para o admin autenticado
+    const testMode = __testMode === true && (user.email?.toLowerCase() === ADMIN_EMAIL);
+    if (__testMode === true && !testMode) {
+      return json({ error: "Modo teste não autorizado para este usuário" }, 403);
+    }
+    const yearlyPrice = testMode ? TEST_MODE_PRICE : YEARLY_BASE_PRICE;
+    if (testMode) console.log("[TEST MODE] forcing yearly price = R$", TEST_MODE_PRICE, "for", user.email);
 
     if (!name || !email || !cpfCnpj) return json({ error: "name, email e cpfCnpj são obrigatórios" }, 400);
     const billingType: "PIX" | "CREDIT_CARD" = paymentMethod === "CREDIT_CARD" ? "CREDIT_CARD" : "PIX";
@@ -113,7 +124,7 @@ serve(async (req) => {
       if (!creditCard?.number || !creditCard?.holderName || !creditCard?.expiryMonth || !creditCard?.expiryYear || !creditCard?.ccv) {
         return json({ error: "Dados do cartão incompletos" }, 400);
       }
-      const calc = calcInstallment(Number(installmentCount));
+      const calc = calcInstallment(Number(installmentCount), yearlyPrice);
 
       const ccPayload = {
         holderName: creditCard.holderName,
@@ -138,7 +149,7 @@ serve(async (req) => {
         dueDate: dueDateStr,
         totalValue: calc.total,
         installmentCount: calc.installments,
-        description: `Vyral Lab Pro - Assinatura Anual (${calc.installments}x)`,
+        description: `${testMode ? "[TESTE] " : ""}Vyral Lab Pro - Assinatura Anual (${calc.installments}x)`,
         externalReference: userId,
         creditCard: ccPayload,
         creditCardHolderInfo: ccHolderInfo,
@@ -165,10 +176,10 @@ serve(async (req) => {
         const subBody: Record<string, unknown> = {
           customer: customerId,
           billingType: "CREDIT_CARD",
-          value: YEARLY_BASE_PRICE,
+          value: yearlyPrice,
           nextDueDate: renewStr,
           cycle: "YEARLY",
-          description: "Vyral Lab Pro - Renovação Anual",
+          description: `${testMode ? "[TESTE] " : ""}Vyral Lab Pro - Renovação Anual`,
           externalReference: userId,
           creditCardHolderInfo: ccHolderInfo,
           remoteIp,
@@ -216,7 +227,7 @@ serve(async (req) => {
     }
 
     // ===== FLUXO PADRÃO: subscription (PIX, mensal ou anual 1x) =====
-    const value = plan === "yearly" ? YEARLY_BASE_PRICE : 47.0;
+    const value = plan === "yearly" ? yearlyPrice : (testMode ? TEST_MODE_PRICE : 47.0);
 
     const subBody: Record<string, unknown> = {
       customer: customerId,
@@ -224,7 +235,7 @@ serve(async (req) => {
       value,
       nextDueDate: dueDateStr,
       cycle: plan === "yearly" ? "YEARLY" : "MONTHLY",
-      description: plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal",
+      description: `${testMode ? "[TESTE] " : ""}${plan === "yearly" ? "Vyral Lab Pro - Assinatura Anual" : "Vyral Lab Pro - Assinatura Mensal"}`,
       externalReference: userId,
     };
 
