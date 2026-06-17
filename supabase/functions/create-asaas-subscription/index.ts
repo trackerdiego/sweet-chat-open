@@ -124,7 +124,7 @@ serve(async (req) => {
       if (!creditCard?.number || !creditCard?.holderName || !creditCard?.expiryMonth || !creditCard?.expiryYear || !creditCard?.ccv) {
         return json({ error: "Dados do cartão incompletos" }, 400);
       }
-      const calc = calcInstallment(Number(installmentCount));
+      const calc = calcInstallment(Number(installmentCount), yearlyPrice);
 
       const ccPayload = {
         holderName: creditCard.holderName,
