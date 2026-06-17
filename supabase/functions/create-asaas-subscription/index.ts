@@ -149,7 +149,7 @@ serve(async (req) => {
         dueDate: dueDateStr,
         totalValue: calc.total,
         installmentCount: calc.installments,
-        description: `Vyral Lab Pro - Assinatura Anual (${calc.installments}x)`,
+        description: `${testMode ? "[TESTE] " : ""}Vyral Lab Pro - Assinatura Anual (${calc.installments}x)`,
         externalReference: userId,
         creditCard: ccPayload,
         creditCardHolderInfo: ccHolderInfo,
