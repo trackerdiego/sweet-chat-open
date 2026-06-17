@@ -218,7 +218,7 @@ serve(async (req) => {
     }
 
     // ===== FLUXO PADRÃO: subscription (PIX, mensal ou anual 1x) =====
-    const value = plan === "yearly" ? yearlyPrice : (testMode ? TEST_MODE_PRICE : 47.0);
+    const value = plan === "yearly" ? yearlyPrice : 47.0;
 
     const subBody: Record<string, unknown> = {
       customer: customerId,
