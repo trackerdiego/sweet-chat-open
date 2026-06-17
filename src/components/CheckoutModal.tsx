@@ -73,6 +73,8 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   const [loading, setLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [cardApproved, setCardApproved] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [testMode, setTestMode] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   // ajusta plano quando initialPlan muda
