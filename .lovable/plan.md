@@ -1,45 +1,46 @@
+O problema não é mais o bloco YAML: o `docker compose` está avisando que as variáveis `GOTRUE_SMTP_*` não foram carregadas, então o container `functions` recebe `SMTP_*` vazio e a function retorna `smtp_not_configured`.
 
-# Expor SMTP ao container `functions` (valores confirmados)
+Plano de correção manual no VPS:
 
-## Diagnóstico
-GoTrue tem as vars SMTP no env dele. Container `functions` não tem nenhuma. Precisa adicionar no `docker-compose.yml`. Sem mudança de código.
-
-Valores confirmados:
-- Host: `acesso.host.servidorsaturno.com.br`
-- Port: `587` (STARTTLS, a function já trata)
-- User/From: `suporte@vyrallab.online`
-- Pass: `Monster_22#23`
-- Sender name: `Vyral Lab`
-
-## Passos na VPS
-
-1. **Editar `~/supabase/docker/docker-compose.yml`** — no service `functions:`, dentro de `environment:`, adicionar essas 6 linhas (referenciando o `.env` que já tem as `GOTRUE_SMTP_*`):
-
-```yaml
-      SMTP_HOST: ${GOTRUE_SMTP_HOST}
-      SMTP_PORT: ${GOTRUE_SMTP_PORT}
-      SMTP_USER: ${GOTRUE_SMTP_USER}
-      SMTP_PASS: ${GOTRUE_SMTP_PASS}
-      SMTP_FROM: ${GOTRUE_SMTP_ADMIN_EMAIL}
-      SMTP_FROM_NAME: ${GOTRUE_SMTP_SENDER_NAME}
-```
-
-2. **Recriar o container**:
-
+1. Entrar na pasta do compose antes de recriar o container:
 ```bash
-docker compose -f ~/supabase/docker/docker-compose.yml up -d --force-recreate functions
+cd ~/supabase/docker
 ```
 
-3. **Validar**:
-
+2. Confirmar que o `.env` dessa pasta tem as variáveis:
 ```bash
-docker exec supabase-edge-functions env | grep -E "^SMTP_" | sort
+grep -E '^GOTRUE_SMTP_(HOST|PORT|USER|ADMIN_EMAIL|SENDER_NAME)=' .env
+```
+Não rode grep do `PASS` para não expor senha.
+
+3. Se essas linhas não aparecerem, adicionar no arquivo correto:
+```bash
+nano ~/supabase/docker/.env
 ```
 
-Deve listar as 6 vars com os valores certos.
+As variáveis precisam estar no formato `.env`, com `=`:
+```bash
+GOTRUE_SMTP_ADMIN_EMAIL=suporte@vyrallab.online
+GOTRUE_SMTP_HOST=acesso.host.servidorsaturno.com.br
+GOTRUE_SMTP_PASS=SUA_SENHA_SMTP
+GOTRUE_SMTP_PORT=587
+GOTRUE_SMTP_SENDER_NAME=Vyral Lab
+GOTRUE_SMTP_USER=suporte@vyrallab.online
+```
 
-4. **Re-testar**:
+4. Recriar o container carregando explicitamente o `.env`:
+```bash
+cd ~/supabase/docker
+docker compose --env-file .env -f docker-compose.yml up -d --force-recreate functions
+```
 
+5. Validar que o container recebeu as variáveis `SMTP_*`:
+```bash
+docker exec supabase-edge-functions env | grep -E '^SMTP_(HOST|PORT|USER|FROM|FROM_NAME)=' | sort
+```
+Não valide `SMTP_PASS` no terminal.
+
+6. Testar novamente:
 ```bash
 curl -X POST https://api.influlab.pro/functions/v1/send-welcome-email \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
@@ -47,15 +48,6 @@ curl -X POST https://api.influlab.pro/functions/v1/send-welcome-email \
   -d '{"email":"mentecomp@gmail.com","displayName":"Teste"}'
 ```
 
-Esperado: `{"ok":true}` + email entrando na caixa do `mentecomp@gmail.com` vindo de `Vyral Lab <suporte@vyrallab.online>`.
+Resultado esperado: `{"ok":true}`.
 
-## Se der erro de conexão SMTP (não `smtp_not_configured`)
-Me cola a saída do log:
-```bash
-docker logs supabase-edge-functions --tail 50 | grep -i "welcome\|smtp"
-```
-Daí eu ajusto STARTTLS/timeout na function se for o caso.
-
-## Fora de escopo
-- Não mexer em GoTrue, templates de auth, ou código da function (ela já tá certa).
-- Não vou colocar senha SMTP em arquivo committado — fica só no `.env` da VPS, referenciado por `${...}` no compose.
+Observação importante: os warnings `GOTRUE_SMTP_HOST variable is not set` confirmam que o Docker Compose não está lendo essas variáveis no momento do `up`. Por isso, mesmo com o bloco certo no `functions: environment:`, ele injeta vazio.
