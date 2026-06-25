@@ -466,7 +466,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm flex items-center gap-2.5">
                       <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                      <span className="text-muted-foreground">Aguardando confirmação — costuma cair em até 10s.</span>
+                      <span className="text-muted-foreground">Aguardando confirmação — esta tela atualiza sozinha quando o pagamento cair (até 10s).</span>
                     </div>
 
                     <button onClick={handleReset} className="w-full text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
