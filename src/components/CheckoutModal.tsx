@@ -258,12 +258,12 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                 <DialogTitle className="font-display font-bold text-lg tracking-tight text-white">
                   {draft.step === "data" && "Garanta seu acesso"}
                   {draft.step === "method" && "Escolha como pagar"}
-                  {draft.step === "result" && (draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
+                  {draft.step === "result" && (isActive ? "Acesso liberado!" : draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-white/80">
                   {draft.step === "data" && "Dados para emitir a cobrança segura"}
                   {draft.step === "method" && "PIX libera na hora • Cartão é recorrente"}
-                  {draft.step === "result" && (draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
+                  {draft.step === "result" && (isActive ? "Sua jornada Premium começa agora" : draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
                 </DialogDescription>
               </div>
             </div>
