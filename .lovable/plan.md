@@ -1,21 +1,60 @@
-# Fix: hero principal não aparece no iPhone 16
+# Celebração pós-pagamento + redirect para onboarding
 
-## Causa
-`src/assets/hero-illustration.png` está salvo em modo **palette (P) PNG** com transparência. O Safari do iOS 18 (iPhone 16) tem um bug conhecido de decodificação de PNGs paletados com canal alfa — a tag `<img>` carrega mas não pinta. Como atrás do `<img>` existe um div com gradiente roxo (`from-primary/40 to-accent/30 blur-3xl`), o usuário vê apenas o quadrado roxo. No iPhone 13 Pro (iOS mais antigo) a decodificação funciona, por isso aparece normal.
+## Diagnóstico do fluxo atual
 
-## Solução
-Reconverter a imagem para PNG **RGBA** (32-bit, sem paleta), que o iOS 18 decodifica corretamente. Mantém qualidade visual idêntica, tamanho similar (~230 KB → ~280 KB), sem mudar nada na UI.
+```text
+Landing → /auth?plan=X → Signup → AutoCheckoutOpener abre modal
+   → step "data" → "method" → "result" (PIX QR ou cartão)
+   → polling refresh() detecta isActive=true
+   → toast 1.2s "Pagamento confirmado" → modal fecha
+   → usuário fica parado na rota onde estava (geralmente /)
+```
 
-## Passos
-1. Reabrir `src/assets/hero-illustration.png` em Python/PIL, converter para `RGBA` e salvar por cima com `optimize=True`.
-2. Reupload via `lovable-assets create` (substitui o asset com o mesmo nome de import) — ou simplesmente sobrescrever o arquivo local, já que ele é importado direto via `import heroIllustration from "@/assets/hero-illustration.png"` e o Vite faz o bundling.
-3. Validar abrindo a landing — o halo roxo continua aparecendo *atrás* do mockup, e a ilustração aparece por cima em qualquer iOS.
+**Problemas:**
+1. Sem celebração — só um toast de 1,2s some rápido demais.
+2. Sem comunicação de "próximos passos" — usuário não entende que precisa fazer onboarding.
+3. Sem redirect explícito — depende do AccessGuard/trigger empurrar pra /onboarding.
+4. Cartão aprovado mostra "Tudo certo!" mas o estado `isActive` pode demorar 2-5s (webhook Asaas) — janela de confusão.
 
-## Detalhes técnicos
-- Modo atual confirmado: `(1024, 1024) P PNG` (palette + tRNS).
-- Modo alvo: `RGBA` ou JPEG opaco sobre fundo neutro (não recomendado aqui porque o hero tem transparência ao redor para o halo aparecer).
-- Nenhum código JSX/CSS muda. Só reescrita do arquivo binário.
+**Benchmark de mercado** (Cal AI, Duolingo Super, Notion Plus, ChatGPT Plus, Superhuman): tela de sucesso com confete, badge "Premium", resumo do plano, mensagem "Vamos personalizar sua experiência", CTA único.
 
-## Fora do escopo
-- Não vou trocar o componente, o halo, o `drop-shadow-2xl` nem a animação.
-- Não vou converter para WebP — manter PNG evita qualquer regressão de fallback.
+## O que vou implementar
+
+### 1. Nova tela de sucesso DENTRO do CheckoutModal (`step === "result"` + `isActive`)
+Substitui o atual "Tudo certo!" + toast efêmero por uma view celebratória de ~4s:
+
+- Confete (canvas-confetti, ~250 partículas, paleta primary/accent)
+- Ícone Crown animado (scale-in + glow)
+- Headline: "Bem-vindo ao Premium 🎉"
+- Subline: "Pagamento confirmado. Agora vamos personalizar tudo pra você."
+- Card discreto com: plano escolhido, valor, próxima cobrança
+- Checklist animado (3 itens aparecendo em sequência):
+  - ✓ Conta criada
+  - ✓ Pagamento confirmado
+  - ⏳ Personalizando sua experiência
+- CTA único: "Começar onboarding →"
+
+### 2. Estados intermediários (enquanto polling não confirma)
+- **Cartão processando** (`cardApproved && !isActive`): spinner + "Confirmando seu pagamento... (até 30s)" — já existe parcialmente, melhorar copy.
+- **PIX aguardando**: mantém QR + adiciona texto "Esta tela atualiza sozinha quando o pagamento cair."
+
+### 3. Redirect automático
+Quando `isActive` vira true E o usuário clica no CTA (ou após 6s sem clique como fallback):
+```ts
+clear(); onOpenChange(false); navigate('/onboarding');
+```
+Remove o `setTimeout(1200)` atual que fecha sem direcionar.
+
+### 4. Dependência
+- `bun add canvas-confetti @types/canvas-confetti`
+
+## Arquivos afetados
+
+- `src/components/CheckoutModal.tsx` — refatora bloco `step === "result"` (linhas ~413-455) com sub-componente `<PaymentSuccessView />` interno; ajusta `useEffect` de auto-close (linhas 124-130) para navegar em vez de só fechar.
+- `package.json` — nova dep `canvas-confetti`.
+
+## Fora de escopo (posso fazer depois se quiser)
+
+- Tela `/welcome` separada como rota.
+- Email transacional de boas-vindas.
+- Mudanças no Onboarding em si.

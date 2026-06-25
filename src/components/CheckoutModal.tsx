@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import confetti from "canvas-confetti";
 import {
   Dialog,
   DialogContent,
@@ -61,8 +63,19 @@ const fmt = {
 
 export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModalProps) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { isActive, refresh } = useSubscription();
   const { draft, update, setDraft, clear } = useCheckoutDraft(initialPlan);
+  const celebratedRef = useRef(false);
+  const redirectTimerRef = useRef<number | null>(null);
+
+  const goToOnboarding = () => {
+    if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    clear();
+    onOpenChange(false);
+    navigate('/onboarding');
+  };
 
   // dados do cartão ficam só em memória (PCI — nunca persistir)
   const [ccName, setCcName] = useState("");
@@ -121,12 +134,27 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
   }, [draft.step, refresh]);
 
-  // Fecha sozinho quando vira ativo
+  // Celebração + redirect automático após confirmação
   useEffect(() => {
-    if (isActive && draft.step === "result") {
-      toast({ title: "Pagamento confirmado!", description: "Liberando seu acesso..." });
-      setTimeout(() => { clear(); onOpenChange(false); }, 1200);
-    }
+    if (!isActive || draft.step !== "result" || celebratedRef.current) return;
+    celebratedRef.current = true;
+    if (pollRef.current) window.clearInterval(pollRef.current);
+
+    // confete
+    const fire = (opts: confetti.Options) => confetti({
+      spread: 70, ticks: 200, gravity: 0.9, decay: 0.94, startVelocity: 35,
+      colors: ['#a855f7', '#c084fc', '#e9d5ff', '#fbbf24'],
+      ...opts,
+    });
+    fire({ particleCount: 80, origin: { x: 0.2, y: 0.6 } });
+    fire({ particleCount: 80, origin: { x: 0.8, y: 0.6 } });
+    setTimeout(() => fire({ particleCount: 120, origin: { x: 0.5, y: 0.5 } }), 250);
+
+    // fallback: se usuário não clicar, redireciona em 6s
+    redirectTimerRef.current = window.setTimeout(goToOnboarding, 6000);
+    return () => {
+      if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
+    };
   }, [isActive, draft.step]);
 
   const handleClose = (val: boolean) => {
@@ -230,12 +258,12 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                 <DialogTitle className="font-display font-bold text-lg tracking-tight text-white">
                   {draft.step === "data" && "Garanta seu acesso"}
                   {draft.step === "method" && "Escolha como pagar"}
-                  {draft.step === "result" && (draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
+                  {draft.step === "result" && (isActive ? "Acesso liberado!" : draft.pix ? "Quase lá — pague o PIX" : cardApproved ? "Tudo certo!" : "Processando...")}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-white/80">
                   {draft.step === "data" && "Dados para emitir a cobrança segura"}
                   {draft.step === "method" && "PIX libera na hora • Cartão é recorrente"}
-                  {draft.step === "result" && (draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
+                  {draft.step === "result" && (isActive ? "Sua jornada Premium começa agora" : draft.pix ? "Escaneie ou copie o código abaixo" : "Aguarde a confirmação")}
                 </DialogDescription>
               </div>
             </div>
@@ -438,7 +466,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm flex items-center gap-2.5">
                       <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                      <span className="text-muted-foreground">Aguardando confirmação — costuma cair em até 10s.</span>
+                      <span className="text-muted-foreground">Aguardando confirmação — esta tela atualiza sozinha quando o pagamento cair (até 10s).</span>
                     </div>
 
                     <button onClick={handleReset} className="w-full text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
@@ -447,17 +475,78 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                   </>
                 )}
                 {cardApproved && !isActive && (
-                  <div className="text-center py-6 space-y-3">
+                  <div className="text-center py-8 space-y-4">
                     <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-                    <p className="text-sm text-muted-foreground">Confirmando seu cartão com o banco...</p>
+                    <div className="space-y-1">
+                      <p className="font-semibold">Confirmando seu pagamento...</p>
+                      <p className="text-xs text-muted-foreground">Pode levar até 30 segundos. Esta tela atualiza sozinha.</p>
+                    </div>
                   </div>
                 )}
                 {isActive && (
-                  <div className="text-center py-8 space-y-3">
-                    <CheckCircle2 className="h-14 w-14 text-primary mx-auto" />
-                    <p className="font-bold text-lg">Pagamento aprovado!</p>
-                    <p className="text-sm text-muted-foreground">Liberando seu acesso...</p>
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.45, ease: "easeOut" }}
+                    className="text-center py-4 space-y-5"
+                  >
+                    <motion.div
+                      initial={{ scale: 0, rotate: -20 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 12 }}
+                      className="relative mx-auto w-20 h-20 rounded-2xl gold-gradient flex items-center justify-center shadow-[0_12px_40px_-8px_hsl(var(--primary)/0.7)]"
+                    >
+                      <Crown className="h-10 w-10 text-primary-foreground" />
+                      <div className="absolute inset-0 rounded-2xl bg-primary/30 blur-2xl -z-10 animate-pulse" />
+                    </motion.div>
+
+                    <div className="space-y-1.5">
+                      <h3 className="font-display font-bold text-2xl tracking-tight">
+                        Bem-vindo ao Premium 🎉
+                      </h3>
+                      <p className="text-sm text-muted-foreground px-2">
+                        Pagamento confirmado. Agora vamos personalizar tudo pra você.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-left space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Plano</span>
+                        <span className="font-semibold">{plans[draft.selectedPlan].label} — R$ {plans[draft.selectedPlan].price}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Renovação</span>
+                        <span className="font-semibold">{plans[draft.selectedPlan].sub}</span>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 text-sm text-left max-w-xs mx-auto">
+                      {[
+                        { delay: 0.3, label: "Conta criada" },
+                        { delay: 0.6, label: "Pagamento confirmado" },
+                        { delay: 0.9, label: "Personalizando sua experiência" },
+                      ].map((item) => (
+                        <motion.li
+                          key={item.label}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: item.delay }}
+                          className="flex items-center gap-2.5"
+                        >
+                          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                          <span>{item.label}</span>
+                        </motion.li>
+                      ))}
+                    </ul>
+
+                    <Button
+                      onClick={goToOnboarding}
+                      className="w-full gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform"
+                    >
+                      Começar onboarding <ArrowRight size={18} />
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground">Redirecionando automaticamente em alguns segundos...</p>
+                  </motion.div>
                 )}
               </motion.div>
             )}
