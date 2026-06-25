@@ -1,46 +1,72 @@
-O problema não é mais o bloco YAML: o `docker compose` está avisando que as variáveis `GOTRUE_SMTP_*` não foram carregadas, então o container `functions` recebe `SMTP_*` vazio e a function retorna `smtp_not_configured`.
+# Corrigir email de boas-vindas sem mexer no de recuperação
 
-Plano de correção manual no VPS:
+**Sim, dá pra resolver sem encostar nos emails de recuperação.** Eles são dois caminhos **totalmente independentes** no seu self-hosted:
 
-1. Entrar na pasta do compose antes de recriar o container:
+| Email | Quem envia | Onde lê SMTP |
+|---|---|---|
+| Recuperação de senha | container `supabase-auth` (GoTrue) | variáveis `GOTRUE_SMTP_*` |
+| Boas-vindas (`send-welcome-email`) | container `supabase-edge-functions` | variáveis `SMTP_*` |
+
+A correção mexe **só no service `functions`** do `docker-compose.yml`. O service `auth` não é tocado, não é recriado, e continua usando exatamente as mesmas `GOTRUE_SMTP_*` que já funcionam hoje.
+
+## Plano (você roda na VPS)
+
+### 1. Adicionar variáveis SMTP_* (sem prefixo) ao `.env`
+
+A edge function lê `SMTP_HOST`, `SMTP_PORT`, etc. — nomes diferentes do GoTrue. Não conflita.
+
 ```bash
 cd ~/supabase/docker
+grep -q '^SMTP_HOST=' .env || cat >> .env <<'EOF'
+
+# Para edge function send-welcome-email (não afeta GoTrue)
+SMTP_HOST=acesso.host.servidorsaturno.com.br
+SMTP_PORT=587
+SMTP_USER=suporte@vyrallab.online
+SMTP_PASS=Monster_22#23
+SMTP_FROM=suporte@vyrallab.online
+SMTP_FROM_NAME=Vyral Lab
+EOF
 ```
 
-2. Confirmar que o `.env` dessa pasta tem as variáveis:
+### 2. Adicionar 6 linhas no service `functions` do `docker-compose.yml`
+
+Primeiro localize o bloco:
+
 ```bash
-grep -E '^GOTRUE_SMTP_(HOST|PORT|USER|ADMIN_EMAIL|SENDER_NAME)=' .env
-```
-Não rode grep do `PASS` para não expor senha.
-
-3. Se essas linhas não aparecerem, adicionar no arquivo correto:
-```bash
-nano ~/supabase/docker/.env
+awk '/^  functions:/,/^  [a-z_-]+:$/' ~/supabase/docker/docker-compose.yml | nl
 ```
 
-As variáveis precisam estar no formato `.env`, com `=`:
-```bash
-GOTRUE_SMTP_ADMIN_EMAIL=suporte@vyrallab.online
-GOTRUE_SMTP_HOST=acesso.host.servidorsaturno.com.br
-GOTRUE_SMTP_PASS=SUA_SENHA_SMTP
-GOTRUE_SMTP_PORT=587
-GOTRUE_SMTP_SENDER_NAME=Vyral Lab
-GOTRUE_SMTP_USER=suporte@vyrallab.online
+Cole a saída aqui que eu te dou o número exato da linha. O que vai ser inserido dentro do `environment:` do `functions`:
+
+```yaml
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
 ```
 
-4. Recriar o container carregando explicitamente o `.env`:
+### 3. Recriar **só** o container `functions`
+
 ```bash
 cd ~/supabase/docker
-docker compose --env-file .env -f docker-compose.yml up -d --force-recreate functions
+docker compose --env-file .env up -d --force-recreate functions
 ```
 
-5. Validar que o container recebeu as variáveis `SMTP_*`:
+⚠️ Note: **não** usar `docker compose up -d` sozinho (recriaria outros containers). O argumento `functions` no final isola a operação. O container `supabase-auth` não é tocado → emails de recuperação seguem funcionando sem qualquer downtime ou risco.
+
+### 4. Validar (sem expor senha)
+
 ```bash
-docker exec supabase-edge-functions env | grep -E '^SMTP_(HOST|PORT|USER|FROM|FROM_NAME)=' | sort
+docker exec supabase-edge-functions sh -c 'echo HOST=$SMTP_HOST PORT=$SMTP_PORT USER=$SMTP_USER FROM=$SMTP_FROM NAME=$SMTP_FROM_NAME'
 ```
-Não valide `SMTP_PASS` no terminal.
 
-6. Testar novamente:
+Esperado: 5 valores preenchidos.
+
+### 5. Testar boas-vindas
+
 ```bash
 curl -X POST https://api.influlab.pro/functions/v1/send-welcome-email \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
@@ -48,6 +74,14 @@ curl -X POST https://api.influlab.pro/functions/v1/send-welcome-email \
   -d '{"email":"mentecomp@gmail.com","displayName":"Teste"}'
 ```
 
-Resultado esperado: `{"ok":true}`.
+Esperado: `{"ok":true}` e email na caixa.
 
-Observação importante: os warnings `GOTRUE_SMTP_HOST variable is not set` confirmam que o Docker Compose não está lendo essas variáveis no momento do `up`. Por isso, mesmo com o bloco certo no `functions: environment:`, ele injeta vazio.
+### 6. Confirmar que recuperação continua OK
+
+Pedir reset de senha pelo app uma vez para confirmar que nada regrediu.
+
+## Por que é seguro
+
+- `.env` é arquivo, ninguém recarrega sozinho. As novas linhas SMTP_* ficam ignoradas pelo auth (que só lê `GOTRUE_*`).
+- O `docker compose up -d --force-recreate functions` recria **apenas** o container nomeado. Os demais (auth, db, kong, etc.) ficam intactos.
+- Nenhuma mudança em `MAILER_*`, `GOTRUE_SMTP_*`, templates de Storage, ou no service `auth`.
