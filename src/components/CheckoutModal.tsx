@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import confetti from "canvas-confetti";
 import {
   Dialog,
   DialogContent,
@@ -61,8 +63,19 @@ const fmt = {
 
 export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModalProps) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { isActive, refresh } = useSubscription();
   const { draft, update, setDraft, clear } = useCheckoutDraft(initialPlan);
+  const celebratedRef = useRef(false);
+  const redirectTimerRef = useRef<number | null>(null);
+
+  const goToOnboarding = () => {
+    if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    clear();
+    onOpenChange(false);
+    navigate('/onboarding');
+  };
 
   // dados do cartão ficam só em memória (PCI — nunca persistir)
   const [ccName, setCcName] = useState("");
@@ -121,12 +134,27 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
     return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
   }, [draft.step, refresh]);
 
-  // Fecha sozinho quando vira ativo
+  // Celebração + redirect automático após confirmação
   useEffect(() => {
-    if (isActive && draft.step === "result") {
-      toast({ title: "Pagamento confirmado!", description: "Liberando seu acesso..." });
-      setTimeout(() => { clear(); onOpenChange(false); }, 1200);
-    }
+    if (!isActive || draft.step !== "result" || celebratedRef.current) return;
+    celebratedRef.current = true;
+    if (pollRef.current) window.clearInterval(pollRef.current);
+
+    // confete
+    const fire = (opts: confetti.Options) => confetti({
+      spread: 70, ticks: 200, gravity: 0.9, decay: 0.94, startVelocity: 35,
+      colors: ['#a855f7', '#c084fc', '#e9d5ff', '#fbbf24'],
+      ...opts,
+    });
+    fire({ particleCount: 80, origin: { x: 0.2, y: 0.6 } });
+    fire({ particleCount: 80, origin: { x: 0.8, y: 0.6 } });
+    setTimeout(() => fire({ particleCount: 120, origin: { x: 0.5, y: 0.5 } }), 250);
+
+    // fallback: se usuário não clicar, redireciona em 6s
+    redirectTimerRef.current = window.setTimeout(goToOnboarding, 6000);
+    return () => {
+      if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
+    };
   }, [isActive, draft.step]);
 
   const handleClose = (val: boolean) => {
