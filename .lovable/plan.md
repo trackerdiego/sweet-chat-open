@@ -1,87 +1,79 @@
-# Corrigir email de boas-vindas sem mexer no de recuperação
+## Diagnóstico
 
-**Sim, dá pra resolver sem encostar nos emails de recuperação.** Eles são dois caminhos **totalmente independentes** no seu self-hosted:
+Os logs do edge function confirmam `welcome email sent to mentecomp@gmail.com` e `...diegotelecom@hotmail.com` — o SMTP `acesso.host.servidorsaturno.com.br:465` aceitou as duas. Mas nenhuma chegou (nem no spam do Hotmail). Como o **recovery do GoTrue chega normalmente** usando o **mesmo servidor e mesma conta**, está descartado:
 
-| Email | Quem envia | Onde lê SMTP |
-|---|---|---|
-| Recuperação de senha | container `supabase-auth` (GoTrue) | variáveis `GOTRUE_SMTP_*` |
-| Boas-vindas (`send-welcome-email`) | container `supabase-edge-functions` | variáveis `SMTP_*` |
+- DNS/SPF/DKIM/DMARC do `vyrallab.online` (funcionam pra recovery)
+- Reputação do IP do servidor (funciona pra recovery)
+- Credenciais SMTP (autenticou ok)
 
-A correção mexe **só no service `functions`** do `docker-compose.yml`. O service `auth` não é tocado, não é recriado, e continua usando exatamente as mesmas `GOTRUE_SMTP_*` que já funcionam hoje.
+Sobrou um único suspeito: **a biblioteca `denomailer@1.6.0` está montando uma mensagem que o servidor `servidorsaturno` aceita no SMTP mas descarta internamente** (provavelmente porque falta `Message-ID`, `Date` em formato RFC, ou outro header crítico pro pipeline de DKIM/relay deles). O servidor não devolve bounce — só engole.
 
-## Plano (você roda na VPS)
+## Plano
 
-### 1. Adicionar variáveis SMTP_* (sem prefixo) ao `.env`
+### 1. Trocar `denomailer` por `nodemailer` no `send-welcome-email`
 
-A edge function lê `SMTP_HOST`, `SMTP_PORT`, etc. — nomes diferentes do GoTrue. Não conflita.
+`nodemailer` é a lib mais madura do ecossistema (15+ anos), roda nativamente no Deno via `npm:nodemailer@6`, gera headers RFC-compliant completos (`Message-ID`, `Date`, `MIME-Version`, etc.) e tem suporte sólido tanto a porta 465 (SSL) quanto 587 (STARTTLS). Mesma lib que vou tornar padrão se outros senders aparecerem.
+
+Estrutura da reescrita:
+
+```ts
+import nodemailer from "npm:nodemailer@6.9.16";
+
+const transporter = nodemailer.createTransport({
+  host: Deno.env.get("SMTP_HOST"),
+  port: Number(Deno.env.get("SMTP_PORT") ?? 465),
+  secure: Number(Deno.env.get("SMTP_PORT")) === 465, // true para 465, false para 587
+  auth: {
+    user: Deno.env.get("SMTP_USER"),
+    pass: Deno.env.get("SMTP_PASS"),
+  },
+});
+
+const info = await transporter.sendMail({
+  from: `"${Deno.env.get("SMTP_FROM_NAME")}" <${Deno.env.get("SMTP_FROM")}>`,
+  to: email,
+  subject: "Bem-vindo ao Vyral Lab",
+  html: htmlTemplate,
+  // headers extras opcionais p/ rastreio
+});
+
+console.log("[welcome] messageId:", info.messageId, "response:", info.response);
+```
+
+### 2. Logar `messageId` e `response` do SMTP
+
+Hoje o log só diz `welcome email sent`. Com nodemailer vou logar o `Message-ID` retornado e a resposta crua do servidor (`250 OK queued as ...`). Isso permite, na próxima falha:
+
+- Pegar o `Message-ID` no log da Lovable
+- Procurar esse ID no mailqueue do servidorsaturno (via cPanel/webmail)
+- Confirmar se a mensagem realmente saiu ou ficou presa lá
+
+### 3. Manter porta 465 (já validado funcionando)
+
+Não mexer em `.env` nem no `docker-compose.yml`. O nodemailer fala 465 SSL nativamente, sem o bug de STARTTLS do denomailer.
+
+### 4. Pacote de comando p/ VPS no final
+
+Depois que eu editar o `index.ts`, te devolvo o bloco copia-e-cola padrão do projeto:
 
 ```bash
-cd ~/supabase/docker
-grep -q '^SMTP_HOST=' .env || cat >> .env <<'EOF'
-
-# Para edge function send-welcome-email (não afeta GoTrue)
-SMTP_HOST=acesso.host.servidorsaturno.com.br
-SMTP_PORT=587
-SMTP_USER=suporte@vyrallab.online
-SMTP_PASS=Monster_22#23
-SMTP_FROM=suporte@vyrallab.online
-SMTP_FROM_NAME=Vyral Lab
-EOF
+cd /root/app && git pull && ./scripts/deploy-selfhost.sh send-welcome-email
+docker logs supabase-edge-functions --tail 20 2>&1 | grep -i welcome
 ```
 
-### 2. Adicionar 6 linhas no service `functions` do `docker-compose.yml`
+### 5. Validação
 
-Primeiro localize o bloco:
+Após o deploy, você testa de novo com `curl` pra `mentecomp@gmail.com` e `diegotelecom@hotmail.com` e me manda:
+- Saída do `curl` (espera-se `{"ok":true}`)
+- Os logs com o novo `messageId` e `response`
+- Se chegou nas caixas
 
-```bash
-awk '/^  functions:/,/^  [a-z_-]+:$/' ~/supabase/docker/docker-compose.yml | nl
-```
+Se ainda não chegar com nodemailer + headers RFC-completos, o problema está **dentro do servidorsaturno** (filtro de saída, IP em blacklist própria, conta sem permissão de relay external) — aí o próximo passo é abrir ticket com eles enviando o `Message-ID` que logamos.
 
-Cole a saída aqui que eu te dou o número exato da linha. O que vai ser inserido dentro do `environment:` do `functions`:
+## Detalhes técnicos
 
-```yaml
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_FROM: ${SMTP_FROM}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
-```
-
-### 3. Recriar **só** o container `functions`
-
-```bash
-cd ~/supabase/docker
-docker compose --env-file .env up -d --force-recreate functions
-```
-
-⚠️ Note: **não** usar `docker compose up -d` sozinho (recriaria outros containers). O argumento `functions` no final isola a operação. O container `supabase-auth` não é tocado → emails de recuperação seguem funcionando sem qualquer downtime ou risco.
-
-### 4. Validar (sem expor senha)
-
-```bash
-docker exec supabase-edge-functions sh -c 'echo HOST=$SMTP_HOST PORT=$SMTP_PORT USER=$SMTP_USER FROM=$SMTP_FROM NAME=$SMTP_FROM_NAME'
-```
-
-Esperado: 5 valores preenchidos.
-
-### 5. Testar boas-vindas
-
-```bash
-curl -X POST https://api.influlab.pro/functions/v1/send-welcome-email \
-  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"mentecomp@gmail.com","displayName":"Teste"}'
-```
-
-Esperado: `{"ok":true}` e email na caixa.
-
-### 6. Confirmar que recuperação continua OK
-
-Pedir reset de senha pelo app uma vez para confirmar que nada regrediu.
-
-## Por que é seguro
-
-- `.env` é arquivo, ninguém recarrega sozinho. As novas linhas SMTP_* ficam ignoradas pelo auth (que só lê `GOTRUE_*`).
-- O `docker compose up -d --force-recreate functions` recria **apenas** o container nomeado. Os demais (auth, db, kong, etc.) ficam intactos.
-- Nenhuma mudança em `MAILER_*`, `GOTRUE_SMTP_*`, templates de Storage, ou no service `auth`.
+- Arquivo alterado: `supabase/functions/send-welcome-email/index.ts`
+- Sem mudanças em DB, secrets ou outras functions
+- Sem mudanças em `docker-compose.yml` ou `.env`
+- `denomailer` removido como dependência (era import direto, não precisa mexer em lockfile)
+- O fix do `check-email-exists` (erro `Invalid schema: auth` que apareceu no log) **não está no escopo desta tarefa** — é outra função, não afeta envio. Posso tratar em sequência se quiser.
