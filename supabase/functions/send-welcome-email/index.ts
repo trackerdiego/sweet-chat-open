@@ -3,7 +3,7 @@
 // Idempotência: o caller (asaas-webhook) só invoca se subscription_state.welcome_email_sent_at IS NULL.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.16";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,26 +108,22 @@ serve(async (req) => {
       });
     }
 
-    const client = new SMTPClient({
-      connection: {
-        hostname: host,
-        port,
-        tls: port === 465,
-        auth: { username, password },
-      },
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user: username, pass: password },
     });
 
-    await client.send({
-      from: `${fromName} <${fromAddr}>`,
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromAddr}>`,
       to: email,
       subject: "Bem-vindo(a) ao VyralLab — seu acesso está liberado 🚀",
-      content: buildText(displayName ?? null),
+      text: buildText(displayName ?? null),
       html: buildHtml(displayName ?? null),
     });
 
-    await client.close();
-
-    console.log("welcome email sent to", email);
+    console.log("[welcome] sent to", email, "messageId:", info.messageId, "response:", info.response, "accepted:", info.accepted, "rejected:", info.rejected);
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
