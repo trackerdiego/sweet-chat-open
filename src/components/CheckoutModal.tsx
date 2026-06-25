@@ -475,17 +475,78 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                   </>
                 )}
                 {cardApproved && !isActive && (
-                  <div className="text-center py-6 space-y-3">
+                  <div className="text-center py-8 space-y-4">
                     <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-                    <p className="text-sm text-muted-foreground">Confirmando seu cartão com o banco...</p>
+                    <div className="space-y-1">
+                      <p className="font-semibold">Confirmando seu pagamento...</p>
+                      <p className="text-xs text-muted-foreground">Pode levar até 30 segundos. Esta tela atualiza sozinha.</p>
+                    </div>
                   </div>
                 )}
                 {isActive && (
-                  <div className="text-center py-8 space-y-3">
-                    <CheckCircle2 className="h-14 w-14 text-primary mx-auto" />
-                    <p className="font-bold text-lg">Pagamento aprovado!</p>
-                    <p className="text-sm text-muted-foreground">Liberando seu acesso...</p>
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.45, ease: "easeOut" }}
+                    className="text-center py-4 space-y-5"
+                  >
+                    <motion.div
+                      initial={{ scale: 0, rotate: -20 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 12 }}
+                      className="relative mx-auto w-20 h-20 rounded-2xl gold-gradient flex items-center justify-center shadow-[0_12px_40px_-8px_hsl(var(--primary)/0.7)]"
+                    >
+                      <Crown className="h-10 w-10 text-primary-foreground" />
+                      <div className="absolute inset-0 rounded-2xl bg-primary/30 blur-2xl -z-10 animate-pulse" />
+                    </motion.div>
+
+                    <div className="space-y-1.5">
+                      <h3 className="font-display font-bold text-2xl tracking-tight">
+                        Bem-vindo ao Premium 🎉
+                      </h3>
+                      <p className="text-sm text-muted-foreground px-2">
+                        Pagamento confirmado. Agora vamos personalizar tudo pra você.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-left space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Plano</span>
+                        <span className="font-semibold">{plans[draft.selectedPlan].label} — R$ {plans[draft.selectedPlan].price}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Renovação</span>
+                        <span className="font-semibold">{plans[draft.selectedPlan].sub}</span>
+                      </div>
+                    </div>
+
+                    <ul className="space-y-2 text-sm text-left max-w-xs mx-auto">
+                      {[
+                        { delay: 0.3, label: "Conta criada" },
+                        { delay: 0.6, label: "Pagamento confirmado" },
+                        { delay: 0.9, label: "Personalizando sua experiência" },
+                      ].map((item) => (
+                        <motion.li
+                          key={item.label}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: item.delay }}
+                          className="flex items-center gap-2.5"
+                        >
+                          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                          <span>{item.label}</span>
+                        </motion.li>
+                      ))}
+                    </ul>
+
+                    <Button
+                      onClick={goToOnboarding}
+                      className="w-full gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform"
+                    >
+                      Começar onboarding <ArrowRight size={18} />
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground">Redirecionando automaticamente em alguns segundos...</p>
+                  </motion.div>
                 )}
               </motion.div>
             )}
