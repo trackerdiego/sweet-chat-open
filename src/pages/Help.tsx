@@ -28,6 +28,9 @@ import { TUTORIALS, type TutorialTopic } from '@/data/tutorials';
 import { PageBackdrop } from '@/components/PageBackdrop';
 
 const SUPPORT_EMAIL = 'suporte@vyrallab.online';
+const SUPPORT_WHATSAPP = '5585987051615';
+const SUPPORT_WHATSAPP_DISPLAY = '(85) 98705-1615';
+const SUPPORT_WHATSAPP_MESSAGE = 'Olá! Preciso de ajuda com minha assinatura VyralLab.';
 const TUTORIAL_TOPICS: TutorialTopic[] = ['onboarding', 'matriz', 'scripts', 'tools', 'tarefas'];
 
 export default function Help() {
