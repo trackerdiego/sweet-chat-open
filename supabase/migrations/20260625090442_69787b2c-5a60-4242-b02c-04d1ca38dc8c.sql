@@ -1,0 +1,1 @@
+ALTER TABLE public.subscription_state ADD COLUMN IF NOT EXISTS welcome_email_sent_at TIMESTAMPTZ;

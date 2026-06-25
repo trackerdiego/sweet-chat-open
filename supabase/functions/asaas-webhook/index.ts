@@ -390,7 +390,7 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
     // GiftUnlockCard pra liberar bônus só após D8 (anti-chargeback).
     const { data: existingSub } = await admin
       .from("subscription_state")
-      .select("first_paid_at")
+      .select("first_paid_at, welcome_email_sent_at")
       .eq("user_id", userId)
       .maybeSingle();
     if (!existingSub?.first_paid_at) {
@@ -398,6 +398,37 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
         .from("subscription_state")
         .update({ first_paid_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq("user_id", userId);
+    }
+
+    // Email de boas-vindas — só na 1ª vez (idempotente via welcome_email_sent_at).
+    if (!existingSub?.welcome_email_sent_at) {
+      try {
+        const { data: userRow } = await admin.auth.admin.getUserById(userId);
+        const email = userRow?.user?.email;
+        if (email) {
+          const { data: profile } = await admin
+            .from("user_profiles")
+            .select("display_name")
+            .eq("user_id", userId)
+            .maybeSingle();
+          const { error: invokeErr } = await admin.functions.invoke("send-welcome-email", {
+            body: { email, displayName: profile?.display_name ?? null },
+          });
+          if (invokeErr) {
+            console.error("welcome email invoke error:", invokeErr);
+          } else {
+            await admin
+              .from("subscription_state")
+              .update({ welcome_email_sent_at: new Date().toISOString() })
+              .eq("user_id", userId);
+            console.log("welcome email dispatched for", userId);
+          }
+        } else {
+          console.warn("welcome email skipped: no email on auth user", userId);
+        }
+      } catch (e) {
+        console.error("welcome email pipeline failed (não bloqueia webhook):", e);
+      }
     }
 
     await syncSubscriptionState(admin, {

@@ -395,6 +395,7 @@ export type Database = {
           trial_ends_at: string | null
           updated_at: string
           user_id: string
+          welcome_email_sent_at: string | null
         }
         Insert: {
           asaas_customer_id?: string | null
@@ -407,6 +408,7 @@ export type Database = {
           trial_ends_at?: string | null
           updated_at?: string
           user_id: string
+          welcome_email_sent_at?: string | null
         }
         Update: {
           asaas_customer_id?: string | null
@@ -419,6 +421,7 @@ export type Database = {
           trial_ends_at?: string | null
           updated_at?: string
           user_id?: string
+          welcome_email_sent_at?: string | null
         }
         Relationships: []
       }
