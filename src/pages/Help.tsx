@@ -351,9 +351,22 @@ export default function Help() {
             </AccordionTrigger>
             <AccordionContent className="pb-5 text-sm text-muted-foreground space-y-3">
               <p>
-                Não encontrou sua resposta? Manda um e-mail descrevendo sua dúvida ou problema.
-                Respondemos em até 24h em dias úteis.
+                Pra dúvidas sobre <strong className="text-foreground">assinatura, pagamento ou acesso</strong>,
+                fala com a gente direto no WhatsApp — resposta rápida em horário comercial.
+                Pra registro formal ou anexar prints, use o email (até 24h em dias úteis).
               </p>
+              <Button
+                className="w-full gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white border-0"
+                onClick={() =>
+                  window.open(
+                    `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(SUPPORT_WHATSAPP_MESSAGE)}`,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
+              >
+                <MessageCircle size={16} /> WhatsApp {SUPPORT_WHATSAPP_DISPLAY}
+              </Button>
               <Button
                 variant="outline"
                 className="w-full gap-2"
