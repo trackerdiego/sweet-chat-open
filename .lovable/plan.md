@@ -1,24 +1,43 @@
-## Problema
-Ao compartilhar o app (WhatsApp/redes), a thumbnail mostra o logo antigo do InfluLab. O arquivo `public/og-image.png` precisa ser substituído pelo novo logo VyralLab.
+## Persistir telefone do checkout no banco
 
-## Plano
+### O que muda
 
-1. **Gerar novo `og-image.png`** (1200x630, formato OG padrão) a partir do logo VyralLab enviado:
-   - Logo centralizado sobre fundo escuro (combinando com a paleta roxo/violeta do app)
-   - Tagline curta opcional ("Laboratório de conteúdo viral com IA")
+1. **Schema (`user_profiles`)** — nova coluna `phone TEXT` (nullable, só dígitos). Index simples pra busca futura.
+2. **Edge function `create-asaas-subscription`** — após criar/atualizar customer na Asaas com sucesso, faz `upsert` em `user_profiles.phone` usando o `user_id` autenticado.
+3. **Frontend** — nenhuma mudança visual. O `CheckoutModal` já coleta o campo; só passa a persistir.
 
-2. **Atualizar tags meta no `index.html`** para forçar refresh de cache dos crawlers:
-   - Adicionar querystring de versão: `/og-image.png?v=2` em `og:image` e `twitter:image`
-   - Garantir `og:image:width=1200` e `og:image:height=630`
+### Por que no edge function (e não no front)
+- Garante que o número só é salvo quando o checkout realmente vai pra Asaas (não em rascunhos abandonados).
+- Service role bypassa RLS de forma controlada.
+- Evita confiar em chamada client-side extra.
 
-3. **Verificar favicon e apple-touch-icon** — se também estiverem com logo antigo, regenerar:
-   - `public/favicon.png`
-   - `public/apple-touch-icon.png` (180x180)
-   - `public/icons/icon-192.png` e `icon-512.png` (PWA)
+### SQL pra rodar no Studio self-hosted (`api.influlab.pro`)
+Como o backend é self-hosted, a migration Lovable **não chega no prod** — vou te entregar o bloco copia-e-cola no fim:
 
-## Pergunta antes de executar
-- Atualizo **só o og-image** (compartilhamento) ou **também o favicon + ícones PWA** (que aparecem na aba do browser e na home screen)?
+```sql
+ALTER TABLE public.user_profiles
+  ADD COLUMN IF NOT EXISTS phone TEXT;
 
-## Observações
-- Crawlers (WhatsApp, Facebook, LinkedIn) cacheiam thumbnails agressivamente. Mesmo após o deploy, o link compartilhado anteriormente continuará mostrando a versão antiga até o cache expirar. Para forçar refresh: usar o [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/) colando a URL e clicando "Scrape Again".
-- Frontend hospedado na Vercel → deploy automático no push do `main`. Nenhuma ação na VPS necessária.
+CREATE INDEX IF NOT EXISTS idx_user_profiles_phone
+  ON public.user_profiles(phone)
+  WHERE phone IS NOT NULL;
+```
+
+Também rodo a mesma migration no Supabase Lovable Cloud (pra `src/integrations/supabase/types.ts` ficar em sincronia e o TS não reclamar).
+
+### LGPD / segurança
+- Coluna nullable, opt-in implícito (só salva quem chega no checkout).
+- RLS atual de `user_profiles` já restringe leitura ao próprio dono — telefone herda essa proteção.
+- Sem log do número em console nem em `email_send_log`.
+
+### Não incluso (não pedido)
+- Não vou alterar Auth/Onboarding pra pedir telefone fora do checkout.
+- Não vou criar campanha/disparo de WhatsApp — só persistência.
+
+### Entregável final
+Ao fim da execução, te mando:
+- Resumo do que mudou no código.
+- Bloco SQL pronto pra colar no Studio self-hosted.
+- Lembrete de redeploy do edge function via `./scripts/deploy-selfhost.sh` (ou `docker compose restart functions`).
+
+Pode aprovar?
