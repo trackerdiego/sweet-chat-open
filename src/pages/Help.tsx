@@ -12,6 +12,7 @@ import {
   Wallet as WalletIcon,
   PlayCircle,
   Mail,
+  MessageCircle,
   HelpCircle,
   Clock,
 } from 'lucide-react';
