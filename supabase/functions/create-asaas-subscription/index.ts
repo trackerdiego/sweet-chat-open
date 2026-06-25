@@ -98,6 +98,25 @@ serve(async (req) => {
         return json({ error: customerData.errors?.[0]?.description || "Erro ao criar cliente" }, 400);
       }
     }
+
+    // Persistir telefone no perfil (somente dígitos, opt-in implícito do checkout)
+    if (phone) {
+      try {
+        const phoneDigits = String(phone).replace(/\D/g, "");
+        if (phoneDigits.length >= 10 && phoneDigits.length <= 15) {
+          const admin = createClient(
+            Deno.env.get("SUPABASE_URL")!,
+            Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+          );
+          await admin
+            .from("user_profiles")
+            .update({ phone: phoneDigits })
+            .eq("user_id", userId);
+        }
+      } catch (_e) {
+        // não bloqueia o checkout se falhar
+      }
+    }
     const customerId = customerData.id;
 
     const nextDueDate = new Date();

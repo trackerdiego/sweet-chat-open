@@ -504,6 +504,7 @@ export type Database = {
           display_name: string
           id: string
           onboarding_completed: boolean | null
+          phone: string | null
           primary_niche: string
           secondary_niches: string[] | null
           user_id: string
@@ -517,6 +518,7 @@ export type Database = {
           display_name: string
           id?: string
           onboarding_completed?: boolean | null
+          phone?: string | null
           primary_niche: string
           secondary_niches?: string[] | null
           user_id: string
@@ -530,6 +532,7 @@ export type Database = {
           display_name?: string
           id?: string
           onboarding_completed?: boolean | null
+          phone?: string | null
           primary_niche?: string
           secondary_niches?: string[] | null
           user_id?: string
