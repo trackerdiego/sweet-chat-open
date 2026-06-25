@@ -3,7 +3,7 @@
 // Idempotência: o caller (asaas-webhook) só invoca se subscription_state.welcome_email_sent_at IS NULL.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.16";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
