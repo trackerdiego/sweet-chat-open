@@ -161,15 +161,13 @@ export default function Landing() {
                 className="font-sans font-extrabold text-3xl sm:text-5xl lg:text-6xl leading-[1.08] tracking-tight text-white mb-6"
                 style={{ textWrap: "balance" }}
               >
-                Seu problema não é falta de seguidores. É falta de uma <span className="neon-text">estratégia</span> que faz suas clientes comprarem.
+                O aplicativo que faz a sacoleira <span className="neon-text">vender de verdade.</span>
               </h1>
 
-              <p className="text-white/75 text-base sm:text-lg max-w-xl mb-4 leading-relaxed font-medium">
-                O VyralLab mostra o que postar para gerar desejo e vender mais pelo Instagram e WhatsApp.
+              <p className="text-white/80 text-base sm:text-lg max-w-xl mb-7 leading-relaxed font-medium">
+                Comunidade de membros ativa com muita estratégia nova todos os dias.
               </p>
-              <p className="text-white/90 text-base sm:text-lg max-w-xl mb-7 font-semibold">
-                Pare de adivinhar. Comece a vender com estratégia.
-              </p>
+
 
               {/* CTA primário agressivo com preço embutido */}
               <div className="flex flex-col items-start gap-2 mb-4">
