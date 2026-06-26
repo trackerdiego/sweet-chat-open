@@ -47,6 +47,8 @@ import { GuaranteeBlock } from "@/components/landing/GuaranteeBlock";
 import { FloatingNav } from "@/components/landing/FloatingNav";
 import { RealtimeTracker } from "@/components/landing/RealtimeTracker";
 import { NichesMarquee } from "@/components/landing/NichesMarquee";
+import { StickyCheckoutBar } from "@/components/landing/StickyCheckoutBar";
+import { Shield, RefreshCw } from "lucide-react";
 
 function Section({
   children,
