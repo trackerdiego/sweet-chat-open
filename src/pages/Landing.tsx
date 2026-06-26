@@ -169,32 +169,29 @@ export default function Landing() {
                 Pare de adivinhar. Comece a vender com estratégia.
               </p>
 
-              {/* CTAs — primário Ver planos (transparente, sem atrito) + secundário Começar */}
-              <div className="flex flex-wrap items-center gap-3 mb-3">
+              {/* CTA primário agressivo com preço embutido */}
+              <div className="flex flex-col items-start gap-2 mb-4">
                 <Button
                   size="lg"
                   onClick={scrollToPlanos}
-                  className="neon-cta rounded-full px-7 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
+                  className="neon-cta rounded-full px-7 py-6 text-base sm:text-lg font-bold active:scale-[0.97] transition-transform shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)] animate-pulse-slow"
                 >
-                  Ver planos
+                  Comece agora por R$24,75
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
-                <Button
-                  size="lg"
-                  variant="ghost"
+                <p className="text-white/65 text-xs pl-2">
+                  no plano anual · 7 dias de garantia
+                </p>
+                <button
                   onClick={() => navigate("/auth")}
-                  className="rounded-full px-5 py-6 text-sm font-semibold text-white/85 hover:text-white hover:bg-white/10"
+                  className="text-white/55 hover:text-white/85 text-xs font-medium underline-offset-4 hover:underline pl-2 mt-1"
                 >
                   Já tenho conta
-                </Button>
+                </button>
               </div>
 
-              {/* Price anchor + trust badges (P2 + P6) */}
-              <div className="mb-6 space-y-2">
-                <p className="text-white/85 text-sm font-semibold">
-                  A partir de <span className="text-white text-base">R$24,75/mês</span>
-                  <span className="text-white/55 font-normal"> · 47% off no plano anual</span>
-                </p>
+              {/* Trust badges */}
+              <div className="mb-6">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
                   <span className="inline-flex items-center gap-1">
                     <Shield className="h-3 w-3" /> Pagamento seguro
@@ -205,6 +202,7 @@ export default function Landing() {
                   <span>🇧🇷 Pix e cartão</span>
                 </div>
               </div>
+
 
               {/* Social proof — rating + criadores + RealtimeTracker hint */}
               <div className="mt-2 flex flex-wrap items-center gap-3">
