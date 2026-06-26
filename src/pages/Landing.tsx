@@ -176,7 +176,7 @@ export default function Landing() {
                 <Button
                   size="lg"
                   onClick={scrollToPlanos}
-                  className="neon-cta rounded-full px-7 py-6 text-base sm:text-lg font-bold active:scale-[0.97] transition-transform shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)] animate-pulse-slow"
+                  className="neon-cta rounded-full px-7 py-6 text-base sm:text-lg font-bold active:scale-[0.97] transition-transform shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)]"
                 >
                   Comece agora por R$24,75
                   <ArrowRight className="h-4 w-4 ml-2" />
