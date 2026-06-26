@@ -23,7 +23,7 @@ import {
   Brain,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import heroIllustration from "@/assets/hero-illustration.png";
+import heroIllustration from "@/assets/hero-vyral-lab.webp.asset.json";
 import avatar1 from "@/assets/avatars/avatar-1.png";
 import avatar2 from "@/assets/avatars/avatar-2.png";
 import avatar3 from "@/assets/avatars/avatar-3.png";
@@ -244,7 +244,7 @@ export default function Landing() {
                 <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/40 to-accent/30 blur-3xl -z-10 scale-90" />
 
                 <img
-                  src={heroIllustration}
+                  src={heroIllustration.url}
                   alt="Vyral Lab — Estratégia para todos os nichos"
                   className="w-full max-w-md mx-auto drop-shadow-2xl animate-float-slow"
                 />
