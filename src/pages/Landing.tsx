@@ -23,7 +23,7 @@ import {
   Brain,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import heroIllustration from "@/assets/hero-illustration.png";
+import heroIllustration from "@/assets/hero-vyral-lab.webp.asset.json";
 import avatar1 from "@/assets/avatars/avatar-1.png";
 import avatar2 from "@/assets/avatars/avatar-2.png";
 import avatar3 from "@/assets/avatars/avatar-3.png";
