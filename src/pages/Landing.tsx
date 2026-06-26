@@ -156,14 +156,16 @@ export default function Landing() {
               </span>
 
               <h1
-                className="font-sans font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] tracking-tight text-white mb-6"
+                className="font-sans font-extrabold text-5xl sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight text-white mb-6"
                 style={{ textWrap: "balance" }}
               >
-                Seu problema não é falta de seguidores. É falta de uma <span className="neon-text">estratégia</span> que faz suas clientes comprarem.
+                Sua estratégia<br />
+                de <span className="neon-text">influência</span>,<br />
+                pronta em minutos
               </h1>
 
               <p className="text-white/70 text-lg sm:text-xl max-w-xl mb-7 leading-relaxed font-medium">
-                O VyralLab analisa seu público e mostra exatamente o que postar para gerar desejo, atrair compradoras e vender mais pelo Instagram e WhatsApp.
+                30 dias de scripts, hooks e storytelling — personalizados pra sua audiência.
               </p>
 
               {/* CTAs — primário Ver planos (transparente, sem atrito) + secundário Começar */}
