@@ -153,12 +153,12 @@ export default function Landing() {
             >
               <span className="neon-chip mb-6">
                 <Sparkles className="h-3.5 w-3.5" />
-                A IA por trás dos criadores que crescem
+                A IA por trás de quem sabe vender
                 <Star className="h-3.5 w-3.5 fill-current" />
               </span>
 
               <h1
-                className="font-sans font-extrabold text-3xl sm:text-5xl lg:text-6xl leading-[1.08] tracking-tight text-white mb-6"
+                className="font-sans font-extrabold text-4xl sm:text-6xl lg:text-7xl leading-[1.05] tracking-tight text-white mb-6"
                 style={{ textWrap: "balance" }}
               >
                 O aplicativo que faz a sacoleira <span className="neon-text">vender de verdade.</span>
