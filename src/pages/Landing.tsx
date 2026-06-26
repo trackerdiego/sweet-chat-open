@@ -82,25 +82,13 @@ const painPoints = [
     icon: "😩",
     title: "Posta todo dia e ninguém engaja",
     description:
-      "Você cria conteúdo, segue tendências, mas o algoritmo parece te ignorar. Curtidas de amigos não pagam suas contas.",
+      "Você cria conteúdo, segue tendências, mas o algoritmo te ignora. Curtidas de amigos não pagam suas contas.",
   },
   {
     icon: "🤯",
     title: "Não sabe o que postar amanhã",
     description:
-      "Aquela sensação de abrir o celular e não ter a menor ideia do que criar. O bloqueio criativo vira rotina.",
-  },
-  {
-    icon: "😔",
-    title: "Vê outros crescendo e você parado(a)",
-    description:
-      "Outros criadores com menos talento crescem rápido. Você se pergunta: 'O que eles têm que eu não tenho?'",
-  },
-  {
-    icon: "🔥",
-    title: "Burnout de criar sem estratégia",
-    description:
-      "Trabalha 10h por dia no celular, mas sem direção. Cansaço sem resultado é a receita do esgotamento.",
+      "Abre o celular e não tem a menor ideia do que criar. O bloqueio criativo vira rotina e você posta menos.",
   },
 ];
 
