@@ -44,17 +44,18 @@ export function StickyCheckoutBar({ onClick }: Props) {
             className="pointer-events-auto w-full max-w-md mx-auto flex items-center justify-between gap-3 rounded-full bg-gradient-to-r from-primary to-accent px-5 py-3.5 shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)] active:scale-[0.98] transition-transform"
           >
             <div className="text-left">
-              <div className="text-[11px] uppercase tracking-wider text-white/80 font-semibold leading-tight">
-                A partir de
-              </div>
               <div className="text-white font-bold text-sm leading-tight">
-                R$24,75/mês · ver planos
+                Comece agora por R$24,75
+              </div>
+              <div className="text-[11px] text-white/80 font-medium leading-tight mt-0.5">
+                no plano anual · 7 dias garantia
               </div>
             </div>
             <div className="flex items-center gap-1.5 bg-white/20 rounded-full px-3 py-1.5">
               <span className="text-white font-semibold text-xs">Assinar</span>
               <ArrowRight className="h-3.5 w-3.5 text-white" />
             </div>
+
           </button>
         </motion.div>
       )}
