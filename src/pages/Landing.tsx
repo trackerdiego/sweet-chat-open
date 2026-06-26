@@ -151,29 +151,22 @@ export default function Landing() {
             >
               <span className="neon-chip mb-6">
                 <Sparkles className="h-3.5 w-3.5" />
-                Pare de postar todo dia sem vender
+                A IA por trás dos criadores que crescem
                 <Star className="h-3.5 w-3.5 fill-current" />
               </span>
 
               <h1
-                className="font-sans font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] tracking-tight text-white mb-6"
+                className="font-sans font-extrabold text-5xl sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight text-white mb-6"
                 style={{ textWrap: "balance" }}
               >
-                Pare de postar todo dia<br />
-                e continuar <span className="neon-text">sem vender</span>.
+                Sua estratégia<br />
+                de <span className="neon-text">influência</span>,<br />
+                pronta em minutos
               </h1>
 
-              <p className="text-white/75 text-base sm:text-lg max-w-xl mb-5 leading-relaxed font-medium">
-                Descubra exatamente o que suas clientes querem comprar e receba uma estratégia pronta pra criar conteúdo que gera pedido no WhatsApp todo dia.
+              <p className="text-white/70 text-lg sm:text-xl max-w-xl mb-7 leading-relaxed font-medium">
+                30 dias de scripts, hooks e storytelling — personalizados pra sua audiência.
               </p>
-
-              <ul className="space-y-2 text-white/85 text-sm sm:text-base mb-7 max-w-xl">
-                <li className="flex items-start gap-2"><span aria-hidden>🚀</span><span>Entenda as dores e desejos das suas clientes</span></li>
-                <li className="flex items-start gap-2"><span aria-hidden>📲</span><span>Roteiros prontos pra postar todo dia</span></li>
-                <li className="flex items-start gap-2"><span aria-hidden>🛍️</span><span>Transforme seguidores em compradoras reais</span></li>
-                <li className="flex items-start gap-2"><span aria-hidden>⏱️</span><span>Economize horas pensando no que publicar</span></li>
-              </ul>
-
 
               {/* CTAs — primário Ver planos (transparente, sem atrito) + secundário Começar */}
               <div className="flex flex-wrap items-center gap-3 mb-3">
