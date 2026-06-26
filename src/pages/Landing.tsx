@@ -132,6 +132,7 @@ export default function Landing() {
     <div className="landing-dark min-h-screen bg-background text-foreground overflow-x-hidden">
       <InAppBrowserBanner />
       <StickyCheckoutBar onClick={scrollToPlanos} />
+      <SalesNotifications />
       <FloatingNav onPlansClick={scrollToPlanos} />
 
       {/* ─── Hero ─── */}
