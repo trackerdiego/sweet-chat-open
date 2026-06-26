@@ -139,50 +139,39 @@ export function SalesNotifications() {
     <div
       aria-live="polite"
       role="status"
-      className="fixed z-[55] pointer-events-none
-                 top-[max(0.75rem,env(safe-area-inset-top))] left-3 right-3
-                 sm:top-auto sm:right-auto sm:bottom-4 sm:left-4 sm:max-w-[320px]"
+      className="fixed z-[55] pointer-events-none left-0 right-0 flex justify-center sm:justify-start sm:left-4 sm:right-auto px-3 sm:px-0"
+      style={{
+        bottom: "calc(84px + env(safe-area-inset-bottom))",
+      }}
     >
       <AnimatePresence>
         {current && (
           <motion.div
             key={current.id}
-            initial={{ opacity: 0, x: -24, y: 0 }}
-            animate={{ opacity: 1, x: 0, y: 0 }}
-            exit={{ opacity: 0, x: -24 }}
-            transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="pointer-events-auto mx-auto sm:mx-0 max-w-[340px] flex items-start gap-3
-                       rounded-2xl border border-primary/25 bg-card/95 backdrop-blur-md
-                       p-3 pr-2 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.5)]"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ type: "spring", stiffness: 320, damping: 28 }}
+            className="pointer-events-auto max-w-[300px] flex items-center gap-2.5
+                       rounded-xl border border-black/5 bg-white/95 backdrop-blur-md
+                       px-3 py-2 pr-1.5 shadow-lg"
           >
-            <div
-              className="shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm relative"
-              style={{
-                background: `linear-gradient(135deg, hsl(${current.hue} 80% 55%), hsl(${current.hue + 30} 75% 50%))`,
-              }}
-            >
-              {current.initial}
-              <CheckCircle2 className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 text-emerald-400 bg-card rounded-full" />
-            </div>
+            <CheckCircle2 className="shrink-0 h-4 w-4 text-emerald-500" />
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-foreground leading-tight truncate">
-                {current.name}, de {current.city}
+              <p className="text-[12.5px] text-zinc-800 leading-snug">
+                <span className="font-semibold">{current.name}</span>
+                <span className="text-zinc-500"> de {current.city} </span>
+                assinou o <span className="font-semibold">{current.plan}</span>
+                <span className="text-zinc-500"> no {current.method}</span>
               </p>
-              <p className="text-[12px] text-muted-foreground leading-snug mt-0.5">
-                acabou de assinar o{" "}
-                <span className="text-foreground font-medium">{current.plan}</span>{" "}
-                no <span className="text-foreground font-medium">{current.method}</span>
-              </p>
-              <p className="text-[10px] text-muted-foreground/70 mt-1">
-                {current.ago} · pagamento confirmado
-              </p>
+              <p className="text-[10px] text-zinc-400 mt-0.5">{current.ago}</p>
             </div>
             <button
               onClick={dismiss}
               aria-label="Fechar notificação"
-              className="shrink-0 -mt-1 -mr-0.5 p-1 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5"
+              className="shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3 w-3" />
             </button>
           </motion.div>
         )}
@@ -190,3 +179,4 @@ export function SalesNotifications() {
     </div>
   );
 }
+
