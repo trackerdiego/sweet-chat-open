@@ -48,6 +48,7 @@ import { FloatingNav } from "@/components/landing/FloatingNav";
 import { RealtimeTracker } from "@/components/landing/RealtimeTracker";
 import { NichesMarquee } from "@/components/landing/NichesMarquee";
 import { StickyCheckoutBar } from "@/components/landing/StickyCheckoutBar";
+import { SalesNotifications } from "@/components/landing/SalesNotifications";
 import { Shield, RefreshCw } from "lucide-react";
 
 function Section({
