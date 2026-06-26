@@ -164,13 +164,13 @@ export default function Landing() {
                 O aplicativo que faz a sacoleira <span className="neon-text">vender de verdade.</span>
               </h1>
 
-              <p className="text-white/80 text-base sm:text-lg max-w-xl mb-7 leading-relaxed font-medium flex items-center gap-2 flex-wrap">
-                <span>Comunidade de membros ativa com muita estratégia nova todos os dias.</span>
+              <p className="text-white/80 text-base sm:text-lg max-w-xl mb-7 leading-relaxed font-medium">
+                Comunidade de membros ativa com muita estratégia nova todos os dias.
                 <svg
                   aria-label="WhatsApp"
                   role="img"
                   viewBox="0 0 32 32"
-                  className="h-6 w-6 shrink-0 drop-shadow-[0_0_8px_rgba(37,211,102,0.5)]"
+                  className="inline-block align-middle ml-2 h-5 w-5 sm:h-6 sm:w-6 drop-shadow-[0_0_8px_rgba(37,211,102,0.5)]"
                 >
                   <path
                     fill="#25D366"
