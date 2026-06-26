@@ -244,7 +244,7 @@ export default function Landing() {
                 <div className="absolute inset-0 rounded-[3rem] bg-gradient-to-br from-primary/40 to-accent/30 blur-3xl -z-10 scale-90" />
 
                 <img
-                  src={heroIllustration}
+                  src={heroIllustration.url}
                   alt="Vyral Lab — Estratégia para todos os nichos"
                   className="w-full max-w-md mx-auto drop-shadow-2xl animate-float-slow"
                 />
