@@ -164,55 +164,70 @@ export default function Landing() {
                 pronta em minutos
               </h1>
 
-              <p className="text-white/70 text-lg sm:text-xl max-w-xl mb-4 leading-relaxed font-medium">
-                Mais rápido, mais profundo e do jeito que sua audiência precisa.
-              </p>
-              <p className="text-white/55 text-base max-w-xl mb-8 leading-relaxed">
-                Em poucos cliques, a IA monta uma matriz completa de 30 dias — scripts, hooks, storytelling e CTAs — personalizada para o seu nicho.
+              <p className="text-white/70 text-lg sm:text-xl max-w-xl mb-7 leading-relaxed font-medium">
+                30 dias de scripts, hooks e storytelling — personalizados pra sua audiência.
               </p>
 
-              <div className="flex flex-wrap items-center gap-3 mb-6">
+              {/* CTAs — primário Ver planos (transparente, sem atrito) + secundário Começar */}
+              <div className="flex flex-wrap items-center gap-3 mb-3">
                 <Button
                   size="lg"
                   onClick={scrollToPlanos}
                   className="neon-cta rounded-full px-7 py-6 text-base font-semibold active:scale-[0.97] transition-transform"
                 >
-                  Começar agora
+                  Ver planos
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
                 <Button
                   size="lg"
                   variant="ghost"
-                  onClick={() => document.getElementById("como-funciona")?.scrollIntoView({ behavior: "smooth" })}
-                  className="rounded-full px-6 py-6 text-base font-semibold text-white/85 hover:text-white hover:bg-white/10 border border-white/15"
+                  onClick={() => navigate("/auth")}
+                  className="rounded-full px-5 py-6 text-sm font-semibold text-white/85 hover:text-white hover:bg-white/10"
                 >
-                  Como funciona
+                  Já tenho conta
                 </Button>
               </div>
 
-              {/* Social proof */}
-              <div className="mt-2 flex items-center gap-4">
-                <div className="flex -space-x-2">
-                  {heroAvatars.map((a, i) => (
-                    <img
-                      key={i}
-                      src={a.src}
-                      alt={a.alt}
-                      loading="lazy"
-                      className="w-9 h-9 rounded-full object-cover ring-2 ring-background"
-                    />
-                  ))}
+              {/* Price anchor + trust badges (P2 + P6) */}
+              <div className="mb-6 space-y-2">
+                <p className="text-white/85 text-sm font-semibold">
+                  A partir de <span className="text-white text-base">R$24,75/mês</span>
+                  <span className="text-white/55 font-normal"> · 47% off no plano anual</span>
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
+                  <span className="inline-flex items-center gap-1">
+                    <Shield className="h-3 w-3" /> Pagamento seguro
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3" /> Cancele quando quiser
+                  </span>
+                  <span>🇧🇷 Pix e cartão</span>
                 </div>
-                <div className="text-xs text-white/70">
-                  <div className="font-semibold text-white">+1.200 criadores ativos</div>
-                </div>
-                <div className="hidden sm:flex items-center gap-1.5 pl-4 border-l border-white/15">
+              </div>
+
+              {/* Social proof — rating + criadores + RealtimeTracker hint */}
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5">
                   <div className="flex gap-0.5">
                     {[...Array(5)].map((_, j) => (
                       <Star key={j} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                     ))}
                   </div>
-                  <span className="text-sm text-white/80 font-semibold">4.9/5</span>
+                  <span className="text-sm text-white font-semibold">4.9/5</span>
+                </div>
+                <div className="flex items-center gap-2 pl-3 border-l border-white/15">
+                  <div className="flex -space-x-2">
+                    {heroAvatars.map((a, i) => (
+                      <img
+                        key={i}
+                        src={a.src}
+                        alt={a.alt}
+                        loading="lazy"
+                        className="w-7 h-7 rounded-full object-cover ring-2 ring-background"
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-white/75 font-medium">+1.200 criadores</span>
                 </div>
               </div>
             </motion.div>
