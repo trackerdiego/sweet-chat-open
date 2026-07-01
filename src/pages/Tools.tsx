@@ -11,8 +11,10 @@ import { useUserUsage } from '@/hooks/useUserUsage';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
 import { AiChat } from '@/components/AiChat';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+// FFmpeg é carregado sob demanda (dynamic import) só quando o user envia vídeo.
+// Importar no top-level fazia o bundle da rota inflar ~30MB e derrubar aparelhos
+// Android com pouca RAM ao abrir /ferramentas → tela branca.
+import type { FFmpeg as FFmpegType } from '@ffmpeg/ffmpeg';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
 import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
@@ -232,16 +234,24 @@ const ACCEPTED_MEDIA_TYPES = '.mp4,.mov,.webm,.mp3,.m4a,.wav,.ogg';
 const MAX_FILE_SIZE_MB = 200;
 const isVideoFile = (type: string) => type.startsWith('video/');
 
-let ffmpegInstance: FFmpeg | null = null;
+let ffmpegInstance: FFmpegType | null = null;
+let fetchFileFn: ((f: File | string | Blob) => Promise<Uint8Array>) | null = null;
 const getFFmpeg = async () => {
-  if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
+  if (ffmpegInstance && ffmpegInstance.loaded && fetchFileFn) {
+    return { ffmpeg: ffmpegInstance, fetchFile: fetchFileFn };
+  }
+  const [{ FFmpeg }, utilMod] = await Promise.all([
+    import('@ffmpeg/ffmpeg'),
+    import('@ffmpeg/util'),
+  ]);
   const ffmpeg = new FFmpeg();
   await ffmpeg.load({
     coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
     wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
   });
   ffmpegInstance = ffmpeg;
-  return ffmpeg;
+  fetchFileFn = utilMod.fetchFile;
+  return { ffmpeg, fetchFile: fetchFileFn };
 };
 
 type ProcessingStep = 'idle' | 'extracting' | 'uploading' | 'transcribing';
@@ -277,9 +287,22 @@ async function runAiJob<T = unknown>(functionName: string, payload: Record<strin
     await new Promise((r) => setTimeout(r, 2000));
     const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
     url.searchParams.set('jobId', jobId);
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${session.access_token}`, apikey },
-    });
+    // Timeout de 15s por request — evita fetch pendurado quando a rede da usuária cai.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey },
+        signal: ctrl.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      // Retry: rede caiu neste tick, tenta de novo no próximo loop
+      if ((fetchErr as Error)?.name === 'AbortError') continue;
+      throw fetchErr;
+    }
+    clearTimeout(timer);
     if (!res.ok) throw new Error(await getResponseErrorMessage(res));
     const json = await res.json();
     const job = json?.job;
@@ -324,7 +347,7 @@ const Tools = () => {
   }, [userInput, selectedTool, isStandalone]);
 
   const extractAudio = useCallback(async (file: File): Promise<{ blob: Blob; name: string }> => {
-    const ffmpeg = await getFFmpeg();
+    const { ffmpeg, fetchFile } = await getFFmpeg();
     const inputName = 'input' + file.name.substring(file.name.lastIndexOf('.'));
     const outputName = 'output.mp3';
     await ffmpeg.writeFile(inputName, await fetchFile(file));
@@ -353,10 +376,20 @@ const Tools = () => {
 
       if (isVideoFile(file.type)) {
         setProcessingStep('extracting');
-        const extracted = await extractAudio(file);
-        uploadBlob = extracted.blob;
-        uploadName = extracted.name;
-        mimeType = 'audio/mp3';
+        try {
+          const extracted = await extractAudio(file);
+          uploadBlob = extracted.blob;
+          uploadName = extracted.name;
+          mimeType = 'audio/mp3';
+        } catch (ffmpegErr) {
+          console.error('[Tools] ffmpeg failed:', ffmpegErr);
+          setProcessingStep('idle');
+          toast.error(
+            'Seu navegador não conseguiu processar o vídeo. Tenta enviar direto um arquivo de áudio (.mp3, .m4a).',
+            { duration: 7000 },
+          );
+          return;
+        }
       }
 
       setProcessingStep('uploading');

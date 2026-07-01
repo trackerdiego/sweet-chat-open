@@ -27,6 +27,7 @@ import Help from "./pages/Help";
 import Renew from "./pages/Renew";
 import NotFound from "./pages/NotFound";
 import { PixDueBanner } from "./components/PixDueBanner";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -102,18 +103,18 @@ function AppRoutes() {
       <Navigation />
       <AccessGuard>
         <Routes>
-          <Route path="/" element={<Index />} />
+          <Route path="/" element={<ErrorBoundary scope="Painel"><Index /></ErrorBoundary>} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
           <Route path="/onboarding" element={<Navigate to="/" replace />} />
-          <Route path="/matriz" element={<Matrix />} />
-          <Route path="/script" element={<Script />} />
-          <Route path="/tarefas" element={<Tasks />} />
-          <Route path="/ferramentas" element={<Tools />} />
-          <Route path="/carteira" element={<Wallet />} />
-          <Route path="/indique" element={<Referral />} />
-          <Route path="/renovar" element={<Renew />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/ajuda" element={<Help />} />
+          <Route path="/matriz" element={<ErrorBoundary scope="Matriz"><Matrix /></ErrorBoundary>} />
+          <Route path="/script" element={<ErrorBoundary scope="Script"><Script /></ErrorBoundary>} />
+          <Route path="/tarefas" element={<ErrorBoundary scope="Tarefas"><Tasks /></ErrorBoundary>} />
+          <Route path="/ferramentas" element={<ErrorBoundary scope="Ferramentas"><Tools /></ErrorBoundary>} />
+          <Route path="/carteira" element={<ErrorBoundary scope="Carteira"><Wallet /></ErrorBoundary>} />
+          <Route path="/indique" element={<ErrorBoundary scope="Indicações"><Referral /></ErrorBoundary>} />
+          <Route path="/renovar" element={<ErrorBoundary scope="Renovação"><Renew /></ErrorBoundary>} />
+          <Route path="/admin" element={<ErrorBoundary scope="Admin"><Admin /></ErrorBoundary>} />
+          <Route path="/ajuda" element={<ErrorBoundary scope="Ajuda"><Help /></ErrorBoundary>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AccessGuard>
@@ -127,7 +128,9 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AppRoutes />
+        <ErrorBoundary>
+          <AppRoutes />
+        </ErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
