@@ -15,8 +15,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, Crown, QrCode, CreditCard, Copy, CheckCircle2,
-  ArrowRight, ArrowLeft, ShieldCheck, Sparkles,
+  ArrowRight, ArrowLeft, ShieldCheck, Sparkles, MessageCircle,
 } from "lucide-react";
+
+const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
