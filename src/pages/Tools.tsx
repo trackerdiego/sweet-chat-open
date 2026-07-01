@@ -287,9 +287,22 @@ async function runAiJob<T = unknown>(functionName: string, payload: Record<strin
     await new Promise((r) => setTimeout(r, 2000));
     const url = new URL(`${baseUrl}/functions/v1/get-ai-job-status`);
     url.searchParams.set('jobId', jobId);
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${session.access_token}`, apikey },
-    });
+    // Timeout de 15s por request — evita fetch pendurado quando a rede da usuária cai.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey },
+        signal: ctrl.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timer);
+      // Retry: rede caiu neste tick, tenta de novo no próximo loop
+      if ((fetchErr as Error)?.name === 'AbortError') continue;
+      throw fetchErr;
+    }
+    clearTimeout(timer);
     if (!res.ok) throw new Error(await getResponseErrorMessage(res));
     const json = await res.json();
     const job = json?.job;
@@ -363,10 +376,20 @@ const Tools = () => {
 
       if (isVideoFile(file.type)) {
         setProcessingStep('extracting');
-        const extracted = await extractAudio(file);
-        uploadBlob = extracted.blob;
-        uploadName = extracted.name;
-        mimeType = 'audio/mp3';
+        try {
+          const extracted = await extractAudio(file);
+          uploadBlob = extracted.blob;
+          uploadName = extracted.name;
+          mimeType = 'audio/mp3';
+        } catch (ffmpegErr) {
+          console.error('[Tools] ffmpeg failed:', ffmpegErr);
+          setProcessingStep('idle');
+          toast.error(
+            'Seu navegador não conseguiu processar o vídeo. Tenta enviar direto um arquivo de áudio (.mp3, .m4a).',
+            { duration: 7000 },
+          );
+          return;
+        }
       }
 
       setProcessingStep('uploading');
