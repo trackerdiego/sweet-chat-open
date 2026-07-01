@@ -541,6 +541,31 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                       ))}
                     </ul>
 
+                    <div className="rounded-xl border border-[#25D366]/30 bg-[#25D366]/5 p-4 text-left space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center shrink-0">
+                          <MessageCircle className="h-5 w-5 text-white" fill="white" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-semibold text-sm leading-snug">
+                            Mais que uma ferramenta: um grupo de aceleração de vendas
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-snug">
+                            Entre no grupo exclusivo de alunos do VyralLab e acelere seus resultados junto com quem já está vendendo.
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={WHATSAPP_GROUP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-md font-semibold text-sm bg-[#25D366] hover:bg-[#1ebe5d] text-white transition-colors"
+                      >
+                        <MessageCircle className="h-4 w-4" fill="white" />
+                        Entrar no grupo de alunos
+                      </a>
+                    </div>
+
                     <Button
                       onClick={goToOnboarding}
                       className="w-full gold-gradient text-primary-foreground gap-2 h-12 font-semibold shadow-[0_8px_32px_-8px_hsl(var(--primary)/0.6)] hover:scale-[1.01] transition-transform"
