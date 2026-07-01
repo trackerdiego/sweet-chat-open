@@ -334,7 +334,7 @@ const Tools = () => {
   }, [userInput, selectedTool, isStandalone]);
 
   const extractAudio = useCallback(async (file: File): Promise<{ blob: Blob; name: string }> => {
-    const ffmpeg = await getFFmpeg();
+    const { ffmpeg, fetchFile } = await getFFmpeg();
     const inputName = 'input' + file.name.substring(file.name.lastIndexOf('.'));
     const outputName = 'output.mp3';
     await ffmpeg.writeFile(inputName, await fetchFile(file));
