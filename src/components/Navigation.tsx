@@ -179,14 +179,14 @@ export function Navigation() {
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
                 }`
               }
             >
-              <Icon size={20} />
+              <Icon size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">{label}</span>
             </NavLink>
           ))}
@@ -194,7 +194,7 @@ export function Navigation() {
             <NavLink
               to="/admin"
               className={({ isActive }) =>
-                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
