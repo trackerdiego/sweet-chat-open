@@ -15,8 +15,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, Crown, QrCode, CreditCard, Copy, CheckCircle2,
-  ArrowRight, ArrowLeft, ShieldCheck, Sparkles,
+  ArrowRight, ArrowLeft, ShieldCheck, Sparkles, MessageCircle,
 } from "lucide-react";
+
+const WHATSAPP_GROUP_URL = "https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -538,6 +540,31 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
                         </motion.li>
                       ))}
                     </ul>
+
+                    <div className="rounded-xl border border-[#25D366]/30 bg-[#25D366]/5 p-4 text-left space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center shrink-0">
+                          <MessageCircle className="h-5 w-5 text-white" fill="white" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-semibold text-sm leading-snug">
+                            Mais que uma ferramenta: um grupo de aceleração de vendas
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-snug">
+                            Entre no grupo exclusivo de alunos do VyralLab e acelere seus resultados junto com quem já está vendendo.
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={WHATSAPP_GROUP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-md font-semibold text-sm bg-[#25D366] hover:bg-[#1ebe5d] text-white transition-colors"
+                      >
+                        <MessageCircle className="h-4 w-4" fill="white" />
+                        Entrar no grupo de alunos
+                      </a>
+                    </div>
 
                     <Button
                       onClick={goToOnboarding}
