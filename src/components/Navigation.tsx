@@ -203,13 +203,13 @@ export function Navigation() {
             >
 
 
-              <ShieldCheck size={20} />
+              <ShieldCheck size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">Admin</span>
             </NavLink>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground relative md:flex-initial md:px-4">
-              <Settings size={20} />
+            <DropdownMenuTrigger className="flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium text-muted-foreground hover:text-foreground relative md:flex-initial md:px-4">
+              <Settings size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">Config</span>
               {wallet.coins_balance > 0 && (
                 <span
