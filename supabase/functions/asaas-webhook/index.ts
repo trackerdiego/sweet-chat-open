@@ -460,6 +460,69 @@ async function processEvent(admin: any, body: any, apiKey?: string) {
       userId = sub?.externalReference ?? null;
     }
     if (userId) {
+      // ---- Guard para REFUNDED / DELETED: se ainda existe outro pagamento
+      // válido cobrindo o período atual (ex.: cliente pagou duplicado e você
+      // estornou UM), NÃO desativa a conta. Só loga e sai. ----
+      if ((event === "PAYMENT_REFUNDED" || event === "PAYMENT_DELETED") && apiKey && (ctx.asaasSubId || ctx.asaasCustomerId)) {
+        try {
+          const refundedPaymentId: string | undefined = body?.payment?.id;
+          const qs = new URLSearchParams();
+          if (ctx.asaasSubId) qs.set("subscription", ctx.asaasSubId);
+          else if (ctx.asaasCustomerId) qs.set("customer", ctx.asaasCustomerId);
+          qs.set("status", "RECEIVED");
+          qs.set("limit", "50");
+          const listRes = await fetch(`${ASAAS_BASE}/payments?${qs.toString()}`, {
+            headers: { access_token: apiKey },
+          });
+          const list = listRes.ok ? await listRes.json() : null;
+          const payments: any[] = list?.data ?? [];
+          // Considera também CONFIRMED
+          qs.set("status", "CONFIRMED");
+          const listRes2 = await fetch(`${ASAAS_BASE}/payments?${qs.toString()}`, {
+            headers: { access_token: apiKey },
+          });
+          const list2 = listRes2.ok ? await listRes2.json() : null;
+          const all = [...payments, ...(list2?.data ?? [])];
+
+          const now = Date.now();
+          const covering = all.filter((p) => {
+            if (!p || p.id === refundedPaymentId) return false;
+            const paidAt = p.paymentDate || p.confirmedDate || p.clientPaymentDate || p.dueDate;
+            if (!paidAt) return false;
+            const cycleDays = inferPlanFromValue(p.value) === "annual" ? 365 : 30;
+            const coversUntil = new Date(paidAt).getTime() + cycleDays * 86400000;
+            return coversUntil > now;
+          });
+
+          if (covering.length > 0) {
+            // Ordena pra achar o pagamento cuja cobertura vai mais longe
+            covering.sort((a, b) => {
+              const ad = new Date(a.paymentDate || a.confirmedDate || a.clientPaymentDate || a.dueDate).getTime();
+              const bd = new Date(b.paymentDate || b.confirmedDate || b.clientPaymentDate || b.dueDate).getTime();
+              return bd - ad;
+            });
+            const best = covering[0];
+            const cycleDays = inferPlanFromValue(best.value) === "annual" ? 365 : 30;
+            const paidAt = best.paymentDate || best.confirmedDate || best.clientPaymentDate || best.dueDate;
+            const newPeriodEnd = addDaysISO(paidAt, cycleDays);
+            console.log(`Refund ignorado: assinatura ${ctx.asaasSubId} ainda coberta por ${covering.length} pagamento(s). Mantendo premium até ${newPeriodEnd}`);
+            await syncSubscriptionState(admin, {
+              userId,
+              status: "active",
+              asaasSubId: ctx.asaasSubId,
+              asaasCustomerId: ctx.asaasCustomerId,
+              cycle: inferPlanFromValue(best.value) === "annual" ? "YEARLY" : "MONTHLY",
+              value: best.value,
+              nextDueDate: newPeriodEnd,
+            });
+            await admin.from("user_usage").update({ is_premium: true }).eq("user_id", userId);
+            return { userId };
+          }
+        } catch (e) {
+          console.error("Refund guard falhou (mantendo comportamento fail-safe = desativar):", e);
+        }
+      }
+
       console.log(`Deactivating premium for user (${event}):`, userId);
       // PAYMENT_OVERDUE: mantém next_invoice (cliente ainda pode pagar). Outros: limpa.
       if (event !== "PAYMENT_OVERDUE") {
