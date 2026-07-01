@@ -1,42 +1,24 @@
-## Diagnóstico
+## Objetivo
+Na tela de sucesso do checkout (bloco `isActive` dentro do `CheckoutModal`, que é o "obrigado" atual após pagamento aprovado), adicionar acesso ao grupo de WhatsApp dos alunos, reforçando que o VyralLab é mais que uma ferramenta — é um grupo de aceleração de vendas.
 
-A Adriana pagou 2 vezes no Asaas. Você estornou uma. O Asaas disparou `PAYMENT_REFUNDED` e o webhook `asaas-webhook` (linhas 454-478) **desativa a conta incondicionalmente** em qualquer refund:
+## Onde entra
+`src/components/CheckoutModal.tsx`, dentro do bloco de sucesso (`{isActive && ...}`, linhas 486–550), entre o resumo do plano e o botão "Começar onboarding".
 
-- seta `subscription_state.status = 'past_due'`
-- seta `user_usage.is_premium = false`
-- limpa `next_invoice`
+## O que será adicionado
+Um card de destaque com:
 
-Ele **não checa se ainda existe outro pagamento válido cobrindo o período atual**. Como o `AccessGuard` do app olha `useSubscription` (que exige `status ∈ {active, trial}` + `current_period_end > now`), ela caiu no bloqueio.
+- Ícone do WhatsApp (`MessageCircle` do lucide, com cor verde-whatsapp via classe utilitária) dentro de um badge circular.
+- Título curto: **"Mais que uma ferramenta: um grupo de aceleração de vendas"**.
+- Subtítulo: **"Entre no grupo exclusivo de alunos do VyralLab e acelere seus resultados junto com quem já está vendendo."**
+- Botão primário verde WhatsApp: **"Entrar no grupo de alunos"** com ícone, abrindo `https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2` em nova aba (`target="_blank"`, `rel="noopener noreferrer"`).
 
-Obs.: o backend é self-hosted (`api.influlab.pro`), então nenhuma query aqui no Lovable Cloud enxerga a base dela — a auditoria/fix imediato precisa rodar no Studio self-hosted.
+O botão "Começar onboarding" continua logo abaixo, agora como ação secundária visual (mantém `gold-gradient`, mas a hierarquia visual passa a ter o WhatsApp como primeiro CTA de comunidade e o onboarding como próximo passo do produto). O redirecionamento automático atual é mantido — o usuário vê o card do grupo antes de ser levado ao onboarding, e pode abrir o WhatsApp em nova aba sem perder o fluxo.
 
-## Plano
+## Detalhes técnicos
+- Link definido como constante no topo do arquivo: `const WHATSAPP_GROUP_URL = 'https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2';`.
+- Cor verde do WhatsApp aplicada via classes Tailwind arbitrárias apenas no botão do grupo (`bg-[#25D366] hover:bg-[#1ebe5d] text-white`) — exceção pontual justificada por ser cor de marca de terceiro, não do design system.
+- Sem novas dependências, sem mudança em rotas ou lógica de assinatura.
 
-### 1. Fix imediato para a Adriana (SQL manual no Studio self-hosted)
-
-Bloco copia-e-cola que:
-1. Acha o `user_id` pelo email em `auth.users`
-2. Mostra o estado atual em `subscription_state` + últimos eventos em `asaas_webhook_events` pra confirmar que foi refund
-3. Restaura `status='active'`, recalcula `current_period_end` a partir do pagamento válido remanescente (mensal +30d, anual +365d contados a partir do `paidDate` do pagamento que ficou), zera `next_invoice`
-4. Marca `user_usage.is_premium = true`
-
-Vou entregar em um único bloco com `BEGIN/COMMIT`, sem placeholder — você só troca a data do pagamento válido se necessário.
-
-### 2. Fix no código do webhook (evita reincidência)
-
-Editar `supabase/functions/asaas-webhook/index.ts` no bloco `PAYMENT_REFUNDED / PAYMENT_DELETED` (linhas 454-478):
-
-- Antes de desativar, se tiver `apiKey` e `asaasSubId` **ou** `asaasCustomerId`, consultar `GET /payments?subscription=<id>&status=RECEIVED,CONFIRMED` (ou por customer) na API do Asaas
-- Filtrar pagamentos cujo `paidDate + ciclo` (30d mensal / 365d anual) ainda esteja no futuro
-- Se existir pelo menos 1 → **não desativar**; apenas logar `"Refund ignorado: assinatura ainda coberta por outro pagamento"` e, opcionalmente, atualizar `current_period_end` para o do pagamento válido mais longe
-- `PAYMENT_OVERDUE` continua com o comportamento atual (não mexe em `next_invoice`, mas hoje ele também seta `past_due` — manter, é o correto pra vencido)
-- Se não conseguir consultar Asaas (sem apiKey), manter comportamento antigo (fail-safe = desativar) mas logar warning
-
-Nenhuma mudança em UI/frontend, nenhuma migration Lovable Cloud, nenhuma tabela nova.
-
-### 3. Entrega VPS
-Bloco final `cd /root/app && git pull && ./scripts/deploy-selfhost.sh asaas-webhook` pra você aplicar o fix do código.
-
-## Arquivos afetados
-- `supabase/functions/asaas-webhook/index.ts` — só o bloco 454-478
-- SQL avulso pra Studio self-hosted (não entra no repo)
+## Fora de escopo
+- Não criar página `/obrigado` separada (o fluxo atual já usa o modal como tela de sucesso; criar rota nova mudaria o comportamento de redirect e o pós-pagamento por PIX).
+- Não alterar backend/webhook.
