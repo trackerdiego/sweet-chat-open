@@ -11,8 +11,10 @@ import { useUserUsage } from '@/hooks/useUserUsage';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { toast } from 'sonner';
 import { AiChat } from '@/components/AiChat';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+// FFmpeg é carregado sob demanda (dynamic import) só quando o user envia vídeo.
+// Importar no top-level fazia o bundle da rota inflar ~30MB e derrubar aparelhos
+// Android com pouca RAM ao abrir /ferramentas → tela branca.
+import type { FFmpeg as FFmpegType } from '@ffmpeg/ffmpeg';
 import { createEdgeFunctionError, getResponseErrorMessage } from '@/lib/edgeFunctionErrors';
 import { HelpButton } from '@/components/HelpButton';
 import { InstallInstructionsModal } from '@/components/InstallInstructionsModal';
@@ -232,16 +234,24 @@ const ACCEPTED_MEDIA_TYPES = '.mp4,.mov,.webm,.mp3,.m4a,.wav,.ogg';
 const MAX_FILE_SIZE_MB = 200;
 const isVideoFile = (type: string) => type.startsWith('video/');
 
-let ffmpegInstance: FFmpeg | null = null;
+let ffmpegInstance: FFmpegType | null = null;
+let fetchFileFn: ((f: File | string | Blob) => Promise<Uint8Array>) | null = null;
 const getFFmpeg = async () => {
-  if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
+  if (ffmpegInstance && ffmpegInstance.loaded && fetchFileFn) {
+    return { ffmpeg: ffmpegInstance, fetchFile: fetchFileFn };
+  }
+  const [{ FFmpeg }, utilMod] = await Promise.all([
+    import('@ffmpeg/ffmpeg'),
+    import('@ffmpeg/util'),
+  ]);
   const ffmpeg = new FFmpeg();
   await ffmpeg.load({
     coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
     wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
   });
   ffmpegInstance = ffmpeg;
-  return ffmpeg;
+  fetchFileFn = utilMod.fetchFile;
+  return { ffmpeg, fetchFile: fetchFileFn };
 };
 
 type ProcessingStep = 'idle' | 'extracting' | 'uploading' | 'transcribing';
