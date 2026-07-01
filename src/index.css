@@ -106,9 +106,18 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
     font-family: 'Inter', sans-serif;
+    overscroll-behavior-y: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
   }
 
   h1, h2, h3, h4, h5, h6 {

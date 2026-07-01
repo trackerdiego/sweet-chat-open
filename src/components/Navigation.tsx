@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Grid3X3, FileText, Trophy, Wrench, Settings, RefreshCw, Lock, Bell, BellOff, ShieldCheck, Coins, Wallet as WalletIcon, Gift, QrCode, LifeBuoy } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
-import { motion } from 'framer-motion';
+import { useKeyboardOpen } from '@/hooks/useKeyboardOpen';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserUsage } from '@/hooks/useUserUsage';
@@ -48,6 +48,7 @@ export function Navigation() {
   const { isActive } = useSubscription();
   const isAdmin = session?.user?.email === 'agentevendeagente@gmail.com';
   const { isSupported, isSubscribed, isLoading, isStandalone, subscribe, unsubscribe } = usePushNotifications();
+  const keyboardOpen = useKeyboardOpen();
   // Mostrar canal de ajuda discreto apenas para assinantes ativos no cartão recorrente
   // (ativo + sem fatura Pix pendente = Asaas debitando automático no cartão)
   const showSubscriptionHelp = isActive && !hasPendingPixInvoice && !!session?.user;
@@ -163,25 +164,29 @@ export function Navigation() {
 
   return (
     <>
-      <motion.nav
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="fixed bottom-0 left-0 right-0 z-50 bg-card/90 backdrop-blur-xl border-t border-border px-1 py-2 pb-[env(safe-area-inset-bottom)] overflow-hidden md:top-0 md:bottom-auto md:border-t-0 md:border-b md:px-2 md:pb-2 md:pt-[env(safe-area-inset-top)]"
+      <nav
+        style={{
+          paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+          transform: keyboardOpen ? 'translate3d(0,100%,0)' : 'translate3d(0,0,0)',
+          transition: 'transform 180ms ease',
+          willChange: 'transform',
+        }}
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card/90 backdrop-blur-xl border-t border-border px-0.5 py-2 overflow-hidden md:top-0 md:bottom-auto md:border-t-0 md:border-b md:px-2 md:pb-2 md:pt-[env(safe-area-inset-top)]"
       >
-        <div className="flex justify-between items-center gap-0.5 w-full md:max-w-lg md:mx-auto md:gap-1 md:justify-around">
+        <div className="flex justify-around items-center gap-0 w-full md:max-w-lg md:mx-auto md:gap-1">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
                 }`
               }
             >
-              <Icon size={20} />
+              <Icon size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">{label}</span>
             </NavLink>
           ))}
@@ -189,7 +194,7 @@ export function Navigation() {
             <NavLink
               to="/admin"
               className={({ isActive }) =>
-                `flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium md:flex-initial md:px-4 ${
+                `flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium md:flex-initial md:px-4 ${
                   isActive
                     ? 'text-primary-foreground shadow-md shadow-primary/30 bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))]'
                     : 'text-muted-foreground hover:text-foreground'
@@ -198,13 +203,13 @@ export function Navigation() {
             >
 
 
-              <ShieldCheck size={20} />
+              <ShieldCheck size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">Admin</span>
             </NavLink>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex flex-1 min-w-0 flex-col items-center gap-1 px-1 py-2 rounded-2xl transition-all duration-200 text-xs font-medium text-muted-foreground hover:text-foreground relative md:flex-initial md:px-4">
-              <Settings size={20} />
+            <DropdownMenuTrigger className="flex flex-1 min-w-0 flex-col items-center gap-1 px-0.5 py-2 rounded-2xl transition-all duration-200 text-[10px] md:text-xs font-medium text-muted-foreground hover:text-foreground relative md:flex-initial md:px-4">
+              <Settings size={18} className="md:w-5 md:h-5" />
               <span className="truncate max-w-full">Config</span>
               {wallet.coins_balance > 0 && (
                 <span
@@ -256,7 +261,7 @@ export function Navigation() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </motion.nav>
+      </nav>
 
       <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <AlertDialogContent>
