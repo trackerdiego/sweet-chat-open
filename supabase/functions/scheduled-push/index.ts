@@ -88,7 +88,8 @@ Deno.serve(async (req) => {
 
     const { data: subs, error } = await supabase
       .from('push_subscriptions')
-      .select('user_id');
+      .select('user_id')
+      .limit(10000);
 
     if (error) throw error;
     if (!subs || subs.length === 0) {
@@ -99,27 +100,42 @@ Deno.serve(async (req) => {
 
     const uniqueUserIds = [...new Set(subs.map((s: any) => s.user_id))];
 
-    // Dedup por (user_id, send_date, block) — garante no máx 2/dia por user.
+    // Data BRT (UTC-3) usada como send_date do dedup.
     const nowBR = new Date(Date.now() - 3 * 60 * 60 * 1000);
     const todayBR = nowBR.toISOString().slice(0, 10);
 
-    const { data: alreadySent } = await supabase
-      .from('push_send_log')
-      .select('user_id')
-      .eq('send_date', todayBR)
-      .eq('block', block)
-      .in('user_id', uniqueUserIds);
-
-    const sentSet = new Set((alreadySent ?? []).map((r: any) => r.user_id));
-    const targetUserIds = uniqueUserIds.filter((id) => !sentSet.has(id));
-
     let totalSent = 0;
+    let skippedDedup = 0;
     let noSubs = 0;
     let sendErrors = 0;
 
-    for (const userId of targetUserIds) {
+    // Fail-safe: INSERT com ON CONFLICT DO NOTHING ANTES do envio.
+    // Se a linha já existe (user já recebeu esse bloco hoje), o insert
+    // não retorna e a gente pula. Mesmo com cron rodando 96×/dia, cada
+    // user recebe no máximo 2 pushes/dia — garantia no nível de banco.
+    for (const userId of uniqueUserIds) {
       try {
-        const msg = MESSAGES[rotationIndex(userId, block)];
+        const { data: reserved, error: reserveErr } = await supabase
+          .from('push_send_log')
+          .insert({ user_id: userId, send_date: todayBR, block })
+          .select('user_id')
+          .maybeSingle();
+
+        if (reserveErr) {
+          // Código 23505 = unique_violation → já enviado, comportamento esperado.
+          if ((reserveErr as any).code === '23505') {
+            skippedDedup++;
+            continue;
+          }
+          console.error(`[scheduled-push] reserve failed for ${userId}:`, reserveErr.message);
+          sendErrors++;
+          continue;
+        }
+
+        if (!reserved) {
+          skippedDedup++;
+          continue;
+        }
 
         const response = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
           method: 'POST',
@@ -127,7 +143,12 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${supabaseKey}`,
           },
-          body: JSON.stringify({ user_id: userId, title: msg.title, body: msg.body, url: msg.url }),
+          body: JSON.stringify({
+            user_id: userId,
+            title: MESSAGES[rotationIndex(userId, block)].title,
+            body: MESSAGES[rotationIndex(userId, block)].body,
+            url: MESSAGES[rotationIndex(userId, block)].url,
+          }),
         });
 
         const result = await response.json().catch(() => ({ sent: 0 }));
@@ -135,10 +156,6 @@ Deno.serve(async (req) => {
 
         if (delivered > 0) {
           totalSent += delivered;
-          const { error: logErr } = await supabase
-            .from('push_send_log')
-            .insert({ user_id: userId, send_date: todayBR, block });
-          if (logErr) console.warn(`[scheduled-push] log insert failed for ${userId}:`, logErr.message);
         } else {
           if (result.message === 'No subscriptions found') noSubs++;
           else sendErrors++;
@@ -150,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[scheduled-push] block=${block} users=${uniqueUserIds.length} sent=${totalSent} skipped=${sentSet.size} noSubs=${noSubs} errors=${sendErrors}`,
+      `[scheduled-push] block=${block} users=${uniqueUserIds.length} sent=${totalSent} skipped_dedup=${skippedDedup} noSubs=${noSubs} errors=${sendErrors}`,
     );
 
     return new Response(
@@ -158,7 +175,7 @@ Deno.serve(async (req) => {
         block,
         users: uniqueUserIds.length,
         sent: totalSent,
-        skipped: sentSet.size,
+        skipped_dedup: skippedDedup,
         noSubs,
         sendErrors,
       }),
