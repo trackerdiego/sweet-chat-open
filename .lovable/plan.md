@@ -1,24 +1,35 @@
-## Objetivo
-Na tela de sucesso do checkout (bloco `isActive` dentro do `CheckoutModal`, que é o "obrigado" atual após pagamento aprovado), adicionar acesso ao grupo de WhatsApp dos alunos, reforçando que o VyralLab é mais que uma ferramenta — é um grupo de aceleração de vendas.
+## Diagnóstico
 
-## Onde entra
-`src/components/CheckoutModal.tsx`, dentro do bloco de sucesso (`{isActive && ...}`, linhas 486–550), entre o resumo do plano e o botão "Começar onboarding".
+O erro `Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node` é **a assinatura clássica do Google Translate (Chrome Android) mexendo no DOM que o React controla**. O Chrome no Android traduz páginas em pt-BR "automaticamente" em alguns aparelhos/locales, substitui text nodes por spans, e quando o React tenta re-renderizar (ex.: `AnimatePresence` trocando skeleton→conteúdo na aba Tarefas, ou o polling do `useDailyGuideCache` trocando estado), o reconciler não acha mais o nó anterior → crash → ErrorBoundary mostra "Algo deu errado em Tarefas".
 
-## O que será adicionado
-Um card de destaque com:
+Não é bug do código dela, não é memória, não é rede. É o navegador dela traduzindo. A aba Tarefas é a mais afetada porque tem mais transições condicionais (skeleton, AnimatePresence, cache que hidrata em 2 passos).
 
-- Ícone do WhatsApp (`MessageCircle` do lucide, com cor verde-whatsapp via classe utilitária) dentro de um badge circular.
-- Título curto: **"Mais que uma ferramenta: um grupo de aceleração de vendas"**.
-- Subtítulo: **"Entre no grupo exclusivo de alunos do VyralLab e acelere seus resultados junto com quem já está vendendo."**
-- Botão primário verde WhatsApp: **"Entrar no grupo de alunos"** com ícone, abrindo `https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2` em nova aba (`target="_blank"`, `rel="noopener noreferrer"`).
+## Correção
 
-O botão "Começar onboarding" continua logo abaixo, agora como ação secundária visual (mantém `gold-gradient`, mas a hierarquia visual passa a ter o WhatsApp como primeiro CTA de comunidade e o onboarding como próximo passo do produto). O redirecionamento automático atual é mantido — o usuário vê o card do grupo antes de ser levado ao onboarding, e pode abrir o WhatsApp em nova aba sem perder o fluxo.
+Bloquear tradução automática no app inteiro + endurecer os pontos com mais churn de DOM.
 
-## Detalhes técnicos
-- Link definido como constante no topo do arquivo: `const WHATSAPP_GROUP_URL = 'https://chat.whatsapp.com/D6gLGgzZvcW1UCDHlP1uR0?s=sh&p=i&mlu=4&amv=2';`.
-- Cor verde do WhatsApp aplicada via classes Tailwind arbitrárias apenas no botão do grupo (`bg-[#25D366] hover:bg-[#1ebe5d] text-white`) — exceção pontual justificada por ser cor de marca de terceiro, não do design system.
-- Sem novas dependências, sem mudança em rotas ou lógica de assinatura.
+### 1. `index.html`
+- Adicionar `<meta name="google" content="notranslate" />` no `<head>`.
+- Adicionar `translate="no"` e `class="notranslate"` no `<html>` (ou `<body>`).
 
-## Fora de escopo
-- Não criar página `/obrigado` separada (o fluxo atual já usa o modal como tela de sucesso; criar rota nova mudaria o comportamento de redirect e o pós-pagamento por PIX).
-- Não alterar backend/webhook.
+### 2. `src/App.tsx` (ou root layout)
+- Adicionar `translate="no"` no wrapper root como reforço (alguns Android ignoram o meta se o `<html>` foi hidratado depois).
+
+### 3. `src/pages/Tasks.tsx`
+- Envolver o bloco condicional `loading ? skeleton : conteúdo` com uma `key` estável e garantir que não há text node solto irmão de elemento (padrão que quebra com Translate).
+- Marcar o container do `DailyGuide` e `DailySchedule` como `translate="no"` (o conteúdo é gerado por IA em pt-BR mesmo — não perde nada e blinda contra o bug).
+
+### 4. `ErrorBoundary`
+- No `componentDidCatch`, se a mensagem bater com `/insertBefore|removeChild|not a child of this node/i`, **auto-reset uma vez** (com flag pra não loopar). Assim, mesmo se a tradução escapar em outro lugar, o app se recupera sozinho sem a usuária ver a tela de erro.
+
+### 5. Mensagem pra usuária
+Pedir pra ela, no Chrome Android: menu ⋮ → Traduzir → **"Nunca traduzir vyrallab.online"**. Isso é o fix definitivo do lado dela; nossos passos 1–4 blindam pelo nosso lado.
+
+## Nada de backend
+
+Sem edge functions, sem SQL, sem deploy VPS. Só frontend → Vercel auto-deploy pelo push na `main`.
+
+## Como validar
+
+- Publicar, pedir pra ela abrir de novo em Tarefas.
+- Se ainda cair, o auto-reset do ErrorBoundary (passo 4) faz a tela se recuperar em ~1 frame.
