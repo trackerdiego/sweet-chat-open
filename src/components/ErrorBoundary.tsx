@@ -16,6 +16,7 @@ interface State {
 
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
+  private autoResetDone = false;
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
@@ -28,6 +29,14 @@ export class ErrorBoundary extends Component<Props, State> {
       (window as any).__lovable_last_error = { error, info, at: new Date().toISOString() };
     } catch {}
     console.error('[ErrorBoundary]', this.props.scope ?? 'root', error, info.componentStack);
+
+    // Auto-reset em erros de reconciliação (Google Translate / extensões que mutam o DOM).
+    // Roda 1x só pra não loopar caso a causa persista.
+    const msg = error?.message || '';
+    if (!this.autoResetDone && /insertBefore|removeChild|not a child of this node|NotFoundError/i.test(msg)) {
+      this.autoResetDone = true;
+      setTimeout(() => this.setState({ error: null }), 50);
+    }
   }
 
   reset = () => {
