@@ -1,35 +1,66 @@
-## Diagnóstico
+# Reset manual de senha — mazzuzconfeccoess@gmail.com
 
-O erro `Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node` é **a assinatura clássica do Google Translate (Chrome Android) mexendo no DOM que o React controla**. O Chrome no Android traduz páginas em pt-BR "automaticamente" em alguns aparelhos/locales, substitui text nodes por spans, e quando o React tenta re-renderizar (ex.: `AnimatePresence` trocando skeleton→conteúdo na aba Tarefas, ou o polling do `useDailyGuideCache` trocando estado), o reconciler não acha mais o nó anterior → crash → ErrorBoundary mostra "Algo deu errado em Tarefas".
+O backend é **Supabase self-hosted em `api.influlab.pro`**, então nada disso passa por migration do Lovable. Você roda direto no **SQL Editor do Studio self-hosted** (`https://studio.influlab.pro` ou o domínio que você configurou pro Studio).
 
-Não é bug do código dela, não é memória, não é rede. É o navegador dela traduzindo. A aba Tarefas é a mais afetada porque tem mais transições condicionais (skeleton, AnimatePresence, cache que hidrata em 2 passos).
+## Passo 1 — Confirmar que a usuária existe
 
-## Correção
+Rode no SQL Editor:
 
-Bloquear tradução automática no app inteiro + endurecer os pontos com mais churn de DOM.
+```sql
+select id, email, email_confirmed_at, last_sign_in_at, created_at, banned_until
+from auth.users
+where email = 'mazzuzconfeccoess@gmail.com';
+```
 
-### 1. `index.html`
-- Adicionar `<meta name="google" content="notranslate" />` no `<head>`.
-- Adicionar `translate="no"` e `class="notranslate"` no `<html>` (ou `<body>`).
+O que olhar:
+- Se **não retornar linha** → ela nunca criou conta (o email do "reset" nem chega, GoTrue silencia por segurança). Peça pra ela cadastrar de novo.
+- Se `email_confirmed_at` for `NULL` → conta existe mas email nunca foi confirmado. O passo 2 já resolve os dois problemas de uma vez (define senha + confirma email).
+- Se `banned_until` estiver no futuro → conta banida, o passo 2 também limpa.
 
-### 2. `src/App.tsx` (ou root layout)
-- Adicionar `translate="no"` no wrapper root como reforço (alguns Android ignoram o meta se o `<html>` foi hidratado depois).
+## Passo 2 — Definir senha temporária e confirmar email
 
-### 3. `src/pages/Tasks.tsx`
-- Envolver o bloco condicional `loading ? skeleton : conteúdo` com uma `key` estável e garantir que não há text node solto irmão de elemento (padrão que quebra com Translate).
-- Marcar o container do `DailyGuide` e `DailySchedule` como `translate="no"` (o conteúdo é gerado por IA em pt-BR mesmo — não perde nada e blinda contra o bug).
+Escolha uma senha temporária (ex.: `Vyral@2026Reset`) e rode:
 
-### 4. `ErrorBoundary`
-- No `componentDidCatch`, se a mensagem bater com `/insertBefore|removeChild|not a child of this node/i`, **auto-reset uma vez** (com flag pra não loopar). Assim, mesmo se a tradução escapar em outro lugar, o app se recupera sozinho sem a usuária ver a tela de erro.
+```sql
+update auth.users
+set
+  encrypted_password = crypt('Vyral@2026Reset', gen_salt('bf')),
+  email_confirmed_at = coalesce(email_confirmed_at, now()),
+  banned_until = null,
+  updated_at = now()
+where email = 'mazzuzconfeccoess@gmail.com';
+```
 
-### 5. Mensagem pra usuária
-Pedir pra ela, no Chrome Android: menu ⋮ → Traduzir → **"Nunca traduzir vyrallab.online"**. Isso é o fix definitivo do lado dela; nossos passos 1–4 blindam pelo nosso lado.
+Isso:
+- Sobrescreve o hash da senha usando `bcrypt` (mesmo esquema que o GoTrue usa)
+- Confirma o email se ainda não estava confirmado
+- Remove qualquer ban
 
-## Nada de backend
+## Passo 3 — Invalidar sessões antigas (opcional, recomendado)
 
-Sem edge functions, sem SQL, sem deploy VPS. Só frontend → Vercel auto-deploy pelo push na `main`.
+Pra garantir que qualquer sessão zumbi caia:
 
-## Como validar
+```sql
+delete from auth.sessions
+where user_id = (select id from auth.users where email = 'mazzuzconfeccoess@gmail.com');
+```
 
-- Publicar, pedir pra ela abrir de novo em Tarefas.
-- Se ainda cair, o auto-reset do ErrorBoundary (passo 4) faz a tela se recuperar em ~1 frame.
+## Passo 4 — Comunicar a usuária
+
+Manda no WhatsApp/email dela:
+
+> "Redefinimos sua senha manualmente. Entre em `app.influlab.pro` com:
+> **Email:** mazzuzconfeccoess@gmail.com  
+> **Senha:** Vyral@2026Reset  
+> Depois de entrar, vai em Configurações → Alterar senha e troca pra uma sua."
+
+## Por que o reset por email pode estar falhando (pra investigar depois)
+
+Possíveis causas — não vou mexer agora, só listar pro caso de repetir com outros usuários:
+
+1. **Email não chegou** → checar `email_send_log` filtrando por `recipient_email = 'mazzuzconfeccoess@gmail.com'` e `template_name = 'recovery'`
+2. **Email chegou mas link expirou** → tokens de recovery no GoTrue expiram em 1h por padrão
+3. **Link abre mas não redireciona pro `/reset-password`** → problema no `redirectTo` que o Auth.tsx envia
+4. **Página `/reset-password` não detecta `type=recovery`** no hash → bug no `ResetPassword.tsx`
+
+Se quiser, na próxima eu investigo isso e conserto o fluxo end-to-end. Mas pra desbloquear a usuária hoje, os 3 passos acima resolvem.
