@@ -323,6 +323,29 @@ const Onboarding = () => {
       </div>
     </motion.div>,
 
+    <motion.div key="goal" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
+      <div className="text-center space-y-2">
+        <span className="text-4xl">🎯</span>
+        <h2 className="font-serif text-2xl font-bold">Qual seu objetivo principal?</h2>
+        <p className="text-muted-foreground text-sm">Isso define o tipo de conteúdo que a matriz vai gerar</p>
+      </div>
+      <div className="space-y-3">
+        {businessGoals.map(g => (
+          <button
+            key={g.id}
+            onClick={() => setBusinessGoal(g.id)}
+            className={`w-full glass-card p-4 text-left transition-all flex items-start gap-3 ${businessGoal === g.id ? 'ring-2 ring-primary bg-primary/10' : 'hover:bg-muted/50'}`}
+          >
+            <span className="text-2xl">{g.emoji}</span>
+            <div>
+              <p className="font-medium text-sm">{g.label}</p>
+              <p className="text-xs text-muted-foreground">{g.description}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </motion.div>,
+
     <motion.div key="style" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
       <div className="text-center space-y-2">
         <span className="text-4xl">🎭</span>
