@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiNative } from "../_shared/gemini.ts";
 
-const FUNCTION_VERSION = "2026-04-22-async-job";
+const FUNCTION_VERSION = "2026-07-04-goal-presets";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
