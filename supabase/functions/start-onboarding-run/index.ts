@@ -295,7 +295,7 @@ async function isCancelled(admin: ReturnType<typeof createClient>, runId: string
   return data?.status === "failed";
 }
 
-async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string }) {
+async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string; businessGoal: BusinessGoal }) {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const GEMINI_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY")!;
@@ -307,12 +307,16 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
   const styleDesc = styleMap[input.contentStyle] || styleMap.casual;
   const secondaryList = (input.secondaryNiches || []).join(", ");
+  const goal = input.businessGoal;
+  const preset = PRESETS[goal];
 
   // ═══ ETAPA 1: profile ═══
   try {
     if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before profile`); return; }
     stages = await setStage(admin, runId, stages, "profile", { status: "running", started_at: new Date().toISOString() });
-    const { error } = await admin.from("user_profiles").upsert({
+    // business_goal só é gravado se a coluna existir no schema self-hosted;
+    // upsert com coluna inexistente falha, então tenta com e sem.
+    const baseRow: Record<string, unknown> = {
       user_id: userId,
       display_name: input.displayName,
       primary_niche: input.primaryNiche,
@@ -320,7 +324,13 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       content_style: input.contentStyle,
       description_status: "ok",
       onboarding_completed: false,
-    }, { onConflict: "user_id" });
+    };
+    let { error } = await admin.from("user_profiles").upsert({ ...baseRow, business_goal: goal }, { onConflict: "user_id" });
+    if (error && /business_goal/i.test(error.message || "")) {
+      console.warn(`[run ${runId}] business_goal column missing — falling back to legacy upsert`);
+      const r2 = await admin.from("user_profiles").upsert(baseRow, { onConflict: "user_id" });
+      error = r2.error;
+    }
     if (error) throw new Error(`profile upsert: ${error.message}`);
     stages = await setStage(admin, runId, stages, "profile", { status: "done", finished_at: new Date().toISOString() });
     console.log(`[run ${runId}] stage 1 profile ok`);
