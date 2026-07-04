@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiNative } from "../_shared/gemini.ts";
 
-const FUNCTION_VERSION = "2026-04-22-async-job";
+const FUNCTION_VERSION = "2026-07-04-goal-presets";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,19 +95,84 @@ const STRATEGY_ITEM_SCHEMA = {
   required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"],
 };
 
-const PILLARS = [
-  { key: "principal", label: "Principal" },
-  { key: "vida-real", label: "Vida Real" },
-  { key: "negocios", label: "Negócios" },
-  { key: "lifestyle", label: "Lifestyle" },
-];
+type BusinessGoal = "sell_products" | "attract_clients" | "personal_brand";
 
-const WEEKS = [
-  { num: 1, range: [1, 7],   theme: "OBJEÇÕES e FRUSTRAÇÕES" },
-  { num: 2, range: [8, 14],  theme: "FERIDAS e VERGONHA" },
-  { num: 3, range: [15, 21], theme: "PECADOS e DESEJOS" },
-  { num: 4, range: [22, 30], theme: "ESPERANÇA e DECISÃO" },
-] as const;
+interface GoalPreset {
+  pillars: { key: string; label: string }[];
+  weeks: { num: number; range: [number, number]; theme: string }[];
+  systemHeader: string;
+  matrixRules: string;
+  fallbackTitleTag: (weekNum: number) => string;
+}
+
+const PRESETS: Record<BusinessGoal, GoalPreset> = {
+  sell_products: {
+    pillars: [
+      { key: "produto", label: "Produto em Destaque" },
+      { key: "prova", label: "Prova Social" },
+      { key: "bastidor", label: "Bastidor / Curadoria" },
+      { key: "oferta", label: "Oferta / Novidade" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "VITRINE — desejo de compra em peças específicas" },
+      { num: 2, range: [8, 14],  theme: "CONFIANÇA — prova social e clientes reais" },
+      { num: 3, range: [15, 21], theme: "AUTORIDADE — curadoria, garimpo e diferencial" },
+      { num: 4, range: [22, 30], theme: "URGÊNCIA — oferta, novidade, escassez" },
+    ],
+    systemHeader: `Você é estrategista de conteúdo para LOJAS (produto físico ou online). Todo post deve VENDER ou aproximar da venda de produtos concretos do catálogo. NÃO é criador(a) de conteúdo pessoal — não faz post de mindset, jornada, motivacional, "sua história como empreendedora". O foco é o PRODUTO e a CLIENTE.`,
+    matrixRules: `REGRAS OBRIGATÓRIAS:
+- hook mostra uma peça/coleção/produto específico ou uma reação de cliente (nunca "como me destacar", "sua jornada", "você não é mais um").
+- storytellingBody mostra o item em cena, o uso real, a curadoria/garimpo, ou o resultado na cliente — sempre com o PRODUTO como protagonista.
+- subtleConversion convida a ver no direct/link/loja, salvar pra comprar depois, ou perguntar tamanho/preço.
+- visualInstructions SEMPRE menciona o produto em cena (peça vestida, flat lay, cliente usando, provador, bastidor de garimpo, unboxing).
+- visceralElement = gatilho emocional da cliente (não do lojista).
+- Proibido: post 100% mindset, motivacional, "jornada empreendedora", "posicionamento pessoal".`,
+    fallbackTitleTag: (n) => ["Vitrine","Confiança","Autoridade","Oferta"][n-1] || "Vitrine",
+  },
+  attract_clients: {
+    pillars: [
+      { key: "dor", label: "Diagnóstico da Dor" },
+      { key: "metodo", label: "Método / Diferencial" },
+      { key: "caso", label: "Caso Real" },
+      { key: "educacao", label: "Educação / Mito vs Verdade" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "RECONHECER — cliente ideal identifica a própria dor" },
+      { num: 2, range: [8, 14],  theme: "EDUCAR — método próprio e diferencial" },
+      { num: 3, range: [15, 21], theme: "PROVAR — casos reais, antes/depois, depoimentos" },
+      { num: 4, range: [22, 30], theme: "CONVITE — agendar consulta / orçamento / DM" },
+    ],
+    systemHeader: `Você é estrategista de conteúdo para PROFISSIONAIS DE SERVIÇO (nutri, advogado, personal, dentista, arquiteto, consultor, coach etc). Todo post fala com o CLIENTE IDEAL, posicionando o método próprio e levando à consulta/agendamento. NÃO é criador(a) de conteúdo pessoal — nada de "minha jornada", "sou mais um".`,
+    matrixRules: `REGRAS OBRIGATÓRIAS:
+- hook começa pela DOR ou pela PERGUNTA do cliente ideal (não da(o) profissional).
+- storytellingBody posiciona o método/diferencial, mostra caso real anonimizado, ou desmente mito comum do nicho.
+- subtleConversion convida a agendar, mandar DM, preencher formulário ou entrar em contato.
+- visualInstructions descreve cena profissional: consultório, atendimento, quadro/lousa explicando, antes/depois.
+- visceralElement = gatilho emocional do CLIENTE (a dor/desejo dele).
+- Proibido: post 100% mindset do profissional, "minha jornada", "posicionamento pessoal".`,
+    fallbackTitleTag: (n) => ["Dor","Método","Caso","Convite"][n-1] || "Dor",
+  },
+  personal_brand: {
+    pillars: [
+      { key: "principal", label: "Principal" },
+      { key: "vida-real", label: "Vida Real" },
+      { key: "negocios", label: "Negócios" },
+      { key: "lifestyle", label: "Lifestyle" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "OBJEÇÕES e FRUSTRAÇÕES" },
+      { num: 2, range: [8, 14],  theme: "FERIDAS e VERGONHA" },
+      { num: 3, range: [15, 21], theme: "PECADOS e DESEJOS" },
+      { num: 4, range: [22, 30], theme: "ESPERANÇA e DECISÃO" },
+    ],
+    systemHeader: `Estrategista de conteúdo para CRIADORES(AS) brasileiros(as) construindo marca pessoal. Linguagem neutra.`,
+    matrixRules: `REGRAS: hook ativa o gatilho visceral; storytelling explora o tema da semana; CTA conecta à transformação; visceralElement = gatilho exato; cada dia único; sem rifa/sorteio.`,
+    fallbackTitleTag: (n) => ["Objeções","Feridas","Pecados","Esperança"][n-1] || "Objeções",
+  },
+};
+
+const normalizeGoal = (g: unknown): BusinessGoal =>
+  g === "sell_products" || g === "attract_clients" || g === "personal_brand" ? g : "personal_brand";
 
 // ─── Fallbacks locais ──────────────────────────────────────────
 function buildFallbackDescription(primaryNiche: string, secondaryList: string, styleDesc: string): string {
@@ -175,19 +240,37 @@ function distributeVisceralElements(ap: Record<string, unknown>): Record<number,
   return result;
 }
 
-function buildLocalStrategy(day: number, primaryNiche: string, styleDesc: string, dayAssignments: Record<number, string>): Record<string, unknown> {
-  const pillar = PILLARS[(day - 1) % PILLARS.length];
-  const week = WEEKS.find((w) => day >= w.range[0] && day <= w.range[1]) || WEEKS[0];
+function buildLocalStrategy(day: number, primaryNiche: string, styleDesc: string, dayAssignments: Record<number, string>, goal: BusinessGoal): Record<string, unknown> {
+  const preset = PRESETS[goal];
+  const pillar = preset.pillars[(day - 1) % preset.pillars.length];
+  const week = preset.weeks.find((w) => day >= w.range[0] && day <= w.range[1]) || preset.weeks[0];
   const visceral = dayAssignments[day] || `[Geral] Conteúdo de ${primaryNiche}`;
   const taskType: "connection" | "value" = day % 2 === 0 ? "value" : "connection";
+  const tag = preset.fallbackTitleTag(week.num);
   return {
     day,
-    title: `Dia ${day} — ${week.theme.split(" ")[0]} • ${pillar.label}`,
+    title: `Dia ${day} — ${tag} • ${pillar.label}`,
     pillar: pillar.key, pillarLabel: pillar.label,
-    viralHook: `Se você trabalha com ${primaryNiche} e sente que ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`,
-    storytellingBody: `Conta uma história em 3 atos: situação inicial em ${primaryNiche}, conflito ligado a "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", virada que mostra o caminho. Tom ${styleDesc}, até 60s.`,
-    subtleConversion: `Conecte essa virada com um próximo passo simples — convide a salvar, comentar uma palavra ou seguir.`,
-    visualInstructions: `Plano único, rosto enquadrado, luz natural. Texto curto destacando a virada. Cortes a cada 3-4s.`,
+    viralHook: goal === "sell_products"
+      ? `Olha essa peça que acabou de chegar — se você curte ${primaryNiche.slice(0, 60)}, essa aqui é pra você.`
+      : goal === "attract_clients"
+      ? `Se você sente ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`
+      : `Se você trabalha com ${primaryNiche} e sente que ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`,
+    storytellingBody: goal === "sell_products"
+      ? `Mostre o produto em cena: como veste, o caimento, o detalhe do tecido, a combinação. Fale de onde veio essa peça. Tom ${styleDesc}, até 45s.`
+      : goal === "attract_clients"
+      ? `Explique brevemente a dor "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", mostre o método/diferencial, e feche com o resultado que o cliente ideal pode ter. Tom ${styleDesc}, até 60s.`
+      : `Conta uma história em 3 atos: situação inicial em ${primaryNiche}, conflito ligado a "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", virada que mostra o caminho. Tom ${styleDesc}, até 60s.`,
+    subtleConversion: goal === "sell_products"
+      ? `Convide a mandar DM pra saber tamanho/preço ou salvar pra comprar depois. Diga que estoque é limitado.`
+      : goal === "attract_clients"
+      ? `Convide a mandar DM ou clicar no link pra agendar uma conversa/avaliação.`
+      : `Conecte essa virada com um próximo passo simples — convide a salvar, comentar uma palavra ou seguir.`,
+    visualInstructions: goal === "sell_products"
+      ? `Produto sempre em cena — vestindo, flat lay ou detalhe. Luz natural, cortes a cada 3-4s, texto curto com nome/preço da peça.`
+      : goal === "attract_clients"
+      ? `Ambiente profissional (consultório/escritório) ou quadro explicando. Rosto enquadrado, texto curto reforçando a dor.`
+      : `Plano único, rosto enquadrado, luz natural. Texto curto destacando a virada. Cortes a cada 3-4s.`,
     taskType, visceralElement: visceral,
   };
 }
@@ -212,7 +295,7 @@ async function isCancelled(admin: ReturnType<typeof createClient>, runId: string
   return data?.status === "failed";
 }
 
-async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string }) {
+async function processRun(runId: string, userId: string, input: { primaryNiche: string; secondaryNiches: string[]; contentStyle: string; displayName: string; businessGoal: BusinessGoal }) {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const GEMINI_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY")!;
@@ -224,12 +307,16 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
   const styleMap: Record<string, string> = { casual: "leve, descontraído", profissional: "autoritário, informativo", divertido: "engraçado, irreverente" };
   const styleDesc = styleMap[input.contentStyle] || styleMap.casual;
   const secondaryList = (input.secondaryNiches || []).join(", ");
+  const goal = input.businessGoal;
+  const preset = PRESETS[goal];
 
   // ═══ ETAPA 1: profile ═══
   try {
     if (await isCancelled(admin, runId)) { console.log(`[run ${runId}] cancelled before profile`); return; }
     stages = await setStage(admin, runId, stages, "profile", { status: "running", started_at: new Date().toISOString() });
-    const { error } = await admin.from("user_profiles").upsert({
+    // business_goal só é gravado se a coluna existir no schema self-hosted;
+    // upsert com coluna inexistente falha, então tenta com e sem.
+    const baseRow: Record<string, unknown> = {
       user_id: userId,
       display_name: input.displayName,
       primary_niche: input.primaryNiche,
@@ -237,7 +324,13 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
       content_style: input.contentStyle,
       description_status: "ok",
       onboarding_completed: false,
-    }, { onConflict: "user_id" });
+    };
+    let { error } = await admin.from("user_profiles").upsert({ ...baseRow, business_goal: goal }, { onConflict: "user_id" });
+    if (error && /business_goal/i.test(error.message || "")) {
+      console.warn(`[run ${runId}] business_goal column missing — falling back to legacy upsert`);
+      const r2 = await admin.from("user_profiles").upsert(baseRow, { onConflict: "user_id" });
+      error = r2.error;
+    }
     if (error) throw new Error(`profile upsert: ${error.message}`);
     stages = await setStage(admin, runId, stages, "profile", { status: "done", finished_at: new Date().toISOString() });
     console.log(`[run ${runId}] stage 1 profile ok`);
@@ -329,25 +422,24 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
     stages = await setStage(admin, runId, stages, "matrix", { status: "running", started_at: new Date().toISOString() });
     const dayAssignments = distributeVisceralElements(avatarProfile);
     const localMatrix: Record<string, unknown>[] = [];
-    for (let d = 1; d <= 30; d++) localMatrix.push(buildLocalStrategy(d, input.primaryNiche, styleDesc, dayAssignments));
+    for (let d = 1; d <= 30; d++) localMatrix.push(buildLocalStrategy(d, input.primaryNiche, styleDesc, dayAssignments, goal));
     const finalMatrix = [...localMatrix];
 
+    const pillarList = preset.pillars.map((p) => `${p.key} (${p.label})`).join(" · ");
     const baseCtx = `\nESTUDO VISCERAL:\nDescrição: ${audienceDescription}\nAvatar: ${avatarProfile.avatar || ""}\nObjetivo: ${avatarProfile.primaryGoal || ""}\nQueixa: ${avatarProfile.primaryComplaint || ""}\nMedo: ${avatarProfile.ultimateFear || ""}\nDesejo: ${avatarProfile.deepOccultDesire || ""}`;
-    const buildSystem = (week: typeof WEEKS[number]) => {
+    const buildSystem = (week: typeof preset.weeks[number]) => {
       const triggers = Object.entries(dayAssignments)
         .filter(([d]) => { const n = Number(d); return n >= week.range[0] && n <= week.range[1]; })
         .sort(([a], [b]) => Number(a) - Number(b))
         .map(([day, el]) => `Dia ${day}: GATILHO → ${el}`).join("\n");
-      return `Estrategista de conteúdo para criadores brasileiros. Linguagem neutra.\nNicho: ${input.primaryNiche}\nSecundários: ${secondaryList || "nenhum"}\nEstilo: ${styleDesc}${baseCtx}\n\nSEMANA ${week.num} — ${week.theme}\nDIAS ${week.range[0]} a ${week.range[1]}\n${triggers ? `\nGATILHOS:\n${triggers}\n` : ""}\nREGRAS: hook ativa o gatilho; storytelling explora tema; CTA conecta à transformação; visceralElement = gatilho exato; cada dia único; sem rifa/sorteio.`;
+      return `${preset.systemHeader}\n\nNicho / negócio: ${input.primaryNiche}\nSecundários: ${secondaryList || "nenhum"}\nEstilo de comunicação: ${styleDesc}\nPilares válidos (use SOMENTE estes valores no campo pillar/pillarLabel): ${pillarList}${baseCtx}\n\nSEMANA ${week.num} — ${week.theme}\nDIAS ${week.range[0]} a ${week.range[1]}\n${triggers ? `\nGATILHOS emocionais disponíveis:\n${triggers}\n` : ""}\n${preset.matrixRules}`;
     };
-    const buildPrompt = (week: typeof WEEKS[number]) =>
-      `Gere estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) do nicho "${input.primaryNiche}". Retorne EXATO no formato JSON do schema com array "strategies".`;
+    const buildPrompt = (week: typeof preset.weeks[number]) =>
+      `Gere estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) para o negócio: "${input.primaryNiche}". Cada dia usa um dos pilares válidos, rotacionando. Retorne EXATO no formato JSON do schema com array "strategies".`;
 
-    // Sequencial com retry: paralelo + Gemini estoura rate-limit no self-hosted
-    // e faz semanas inteiras caírem em fallback local (títulos genéricos
-    // "OBJEÇÕES/PECADOS/ESPERANÇA"). Sequencial é mais lento mas previsível.
-    const weekResults: PromiseSettledResult<{ week: typeof WEEKS[number]; strategies: Record<string, unknown>[] }>[] = [];
-    for (const week of WEEKS) {
+    // Sequencial com retry: paralelo + Gemini estoura rate-limit no self-hosted.
+    const weekResults: PromiseSettledResult<{ week: typeof preset.weeks[number]; strategies: Record<string, unknown>[] }>[] = [];
+    for (const week of preset.weeks) {
       try {
         const r = await callGeminiNative({
           apiKey: GEMINI_KEY,
@@ -368,7 +460,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
     let aiOk = 0;
     weekResults.forEach((res, idx) => {
-      const week = WEEKS[idx];
+      const week = preset.weeks[idx];
       if (res.status === "fulfilled") {
         aiOk++;
         for (const s of res.value.strategies) {
@@ -433,8 +525,8 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { displayName, primaryNiche, secondaryNiches, contentStyle, resumeRunId } = body as {
-      displayName?: string; primaryNiche?: string; secondaryNiches?: string[]; contentStyle?: string; resumeRunId?: string;
+    const { displayName, primaryNiche, secondaryNiches, contentStyle, businessGoal, resumeRunId } = body as {
+      displayName?: string; primaryNiche?: string; secondaryNiches?: string[]; contentStyle?: string; businessGoal?: string; resumeRunId?: string;
     };
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -459,6 +551,7 @@ serve(async (req) => {
       primaryNiche: primaryNiche.trim(),
       secondaryNiches: secondaryNiches || [],
       contentStyle: contentStyle.trim(),
+      businessGoal: normalizeGoal(businessGoal),
     };
 
     // CRÍTICO: cancela qualquer run anterior pending/running do usuário antes

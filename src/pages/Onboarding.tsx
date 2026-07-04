@@ -20,6 +20,14 @@ const contentStyles = [
   { id: 'divertido', label: 'Divertido', description: 'Engraçado e irreverente, com memes e trends', emoji: '🎉' },
 ];
 
+type BusinessGoal = 'sell_products' | 'attract_clients' | 'personal_brand';
+
+const businessGoals: { id: BusinessGoal; label: string; description: string; emoji: string }[] = [
+  { id: 'sell_products', label: 'Vender produtos da minha loja', description: 'Loja física ou online, boutique, marca própria, dropshipping, artesanato', emoji: '🛍️' },
+  { id: 'attract_clients', label: 'Atrair clientes pro meu serviço', description: 'Nutri, advogado, personal, dentista, arquiteto, consultor, coach', emoji: '🤝' },
+  { id: 'personal_brand', label: 'Construir marca pessoal como criador', description: 'Influenciador, criador de nicho, especialista compartilhando conhecimento', emoji: '⭐' },
+];
+
 const STAGE_META: Record<StageKey, { title: string; description: string; icon: typeof Users }> = {
   profile: {
     title: 'Preparando seu perfil',
@@ -56,6 +64,7 @@ const Onboarding = () => {
     profile?.primary_niche && profile.primary_niche !== 'lifestyle' ? profile.primary_niche : ''
   );
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
+  const [businessGoal, setBusinessGoal] = useState<BusinessGoal | ''>('');
   const [showPipeline, setShowPipeline] = useState(false);
 
   const { run, matrixValidated, starting, error, start, resume } = useOnboardingRun();
@@ -63,7 +72,8 @@ const Onboarding = () => {
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
     if (step === 1) return businessDescription.trim().length >= 80;
-    if (step === 2) return !!contentStyle;
+    if (step === 2) return !!businessGoal;
+    if (step === 3) return !!contentStyle;
     return false;
   };
 
@@ -126,6 +136,7 @@ const Onboarding = () => {
         primaryNiche: businessDescription.trim(),
         secondaryNiches: [],
         contentStyle,
+        businessGoal: (businessGoal || 'personal_brand') as BusinessGoal,
       });
       setShowPipeline(true);
     } catch (e: any) {
@@ -141,6 +152,7 @@ const Onboarding = () => {
         primaryNiche: businessDescription.trim() || profile?.primary_niche || '',
         secondaryNiches: [],
         contentStyle: contentStyle || profile?.content_style || 'casual',
+        businessGoal: (businessGoal || 'personal_brand') as BusinessGoal,
       });
     } catch (e: any) {
       toast.error(e?.message || 'Falha ao reiniciar.');
@@ -311,6 +323,29 @@ const Onboarding = () => {
       </div>
     </motion.div>,
 
+    <motion.div key="goal" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
+      <div className="text-center space-y-2">
+        <span className="text-4xl">🎯</span>
+        <h2 className="font-serif text-2xl font-bold">Qual seu objetivo principal?</h2>
+        <p className="text-muted-foreground text-sm">Isso define o tipo de conteúdo que a matriz vai gerar</p>
+      </div>
+      <div className="space-y-3">
+        {businessGoals.map(g => (
+          <button
+            key={g.id}
+            onClick={() => setBusinessGoal(g.id)}
+            className={`w-full glass-card p-4 text-left transition-all flex items-start gap-3 ${businessGoal === g.id ? 'ring-2 ring-primary bg-primary/10' : 'hover:bg-muted/50'}`}
+          >
+            <span className="text-2xl">{g.emoji}</span>
+            <div>
+              <p className="font-medium text-sm">{g.label}</p>
+              <p className="text-xs text-muted-foreground">{g.description}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </motion.div>,
+
     <motion.div key="style" initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -50, opacity: 0 }} className="space-y-6">
       <div className="text-center space-y-2">
         <span className="text-4xl">🎭</span>
@@ -347,7 +382,7 @@ const Onboarding = () => {
       <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-6">
         <div className="w-full max-w-sm space-y-8">
           <div className="flex gap-2">
-            {[0, 1, 2].map(i => (
+            {[0, 1, 2, 3].map(i => (
               <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'gold-gradient' : 'bg-muted'}`} />
             ))}
           </div>
@@ -361,7 +396,7 @@ const Onboarding = () => {
                 <ArrowLeft size={16} /> Voltar
               </Button>
             )}
-            {step < 2 ? (
+            {step < 3 ? (
               <Button onClick={() => setStep(s => s + 1)} disabled={!canAdvance()} className="flex-1 gold-gradient text-primary-foreground shadow-md shadow-primary/20">
                 Próximo <ArrowRight size={16} />
               </Button>
