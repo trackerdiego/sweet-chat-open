@@ -382,7 +382,7 @@ const Onboarding = () => {
       <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-6">
         <div className="w-full max-w-sm space-y-8">
           <div className="flex gap-2">
-            {[0, 1, 2].map(i => (
+            {[0, 1, 2, 3].map(i => (
               <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'gold-gradient' : 'bg-muted'}`} />
             ))}
           </div>
@@ -396,7 +396,7 @@ const Onboarding = () => {
                 <ArrowLeft size={16} /> Voltar
               </Button>
             )}
-            {step < 2 ? (
+            {step < 3 ? (
               <Button onClick={() => setStep(s => s + 1)} disabled={!canAdvance()} className="flex-1 gold-gradient text-primary-foreground shadow-md shadow-primary/20">
                 Próximo <ArrowRight size={16} />
               </Button>
