@@ -525,8 +525,8 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { displayName, primaryNiche, secondaryNiches, contentStyle, resumeRunId } = body as {
-      displayName?: string; primaryNiche?: string; secondaryNiches?: string[]; contentStyle?: string; resumeRunId?: string;
+    const { displayName, primaryNiche, secondaryNiches, contentStyle, businessGoal, resumeRunId } = body as {
+      displayName?: string; primaryNiche?: string; secondaryNiches?: string[]; contentStyle?: string; businessGoal?: string; resumeRunId?: string;
     };
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -551,6 +551,7 @@ serve(async (req) => {
       primaryNiche: primaryNiche.trim(),
       secondaryNiches: secondaryNiches || [],
       contentStyle: contentStyle.trim(),
+      businessGoal: normalizeGoal(businessGoal),
     };
 
     // CRÍTICO: cancela qualquer run anterior pending/running do usuário antes
