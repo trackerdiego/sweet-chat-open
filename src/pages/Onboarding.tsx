@@ -20,6 +20,14 @@ const contentStyles = [
   { id: 'divertido', label: 'Divertido', description: 'Engraçado e irreverente, com memes e trends', emoji: '🎉' },
 ];
 
+type BusinessGoal = 'sell_products' | 'attract_clients' | 'personal_brand';
+
+const businessGoals: { id: BusinessGoal; label: string; description: string; emoji: string }[] = [
+  { id: 'sell_products', label: 'Vender produtos da minha loja', description: 'Loja física ou online, boutique, marca própria, dropshipping, artesanato', emoji: '🛍️' },
+  { id: 'attract_clients', label: 'Atrair clientes pro meu serviço', description: 'Nutri, advogado, personal, dentista, arquiteto, consultor, coach', emoji: '🤝' },
+  { id: 'personal_brand', label: 'Construir marca pessoal como criador', description: 'Influenciador, criador de nicho, especialista compartilhando conhecimento', emoji: '⭐' },
+];
+
 const STAGE_META: Record<StageKey, { title: string; description: string; icon: typeof Users }> = {
   profile: {
     title: 'Preparando seu perfil',
