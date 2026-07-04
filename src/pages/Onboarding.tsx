@@ -64,6 +64,7 @@ const Onboarding = () => {
     profile?.primary_niche && profile.primary_niche !== 'lifestyle' ? profile.primary_niche : ''
   );
   const [contentStyle, setContentStyle] = useState(profile?.content_style || 'casual');
+  const [businessGoal, setBusinessGoal] = useState<BusinessGoal | ''>('');
   const [showPipeline, setShowPipeline] = useState(false);
 
   const { run, matrixValidated, starting, error, start, resume } = useOnboardingRun();
@@ -71,7 +72,8 @@ const Onboarding = () => {
   const canAdvance = () => {
     if (step === 0) return displayName.trim().length >= 2;
     if (step === 1) return businessDescription.trim().length >= 80;
-    if (step === 2) return !!contentStyle;
+    if (step === 2) return !!businessGoal;
+    if (step === 3) return !!contentStyle;
     return false;
   };
 
