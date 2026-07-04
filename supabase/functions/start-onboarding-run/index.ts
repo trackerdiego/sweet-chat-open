@@ -422,25 +422,24 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
     stages = await setStage(admin, runId, stages, "matrix", { status: "running", started_at: new Date().toISOString() });
     const dayAssignments = distributeVisceralElements(avatarProfile);
     const localMatrix: Record<string, unknown>[] = [];
-    for (let d = 1; d <= 30; d++) localMatrix.push(buildLocalStrategy(d, input.primaryNiche, styleDesc, dayAssignments));
+    for (let d = 1; d <= 30; d++) localMatrix.push(buildLocalStrategy(d, input.primaryNiche, styleDesc, dayAssignments, goal));
     const finalMatrix = [...localMatrix];
 
+    const pillarList = preset.pillars.map((p) => `${p.key} (${p.label})`).join(" · ");
     const baseCtx = `\nESTUDO VISCERAL:\nDescrição: ${audienceDescription}\nAvatar: ${avatarProfile.avatar || ""}\nObjetivo: ${avatarProfile.primaryGoal || ""}\nQueixa: ${avatarProfile.primaryComplaint || ""}\nMedo: ${avatarProfile.ultimateFear || ""}\nDesejo: ${avatarProfile.deepOccultDesire || ""}`;
-    const buildSystem = (week: typeof WEEKS[number]) => {
+    const buildSystem = (week: typeof preset.weeks[number]) => {
       const triggers = Object.entries(dayAssignments)
         .filter(([d]) => { const n = Number(d); return n >= week.range[0] && n <= week.range[1]; })
         .sort(([a], [b]) => Number(a) - Number(b))
         .map(([day, el]) => `Dia ${day}: GATILHO → ${el}`).join("\n");
-      return `Estrategista de conteúdo para criadores brasileiros. Linguagem neutra.\nNicho: ${input.primaryNiche}\nSecundários: ${secondaryList || "nenhum"}\nEstilo: ${styleDesc}${baseCtx}\n\nSEMANA ${week.num} — ${week.theme}\nDIAS ${week.range[0]} a ${week.range[1]}\n${triggers ? `\nGATILHOS:\n${triggers}\n` : ""}\nREGRAS: hook ativa o gatilho; storytelling explora tema; CTA conecta à transformação; visceralElement = gatilho exato; cada dia único; sem rifa/sorteio.`;
+      return `${preset.systemHeader}\n\nNicho / negócio: ${input.primaryNiche}\nSecundários: ${secondaryList || "nenhum"}\nEstilo de comunicação: ${styleDesc}\nPilares válidos (use SOMENTE estes valores no campo pillar/pillarLabel): ${pillarList}${baseCtx}\n\nSEMANA ${week.num} — ${week.theme}\nDIAS ${week.range[0]} a ${week.range[1]}\n${triggers ? `\nGATILHOS emocionais disponíveis:\n${triggers}\n` : ""}\n${preset.matrixRules}`;
     };
-    const buildPrompt = (week: typeof WEEKS[number]) =>
-      `Gere estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) do nicho "${input.primaryNiche}". Retorne EXATO no formato JSON do schema com array "strategies".`;
+    const buildPrompt = (week: typeof preset.weeks[number]) =>
+      `Gere estratégia para os dias ${week.range[0]} a ${week.range[1]} (${week.range[1] - week.range[0] + 1} estratégias) para o negócio: "${input.primaryNiche}". Cada dia usa um dos pilares válidos, rotacionando. Retorne EXATO no formato JSON do schema com array "strategies".`;
 
-    // Sequencial com retry: paralelo + Gemini estoura rate-limit no self-hosted
-    // e faz semanas inteiras caírem em fallback local (títulos genéricos
-    // "OBJEÇÕES/PECADOS/ESPERANÇA"). Sequencial é mais lento mas previsível.
-    const weekResults: PromiseSettledResult<{ week: typeof WEEKS[number]; strategies: Record<string, unknown>[] }>[] = [];
-    for (const week of WEEKS) {
+    // Sequencial com retry: paralelo + Gemini estoura rate-limit no self-hosted.
+    const weekResults: PromiseSettledResult<{ week: typeof preset.weeks[number]; strategies: Record<string, unknown>[] }>[] = [];
+    for (const week of preset.weeks) {
       try {
         const r = await callGeminiNative({
           apiKey: GEMINI_KEY,
@@ -461,7 +460,7 @@ async function processRun(runId: string, userId: string, input: { primaryNiche: 
 
     let aiOk = 0;
     weekResults.forEach((res, idx) => {
-      const week = WEEKS[idx];
+      const week = preset.weeks[idx];
       if (res.status === "fulfilled") {
         aiOk++;
         for (const s of res.value.strategies) {
