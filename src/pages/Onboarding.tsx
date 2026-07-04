@@ -136,6 +136,7 @@ const Onboarding = () => {
         primaryNiche: businessDescription.trim(),
         secondaryNiches: [],
         contentStyle,
+        businessGoal: (businessGoal || 'personal_brand') as BusinessGoal,
       });
       setShowPipeline(true);
     } catch (e: any) {
@@ -151,6 +152,7 @@ const Onboarding = () => {
         primaryNiche: businessDescription.trim() || profile?.primary_niche || '',
         secondaryNiches: [],
         contentStyle: contentStyle || profile?.content_style || 'casual',
+        businessGoal: (businessGoal || 'personal_brand') as BusinessGoal,
       });
     } catch (e: any) {
       toast.error(e?.message || 'Falha ao reiniciar.');
