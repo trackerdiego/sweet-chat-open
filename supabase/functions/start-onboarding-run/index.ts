@@ -240,19 +240,37 @@ function distributeVisceralElements(ap: Record<string, unknown>): Record<number,
   return result;
 }
 
-function buildLocalStrategy(day: number, primaryNiche: string, styleDesc: string, dayAssignments: Record<number, string>): Record<string, unknown> {
-  const pillar = PILLARS[(day - 1) % PILLARS.length];
-  const week = WEEKS.find((w) => day >= w.range[0] && day <= w.range[1]) || WEEKS[0];
+function buildLocalStrategy(day: number, primaryNiche: string, styleDesc: string, dayAssignments: Record<number, string>, goal: BusinessGoal): Record<string, unknown> {
+  const preset = PRESETS[goal];
+  const pillar = preset.pillars[(day - 1) % preset.pillars.length];
+  const week = preset.weeks.find((w) => day >= w.range[0] && day <= w.range[1]) || preset.weeks[0];
   const visceral = dayAssignments[day] || `[Geral] Conteúdo de ${primaryNiche}`;
   const taskType: "connection" | "value" = day % 2 === 0 ? "value" : "connection";
+  const tag = preset.fallbackTitleTag(week.num);
   return {
     day,
-    title: `Dia ${day} — ${week.theme.split(" ")[0]} • ${pillar.label}`,
+    title: `Dia ${day} — ${tag} • ${pillar.label}`,
     pillar: pillar.key, pillarLabel: pillar.label,
-    viralHook: `Se você trabalha com ${primaryNiche} e sente que ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`,
-    storytellingBody: `Conta uma história em 3 atos: situação inicial em ${primaryNiche}, conflito ligado a "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", virada que mostra o caminho. Tom ${styleDesc}, até 60s.`,
-    subtleConversion: `Conecte essa virada com um próximo passo simples — convide a salvar, comentar uma palavra ou seguir.`,
-    visualInstructions: `Plano único, rosto enquadrado, luz natural. Texto curto destacando a virada. Cortes a cada 3-4s.`,
+    viralHook: goal === "sell_products"
+      ? `Olha essa peça que acabou de chegar — se você curte ${primaryNiche.slice(0, 60)}, essa aqui é pra você.`
+      : goal === "attract_clients"
+      ? `Se você sente ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`
+      : `Se você trabalha com ${primaryNiche} e sente que ${visceral.replace(/^\[[^\]]+\]\s*/, "").slice(0, 80)}, esse vídeo é pra você.`,
+    storytellingBody: goal === "sell_products"
+      ? `Mostre o produto em cena: como veste, o caimento, o detalhe do tecido, a combinação. Fale de onde veio essa peça. Tom ${styleDesc}, até 45s.`
+      : goal === "attract_clients"
+      ? `Explique brevemente a dor "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", mostre o método/diferencial, e feche com o resultado que o cliente ideal pode ter. Tom ${styleDesc}, até 60s.`
+      : `Conta uma história em 3 atos: situação inicial em ${primaryNiche}, conflito ligado a "${visceral.replace(/^\[[^\]]+\]\s*/, "")}", virada que mostra o caminho. Tom ${styleDesc}, até 60s.`,
+    subtleConversion: goal === "sell_products"
+      ? `Convide a mandar DM pra saber tamanho/preço ou salvar pra comprar depois. Diga que estoque é limitado.`
+      : goal === "attract_clients"
+      ? `Convide a mandar DM ou clicar no link pra agendar uma conversa/avaliação.`
+      : `Conecte essa virada com um próximo passo simples — convide a salvar, comentar uma palavra ou seguir.`,
+    visualInstructions: goal === "sell_products"
+      ? `Produto sempre em cena — vestindo, flat lay ou detalhe. Luz natural, cortes a cada 3-4s, texto curto com nome/preço da peça.`
+      : goal === "attract_clients"
+      ? `Ambiente profissional (consultório/escritório) ou quadro explicando. Rosto enquadrado, texto curto reforçando a dor.`
+      : `Plano único, rosto enquadrado, luz natural. Texto curto destacando a virada. Cortes a cada 3-4s.`,
     taskType, visceralElement: visceral,
   };
 }
