@@ -29,6 +29,7 @@ interface StartParams {
   primaryNiche: string;
   secondaryNiches?: string[];
   contentStyle: string;
+  businessGoal: 'sell_products' | 'attract_clients' | 'personal_brand';
 }
 
 const POLL_INTERVAL_MS = 2000;
