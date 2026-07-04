@@ -20,6 +20,16 @@ const _pillarColors: Record<string, string> = {
   negocios: 'bg-amber-100 text-amber-800',
   principal: 'bg-purple-100 text-purple-800',
   lifestyle: 'bg-rose-100 text-rose-800',
+  // sell_products preset
+  produto: 'bg-purple-100 text-purple-800',
+  prova: 'bg-emerald-100 text-emerald-800',
+  bastidor: 'bg-blue-100 text-blue-800',
+  oferta: 'bg-amber-100 text-amber-800',
+  // attract_clients preset
+  dor: 'bg-rose-100 text-rose-800',
+  metodo: 'bg-purple-100 text-purple-800',
+  caso: 'bg-emerald-100 text-emerald-800',
+  educacao: 'bg-blue-100 text-blue-800',
 };
 
 const _pillarEmoji: Record<string, string> = {
@@ -29,6 +39,14 @@ const _pillarEmoji: Record<string, string> = {
   negocios: '💰',
   principal: '⭐',
   lifestyle: '✨',
+  produto: '🛍️',
+  prova: '⭐',
+  bastidor: '🎬',
+  oferta: '🔥',
+  dor: '💢',
+  metodo: '🧭',
+  caso: '📈',
+  educacao: '💡',
 };
 
 /** Dynamic lookup — returns fallback for unknown pillars */
