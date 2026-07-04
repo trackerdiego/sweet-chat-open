@@ -95,19 +95,84 @@ const STRATEGY_ITEM_SCHEMA = {
   required: ["day", "title", "pillar", "pillarLabel", "viralHook", "storytellingBody", "subtleConversion", "visualInstructions", "taskType", "visceralElement"],
 };
 
-const PILLARS = [
-  { key: "principal", label: "Principal" },
-  { key: "vida-real", label: "Vida Real" },
-  { key: "negocios", label: "Negócios" },
-  { key: "lifestyle", label: "Lifestyle" },
-];
+type BusinessGoal = "sell_products" | "attract_clients" | "personal_brand";
 
-const WEEKS = [
-  { num: 1, range: [1, 7],   theme: "OBJEÇÕES e FRUSTRAÇÕES" },
-  { num: 2, range: [8, 14],  theme: "FERIDAS e VERGONHA" },
-  { num: 3, range: [15, 21], theme: "PECADOS e DESEJOS" },
-  { num: 4, range: [22, 30], theme: "ESPERANÇA e DECISÃO" },
-] as const;
+interface GoalPreset {
+  pillars: { key: string; label: string }[];
+  weeks: { num: number; range: [number, number]; theme: string }[];
+  systemHeader: string;
+  matrixRules: string;
+  fallbackTitleTag: (weekNum: number) => string;
+}
+
+const PRESETS: Record<BusinessGoal, GoalPreset> = {
+  sell_products: {
+    pillars: [
+      { key: "produto", label: "Produto em Destaque" },
+      { key: "prova", label: "Prova Social" },
+      { key: "bastidor", label: "Bastidor / Curadoria" },
+      { key: "oferta", label: "Oferta / Novidade" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "VITRINE — desejo de compra em peças específicas" },
+      { num: 2, range: [8, 14],  theme: "CONFIANÇA — prova social e clientes reais" },
+      { num: 3, range: [15, 21], theme: "AUTORIDADE — curadoria, garimpo e diferencial" },
+      { num: 4, range: [22, 30], theme: "URGÊNCIA — oferta, novidade, escassez" },
+    ],
+    systemHeader: `Você é estrategista de conteúdo para LOJAS (produto físico ou online). Todo post deve VENDER ou aproximar da venda de produtos concretos do catálogo. NÃO é criador(a) de conteúdo pessoal — não faz post de mindset, jornada, motivacional, "sua história como empreendedora". O foco é o PRODUTO e a CLIENTE.`,
+    matrixRules: `REGRAS OBRIGATÓRIAS:
+- hook mostra uma peça/coleção/produto específico ou uma reação de cliente (nunca "como me destacar", "sua jornada", "você não é mais um").
+- storytellingBody mostra o item em cena, o uso real, a curadoria/garimpo, ou o resultado na cliente — sempre com o PRODUTO como protagonista.
+- subtleConversion convida a ver no direct/link/loja, salvar pra comprar depois, ou perguntar tamanho/preço.
+- visualInstructions SEMPRE menciona o produto em cena (peça vestida, flat lay, cliente usando, provador, bastidor de garimpo, unboxing).
+- visceralElement = gatilho emocional da cliente (não do lojista).
+- Proibido: post 100% mindset, motivacional, "jornada empreendedora", "posicionamento pessoal".`,
+    fallbackTitleTag: (n) => ["Vitrine","Confiança","Autoridade","Oferta"][n-1] || "Vitrine",
+  },
+  attract_clients: {
+    pillars: [
+      { key: "dor", label: "Diagnóstico da Dor" },
+      { key: "metodo", label: "Método / Diferencial" },
+      { key: "caso", label: "Caso Real" },
+      { key: "educacao", label: "Educação / Mito vs Verdade" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "RECONHECER — cliente ideal identifica a própria dor" },
+      { num: 2, range: [8, 14],  theme: "EDUCAR — método próprio e diferencial" },
+      { num: 3, range: [15, 21], theme: "PROVAR — casos reais, antes/depois, depoimentos" },
+      { num: 4, range: [22, 30], theme: "CONVITE — agendar consulta / orçamento / DM" },
+    ],
+    systemHeader: `Você é estrategista de conteúdo para PROFISSIONAIS DE SERVIÇO (nutri, advogado, personal, dentista, arquiteto, consultor, coach etc). Todo post fala com o CLIENTE IDEAL, posicionando o método próprio e levando à consulta/agendamento. NÃO é criador(a) de conteúdo pessoal — nada de "minha jornada", "sou mais um".`,
+    matrixRules: `REGRAS OBRIGATÓRIAS:
+- hook começa pela DOR ou pela PERGUNTA do cliente ideal (não da(o) profissional).
+- storytellingBody posiciona o método/diferencial, mostra caso real anonimizado, ou desmente mito comum do nicho.
+- subtleConversion convida a agendar, mandar DM, preencher formulário ou entrar em contato.
+- visualInstructions descreve cena profissional: consultório, atendimento, quadro/lousa explicando, antes/depois.
+- visceralElement = gatilho emocional do CLIENTE (a dor/desejo dele).
+- Proibido: post 100% mindset do profissional, "minha jornada", "posicionamento pessoal".`,
+    fallbackTitleTag: (n) => ["Dor","Método","Caso","Convite"][n-1] || "Dor",
+  },
+  personal_brand: {
+    pillars: [
+      { key: "principal", label: "Principal" },
+      { key: "vida-real", label: "Vida Real" },
+      { key: "negocios", label: "Negócios" },
+      { key: "lifestyle", label: "Lifestyle" },
+    ],
+    weeks: [
+      { num: 1, range: [1, 7],   theme: "OBJEÇÕES e FRUSTRAÇÕES" },
+      { num: 2, range: [8, 14],  theme: "FERIDAS e VERGONHA" },
+      { num: 3, range: [15, 21], theme: "PECADOS e DESEJOS" },
+      { num: 4, range: [22, 30], theme: "ESPERANÇA e DECISÃO" },
+    ],
+    systemHeader: `Estrategista de conteúdo para CRIADORES(AS) brasileiros(as) construindo marca pessoal. Linguagem neutra.`,
+    matrixRules: `REGRAS: hook ativa o gatilho visceral; storytelling explora o tema da semana; CTA conecta à transformação; visceralElement = gatilho exato; cada dia único; sem rifa/sorteio.`,
+    fallbackTitleTag: (n) => ["Objeções","Feridas","Pecados","Esperança"][n-1] || "Objeções",
+  },
+};
+
+const normalizeGoal = (g: unknown): BusinessGoal =>
+  g === "sell_products" || g === "attract_clients" || g === "personal_brand" ? g : "personal_brand";
 
 // ─── Fallbacks locais ──────────────────────────────────────────
 function buildFallbackDescription(primaryNiche: string, secondaryList: string, styleDesc: string): string {
