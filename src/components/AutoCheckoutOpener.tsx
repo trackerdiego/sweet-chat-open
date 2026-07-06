@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { useSubscription } from '@/hooks/useSubscription';
 import { CHECKOUT_PLAN_KEY, clearPendingCheckout } from '@/lib/checkoutStorage';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 type Plan = 'monthly' | 'yearly';
 
@@ -10,7 +11,8 @@ type Plan = 'monthly' | 'yearly';
  * (vindo da landing via /auth?plan=...). Roda apenas uma vez por sessão.
  */
 export function AutoCheckoutOpener() {
-  const { isActive, loading, hasLoadedOnce } = useSubscription();
+  const sub = useSubscription();
+  const { isActive, loading, hasLoadedOnce } = sub;
   const [plan, setPlan] = useState<Plan | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -34,6 +36,20 @@ export function AutoCheckoutOpener() {
     if (candidate === 'monthly' || candidate === 'yearly') {
       setPlan(candidate);
       setOpen(true);
+      logDiagnostic('auto_opener_fired', 'AutoCheckoutOpener', {
+        candidatePlan: candidate,
+        fromSessionStorage: !!pending,
+        fromUrlParam: !!urlPlan,
+        subscription: {
+          status: sub.status,
+          plan: sub.plan,
+          current_period_end: sub.currentPeriodEnd,
+          trial_ends_at: sub.trialEndsAt,
+          asaas_customer_id: sub.asaasCustomerId,
+        },
+        hasAccess: sub.hasAccess,
+        isActive: sub.isActive,
+      });
     }
 
     if (urlPlan) {

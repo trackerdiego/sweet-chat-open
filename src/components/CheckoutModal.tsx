@@ -97,13 +97,21 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       activeAtOpenRef.current = isActive;
+      // Loga cada borda de subida da modal — captura TODOS os callers
+      // (AutoCheckoutOpener, AccessGuard, PaywallScreen, PremiumGate, botão manual, etc.)
+      import('@/lib/diagnostics').then(({ logDiagnostic }) => {
+        logDiagnostic('checkout_opened', 'CheckoutModal', {
+          initialPlan,
+          isActiveAtOpen: isActive,
+        });
+      }).catch(() => {});
     }
     if (!open) {
       activeAtOpenRef.current = false;
       celebratedRef.current = false;
     }
     wasOpenRef.current = open;
-  }, [open, isActive]);
+  }, [open, isActive, initialPlan]);
 
   useEffect(() => {
     if (!open || !isActive || !activeAtOpenRef.current) return;

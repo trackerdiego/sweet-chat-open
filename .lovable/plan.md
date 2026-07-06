@@ -1,46 +1,85 @@
-## Diagnóstico provável
+## Problema
 
-A cliente não está presa no paywall global de login. O gatilho mais provável é o `CheckoutModal` mantendo um estado antigo no `sessionStorage` (`checkout:v1`) em etapa `result` e/ou sendo reaberto por `AutoCheckoutOpener`/`PaywallScreen` quando o app ainda não sincronizou a assinatura após o onboarding.
+Depois do onboarding + geração de matriz, a cliente cai na tela **CheckoutModal** (imagem que você mandou — "Garanta seu acesso / DADOS / PAGAMENTO / CONFIRMAÇÃO"). Essa tela pode ser aberta por **3 caminhos diferentes** e sem log do device dela é impossível cravar qual é:
 
-Hoje, depois que a matriz termina, o onboarding faz `window.location.replace('/')`. Na nova carga, se algum estado antigo de checkout ainda existir ou se `useSubscription` ainda não tiver confirmado `active`, o modal pode reaparecer mesmo com banco correto.
+1. `AutoCheckoutOpener` → abriu porque `sessionStorage[pending_checkout_plan]` ainda existia ou porque a URL trouxe `?openCheckout=...`
+2. `AccessGuard` → `useSubscription().hasAccess === false` (linha `subscription_state` retornou `status !== 'active'`, ou a query falhou nas 2 tentativas e caiu no default `trial` expirado)
+3. Botão manual em `PaywallScreen`, `PremiumGate`, `TrialBanner`, etc.
 
-## Plano de correção
+Como não dá pra pedir console dela, vamos **gravar cada abertura da modal num log server-side** que a gente consulta depois via SQL no Studio self-hosted. Assim, na próxima vez que ela cair na tela, temos o "raio-x" completo:  qual gatilho, o que o `subscription_state` retornou naquele instante, o que estava no `sessionStorage`, a URL, se o webhook Asaas já rodou pra ela, etc.
 
-1. **Criar uma limpeza central de checkout pendente**
-   - Remover do `sessionStorage`:
-     - `pending_checkout_plan`
-     - `checkout:v1`
-   - Usar essa limpeza quando o usuário já tem assinatura ativa ou concluiu onboarding.
+## O que vai ser feito
 
-2. **Corrigir `CheckoutModal` para nunca ficar aberto para usuário ativo**
-   - Se `isActive === true`, fechar o modal imediatamente.
-   - Limpar draft antigo de pagamento.
-   - Evitar que um PIX antigo salvo em `sessionStorage` reapareça depois do onboarding.
+### 1. Nova tabela `client_diagnostics` (SQL manual no Studio self-hosted)
 
-3. **Corrigir `AutoCheckoutOpener`**
-   - Não abrir checkout automático se `useSubscription().isActive` já for verdadeiro.
-   - Se estiver ativo, limpar `pending_checkout_plan` e `checkout:v1`.
+```text
+client_diagnostics
+├── id uuid pk
+├── user_id uuid            -- auth.uid()
+├── event text              -- 'checkout_opened' | 'access_guard_blocked' | 'auto_opener_fired'
+├── source text             -- 'AutoCheckoutOpener' | 'AccessGuard' | 'PaywallScreen' | 'manual'
+├── payload jsonb           -- snapshot completo (ver abaixo)
+├── created_at timestamptz default now()
+```
 
-4. **Blindar o final do onboarding**
-   - Antes de redirecionar para `/`, limpar qualquer estado local de checkout pendente.
-   - Após `refreshProfile()` confirmar `onboarding_completed=true`, aguardar/forçar um `refresh()` da assinatura antes de navegar.
-   - Isso reduz corrida entre “matriz terminou” e “front ainda acha que precisa pagar”.
+RLS: `INSERT` liberado pro `authenticated` (`WITH CHECK (auth.uid() = user_id)`). `SELECT` só pro service_role (a gente consulta via Studio).
 
-5. **Reduzir falso paywall para premium manual anual**
-   - Em `useSubscription`, tratar `status='active'` como fonte absoluta de acesso, mesmo se `plan` ou `asaas_customer_id` vierem nulos.
-   - Manter o bypass manual/admin existente.
+Snapshot em `payload`:
+```json
+{
+  "route": "/",
+  "url": "https://app.influlab.pro/?...",
+  "subscription": { "status": "...", "plan": "...", "current_period_end": "...", "asaas_customer_id": "..." },
+  "hasLoadedOnce": true,
+  "sessionStorage": { "pending_checkout_plan": "...", "checkout:v1": "..." },
+  "onboardingCompleted": true,
+  "hasAccess": false,
+  "isActive": false,
+  "trigger": "auto-opener" | "access-guard" | "manual-btn"
+}
+```
 
-6. **Entregar bloco VPS**
-   - Como a memória do projeto exige, ao finalizar código vou incluir os comandos de pull/deploy para rodar na VPS.
+### 2. Helper `src/lib/diagnostics.ts`
 
-## Arquivos previstos
+`logDiagnostic(event, source, payload)` → chama `supabase.from('client_diagnostics').insert(...)`. Silencioso (nunca joga erro pra UI). No-op se sem sessão.
 
-- `src/components/CheckoutModal.tsx`
-- `src/components/AutoCheckoutOpener.tsx`
-- `src/pages/Onboarding.tsx`
-- possivelmente `src/hooks/useCheckoutDraft.ts` ou novo util pequeno para centralizar a limpeza
-- possivelmente `src/hooks/useSubscription.ts`, apenas se necessário para reforçar o caso premium manual
+### 3. Instrumentar os 3 gatilhos
 
-## Resultado esperado
+- **`AutoCheckoutOpener`** — quando detecta `candidate` e vai chamar `setOpen(true)`, dispara `logDiagnostic('checkout_opened', 'AutoCheckoutOpener', {...})`.
+- **`AccessGuard`** — quando renderiza o bloqueio (`!hasAccess && !ALWAYS_OPEN`), dispara `logDiagnostic('access_guard_blocked', 'AccessGuard', {...})` uma vez por render de path (usando `useRef` para não spammar).
+- **`CheckoutModal`** — no `useEffect` que detecta `open === true` na borda de subida, dispara `logDiagnostic('checkout_opened', 'CheckoutModal', { activeAtOpen, ... })`. Isso captura QUALQUER caller (inclusive manual).
 
-Depois que a cliente concluir o onboarding e a matriz for gerada, ela entra direto no app. Nenhum modal de pagamento antigo deve abrir para usuário com `subscription_state.status='active'`, inclusive premium anual setado manualmente.
+### 4. Como você vai usar depois que ela cair de novo
+
+SQL no Studio:
+```sql
+select created_at, event, source, payload
+from public.client_diagnostics
+where user_id = '<uuid da cliente>'
+order by created_at desc
+limit 20;
+```
+
+Com isso você vê, em ordem:
+- Se `AutoCheckoutOpener` disparou → o `sessionStorage` ainda tinha coisa (bug de limpeza).
+- Se `AccessGuard` bloqueou → `subscription.status` retornou o quê exatamente naquele device (`trial` expirado? `active` mas `useSubscription` não sincronizou? row nula?).
+- Se veio de um botão manual → algum componente reabriu.
+
+### 5. Bloco copia-e-cola pra VPS
+
+No fim vai o SQL de migration + `deploy-selfhost.sh` do frontend (mas frontend é Vercel auto, então só o SQL precisa rodar manual + push do código).
+
+## Arquivos
+
+- **novo** `src/lib/diagnostics.ts`
+- **editar** `src/components/AutoCheckoutOpener.tsx`
+- **editar** `src/components/AccessGuard.tsx`
+- **editar** `src/components/CheckoutModal.tsx`
+- **SQL manual** (não migration Lovable — backend é self-hosted): `CREATE TABLE public.client_diagnostics` + GRANTs + RLS + policies
+
+## Escopo NÃO incluído
+
+- Nenhuma alteração de lógica de assinatura, onboarding ou webhook. Isso aqui é **puramente instrumentação** — depois que a gente ler os logs dela, aí sim atacamos a causa raiz com certeza.
+- Nada de UI muda pra usuário final.
+
+Confirma que posso instrumentar assim? Quando a cliente logar de novo e cair na tela, a gente resolve com dados reais em vez de chutar.
