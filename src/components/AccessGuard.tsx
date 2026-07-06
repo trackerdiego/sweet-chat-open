@@ -50,7 +50,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
     : isExpired
       ? 'Seu período de avaliação acabou'
       : 'Assine para desbloquear o app';
-  const sub = isPastDueOrCanceled
+  const subCopy = isPastDueOrCanceled
     ? 'Regularize o pagamento para voltar a usar todos os recursos.'
     : 'Escolha um plano abaixo pra desbloquear o app. Em segundos você está dentro.';
 
