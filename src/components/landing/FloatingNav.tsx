@@ -69,7 +69,7 @@ export function FloatingNav({ onPlansClick }: { onPlansClick: () => void }) {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/auth")}
-            className="text-white/80 hover:text-white hover:bg-white/10 rounded-full px-2.5 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
+            className="text-white bg-white/5 border border-white/25 hover:bg-white/15 hover:text-white rounded-full px-2.5 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
           >
             Entrar
           </Button>
