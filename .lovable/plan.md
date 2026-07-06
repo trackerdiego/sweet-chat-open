@@ -1,87 +1,35 @@
-# Fix: Maria Oziene (oseaniavelino@gmail.com) presa no paywall
+# Plano: dar mais visibilidade ao "Entrar" pra quem já tem conta
 
-> ⚠️ No Studio SQL Editor, cole **apenas o SQL** (o que está dentro dos blocos `sql`). Não cole títulos com `#`, nem as crases ``` ```, nem comentários em português fora do bloco — isso não é SQL válido.
+Contexto: usuários que se cadastraram mas não finalizaram o pagamento voltam pra landing e não acham como logar — o CTA dominante é "Começar/Assinar". Vamos reforçar o acesso ao login em 2 pontos.
 
-## Passo 1 — Diagnóstico
+## 1) `StickyCheckoutBar` (barra roxa fixa mobile) — adicionar "Entrar"
 
-Cole no SQL Editor (as duas queries podem ir juntas):
+Hoje é um botão único gigante "Comece agora por R$24,75 → Assinar". Vamos dividir em dois:
 
-```sql
-select
-  u.id as user_id,
-  u.email,
-  u.created_at as signup_at,
-  s.status,
-  s.plan,
-  s.trial_ends_at,
-  s.current_period_end,
-  s.first_paid_at,
-  s.asaas_customer_id,
-  s.asaas_subscription_id,
-  s.next_invoice->>'due_date' as next_due,
-  s.updated_at
-from auth.users u
-left join public.subscription_state s on s.user_id = u.id
-where lower(u.email) = 'oseaniavelino@gmail.com';
+- Esquerda: um link discreto **"Já tenho conta · Entrar"** (texto branco/80%, sem fundo, ocupa ~35% da largura).
+- Direita: o CTA principal encolhe pra pill "Assinar R$24,75/mês" (~65% da largura), mantendo o gradiente/sombra atual.
 
-select event_id, event_type, received_at, processed_at, error,
-       payload->'payment'->>'status'       as pay_status,
-       payload->'payment'->>'value'        as value,
-       payload->'payment'->>'billingType'  as billing
-from public.asaas_webhook_events
-where payload::text ilike '%oseaniavelino%'
-   or payload::text ilike '%oziene%'
-order by received_at desc
-limit 20;
-```
+Ambos no mesmo container arredondado escuro (para não perder a estética glass atual), navegando: "Entrar" → `/auth`, "Assinar" → `onClick` original.
 
-Cenários:
-- **A) Pagamento avulso antigo** — não tem `asaas_subscription_id`, mas pagou. → Passo 2A.
-- **B) Assinatura existe, webhook falhou** — tem `asaas_subscription_id` mas `status != active`. → Passo 2B.
-- **C) Sem eventos Asaas** — não pagou de verdade. Nenhum fix.
+## 2) `FloatingNav` (topo) — deixar o "Entrar" mais óbvio no mobile
 
-## Passo 2A — Fix manual (avulso antigo)
+Hoje é um ghost quase invisível ao lado do "Começar". Ajustes:
 
-```sql
-update public.subscription_state
-set status = 'active',
-    plan = coalesce(plan, 'annual'),
-    current_period_end = greatest(coalesce(current_period_end, now()), now() + interval '10 years'),
-    first_paid_at = coalesce(first_paid_at, now()),
-    updated_at = now()
-where user_id = (select id from auth.users where lower(email) = 'oseaniavelino@gmail.com');
-```
+- Trocar `variant="ghost"` por um outline sutil: borda `border-white/25`, fundo `bg-white/5`, texto `text-white` (não mais 80%).
+- Manter tamanho `sm` pra não competir com o CTA principal, mas com contorno visível ele passa a ser reconhecido como botão.
+- Nenhuma outra mudança no CTA "Começar".
 
-Se a linha não existir:
+## O que NÃO muda
 
-```sql
-insert into public.subscription_state (user_id, status, plan, current_period_end, first_paid_at)
-select id, 'active', 'annual', now() + interval '10 years', now()
-from auth.users where lower(email) = 'oseaniavelino@gmail.com'
-on conflict (user_id) do nothing;
-```
+- Nenhuma lógica de subscription/paywall.
+- `App.tsx`, `useSubscription`, `PaywallScreen` ficam iguais — o comportamento de mandar não-pagante pro paywall é correto por design.
+- Copy, cores globais, tokens: sem mexer.
 
-## Passo 2B — Reprocessar evento Asaas
+## Arquivos tocados
 
-Pega o `event_id` mais recente com `pay_status = CONFIRMED/RECEIVED` do Passo 1 e roda no terminal da VPS:
+- `src/components/landing/StickyCheckoutBar.tsx` — divide o CTA em 2.
+- `src/components/landing/FloatingNav.tsx` — botão "Entrar" com outline sutil.
 
-```bash
-curl -X POST https://api.influlab.pro/functions/v1/admin-reprocess-asaas-event \
-  -H "x-cron-secret: $CRON_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"event_id":"COLE_AQUI"}'
-```
+## Observação sobre o caso raiz
 
-## Passo 3 — Validar
-
-```sql
-select user_id, status, plan, current_period_end
-from public.subscription_state
-where user_id = (select id from auth.users where lower(email) = 'oseaniavelino@gmail.com');
-```
-
-Peça pra ela deslogar e logar de novo — `useSubscription` refaz o fetch e o paywall libera.
-
-## Nenhuma alteração de código
-
-Só operação de dados no self-hosted.
+Se você quiser, num próximo passo dá pra adicionar no `PaywallScreen` uma linha extra tipo "Não é você? Trocar de conta" já existe (via `signOut`), mas poderíamos também mostrar o email logado ali pra deixar claro em qual conta a pessoa está. Fora do escopo deste plano — me avise se quer incluir.
