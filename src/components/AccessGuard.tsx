@@ -64,7 +64,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <h1 className="font-serif text-2xl font-bold text-foreground">{headline}</h1>
-            <p className="text-sm text-muted-foreground mt-2">{sub}</p>
+            <p className="text-sm text-muted-foreground mt-2">{subCopy}</p>
           </div>
 
           <div className="bg-primary/5 border border-primary/15 rounded-xl p-3 text-xs text-muted-foreground flex items-center gap-2 text-left">
