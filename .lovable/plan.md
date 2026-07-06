@@ -1,35 +1,46 @@
-## Diagnóstico
+## Diagnóstico provável
 
-A cliente NÃO está travada no `PaywallScreen` global (`App.tsx`) — o `useSubscription` está lendo `status='active'` corretamente, o app abre normal. O que acontece:
+A cliente não está presa no paywall global de login. O gatilho mais provável é o `CheckoutModal` mantendo um estado antigo no `sessionStorage` (`checkout:v1`) em etapa `result` e/ou sendo reaberto por `AutoCheckoutOpener`/`PaywallScreen` quando o app ainda não sincronizou a assinatura após o onboarding.
 
-1. Antes de a gente ativar ela manualmente, ela chegou a gerar uma cobrança PIX no Asaas. Isso deixou `subscription_state.next_invoice` populado com um invoice PIX pendente (QR code, due_date, etc).
-2. Ativamos ela manual (`status='active'`, `current_period_end` 1 ano à frente), mas ninguém limpou o `next_invoice` obsoleto.
-3. Ao logar, o `PixDueBanner` (topo da tela, em `App.tsx` linha 92) lê esse `next_invoice` antigo, vê `daysUntilDue <= 3` (vencido/vencendo), pinta a barra vermelha "Sua fatura Pix vence hoje" e ao clicar joga em `/renovar`, que mostra o QR code do PIX. Pra cliente, é indistinguível de um paywall.
+Hoje, depois que a matriz termina, o onboarding faz `window.location.replace('/')`. Na nova carga, se algum estado antigo de checkout ainda existir ou se `useSubscription` ainda não tiver confirmado `active`, o modal pode reaparecer mesmo com banco correto.
 
-Isso vai afetar TODA cliente que a gente já ativou manual ou que vier a ser ativada manual no futuro (equipe, cortesias, correções de erro do webhook).
+## Plano de correção
 
-## Fix (só front-end, sem tocar em back)
+1. **Criar uma limpeza central de checkout pendente**
+   - Remover do `sessionStorage`:
+     - `pending_checkout_plan`
+     - `checkout:v1`
+   - Usar essa limpeza quando o usuário já tem assinatura ativa ou concluiu onboarding.
 
-Regra: um `next_invoice` só é considerado válido quando é **coerente com o período atual da assinatura**. Se `current_period_end` está muito à frente do `due_date` do invoice, o invoice é obsoleto (a assinatura já foi renovada/estendida por outro caminho) e deve ser ignorado.
+2. **Corrigir `CheckoutModal` para nunca ficar aberto para usuário ativo**
+   - Se `isActive === true`, fechar o modal imediatamente.
+   - Limpar draft antigo de pagamento.
+   - Evitar que um PIX antigo salvo em `sessionStorage` reapareça depois do onboarding.
 
-### 1. `src/hooks/usePendingInvoice.ts`
-- Passar a ler também `current_period_end` e `status` do `subscription_state` na query.
-- Adicionar helper `isInvoiceStale(invoice, currentPeriodEnd)`: retorna `true` quando `currentPeriodEnd` existe e é maior que `invoice.due_date + 2 dias de folga` (folga cobre o intervalo normal de "gerou fatura do próximo ciclo antes do fim do atual").
-- Quando `isInvoiceStale` for verdadeiro OU `status !== 'active' && status !== 'past_due'` for falso mas o invoice já venceu há mais de 7 dias sem virar `past_due`, tratar `invoice` como `null` no retorno (mantém dados brutos internos pra debug, mas expõe `invoice=null`, `hasPendingPixInvoice=false`, `hasUrgentInvoice=false`).
+3. **Corrigir `AutoCheckoutOpener`**
+   - Não abrir checkout automático se `useSubscription().isActive` já for verdadeiro.
+   - Se estiver ativo, limpar `pending_checkout_plan` e `checkout:v1`.
 
-### 2. `src/pages/Renew.tsx`
-- Nenhuma mudança de lógica além de já cair no branch "Nenhuma fatura pendente" quando o hook devolver `invoice=null`. Isso resolve o caso da cliente que digita `/renovar` na mão ou é redirecionada por link antigo.
+4. **Blindar o final do onboarding**
+   - Antes de redirecionar para `/`, limpar qualquer estado local de checkout pendente.
+   - Após `refreshProfile()` confirmar `onboarding_completed=true`, aguardar/forçar um `refresh()` da assinatura antes de navegar.
+   - Isso reduz corrida entre “matriz terminou” e “front ainda acha que precisa pagar”.
 
-### 3. Sem mudança em `PixDueBanner.tsx`
-Ele já esconde sozinho quando `hasUrgentInvoice=false`.
+5. **Reduzir falso paywall para premium manual anual**
+   - Em `useSubscription`, tratar `status='active'` como fonte absoluta de acesso, mesmo se `plan` ou `asaas_customer_id` vierem nulos.
+   - Manter o bypass manual/admin existente.
 
-## Fora de escopo (não vou mexer agora)
+6. **Entregar bloco VPS**
+   - Como a memória do projeto exige, ao finalizar código vou incluir os comandos de pull/deploy para rodar na VPS.
 
-- Não vou mexer em `PaywallScreen`, `AccessGuard`, `useSubscription`, `App.tsx` — todos esses já estão corretos pro caso da manual annual.
-- Não vou limpar `next_invoice` no banco via SQL agora; o fix no front resolve pra todas as clientes de uma vez sem depender de eu rodar UPDATE pra cada uma. Se quiser depois eu escrevo o SQL, mas não é bloqueante.
+## Arquivos previstos
 
-## Como valida
+- `src/components/CheckoutModal.tsx`
+- `src/components/AutoCheckoutOpener.tsx`
+- `src/pages/Onboarding.tsx`
+- possivelmente `src/hooks/useCheckoutDraft.ts` ou novo util pequeno para centralizar a limpeza
+- possivelmente `src/hooks/useSubscription.ts`, apenas se necessário para reforçar o caso premium manual
 
-Depois do deploy, a cliente que estava travada:
-- abre o app → não vê mais a barra vermelha do PIX no topo
-- se clicar em algum link antigo pra `/renovar`, vê "Nenhuma fatura pendente · Sua assinatura está em dia · Voltar pro app"
+## Resultado esperado
+
+Depois que a cliente concluir o onboarding e a matriz for gerada, ela entra direto no app. Nenhum modal de pagamento antigo deve abrir para usuário com `subscription_state.status='active'`, inclusive premium anual setado manualmente.

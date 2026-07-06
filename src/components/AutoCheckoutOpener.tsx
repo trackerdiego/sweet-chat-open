@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckoutModal } from '@/components/CheckoutModal';
-
-const CHECKOUT_PLAN_KEY = 'pending_checkout_plan';
+import { useSubscription } from '@/hooks/useSubscription';
+import { CHECKOUT_PLAN_KEY, clearPendingCheckout } from '@/lib/checkoutStorage';
 
 type Plan = 'monthly' | 'yearly';
 
@@ -10,10 +10,20 @@ type Plan = 'monthly' | 'yearly';
  * (vindo da landing via /auth?plan=...). Roda apenas uma vez por sessão.
  */
 export function AutoCheckoutOpener() {
+  const { isActive, loading, hasLoadedOnce } = useSubscription();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    if (loading || !hasLoadedOnce) return;
+
+    if (isActive) {
+      clearPendingCheckout();
+      setOpen(false);
+      setPlan(null);
+      return;
+    }
+
     let pending: string | null = null;
     try { pending = sessionStorage.getItem(CHECKOUT_PLAN_KEY); } catch {}
 
@@ -31,12 +41,12 @@ export function AutoCheckoutOpener() {
       const qs = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
     }
-  }, []);
+  }, [hasLoadedOnce, isActive, loading]);
 
   const handleChange = (val: boolean) => {
     setOpen(val);
     if (!val) {
-      try { sessionStorage.removeItem(CHECKOUT_PLAN_KEY); } catch {}
+      clearPendingCheckout();
     }
   };
 

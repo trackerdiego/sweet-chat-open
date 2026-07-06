@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
-const KEY = "checkout:v1";
+import { CHECKOUT_DRAFT_KEY } from "@/lib/checkoutStorage";
 
 export interface CheckoutDraft {
   step: "data" | "method" | "result";
@@ -29,9 +28,10 @@ export const emptyDraft: CheckoutDraft = {
 };
 
 export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
+  const skipNextPersist = useRef(false);
   const [draft, setDraft] = useState<CheckoutDraft>(() => {
     try {
-      const raw = sessionStorage.getItem(KEY);
+      const raw = sessionStorage.getItem(CHECKOUT_DRAFT_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as CheckoutDraft;
         return { ...emptyDraft, ...parsed, selectedPlan: initialPlan ?? parsed.selectedPlan };
@@ -43,8 +43,12 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
   const t = useRef<number | null>(null);
   useEffect(() => {
     if (t.current) window.clearTimeout(t.current);
+    if (skipNextPersist.current) {
+      skipNextPersist.current = false;
+      return;
+    }
     t.current = window.setTimeout(() => {
-      try { sessionStorage.setItem(KEY, JSON.stringify(draft)); } catch {}
+      try { sessionStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft)); } catch {}
     }, 200);
     return () => { if (t.current) window.clearTimeout(t.current); };
   }, [draft]);
@@ -53,7 +57,8 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
     setDraft((d) => ({ ...d, [k]: v }));
 
   const clear = () => {
-    try { sessionStorage.removeItem(KEY); } catch {}
+    skipNextPersist.current = true;
+    try { sessionStorage.removeItem(CHECKOUT_DRAFT_KEY); } catch {}
     setDraft({ ...emptyDraft, selectedPlan: initialPlan ?? "yearly" });
   };
 
