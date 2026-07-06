@@ -1,35 +1,35 @@
-# Plano: dar mais visibilidade ao "Entrar" pra quem já tem conta
+## Diagnóstico
 
-Contexto: usuários que se cadastraram mas não finalizaram o pagamento voltam pra landing e não acham como logar — o CTA dominante é "Começar/Assinar". Vamos reforçar o acesso ao login em 2 pontos.
+A cliente NÃO está travada no `PaywallScreen` global (`App.tsx`) — o `useSubscription` está lendo `status='active'` corretamente, o app abre normal. O que acontece:
 
-## 1) `StickyCheckoutBar` (barra roxa fixa mobile) — adicionar "Entrar"
+1. Antes de a gente ativar ela manualmente, ela chegou a gerar uma cobrança PIX no Asaas. Isso deixou `subscription_state.next_invoice` populado com um invoice PIX pendente (QR code, due_date, etc).
+2. Ativamos ela manual (`status='active'`, `current_period_end` 1 ano à frente), mas ninguém limpou o `next_invoice` obsoleto.
+3. Ao logar, o `PixDueBanner` (topo da tela, em `App.tsx` linha 92) lê esse `next_invoice` antigo, vê `daysUntilDue <= 3` (vencido/vencendo), pinta a barra vermelha "Sua fatura Pix vence hoje" e ao clicar joga em `/renovar`, que mostra o QR code do PIX. Pra cliente, é indistinguível de um paywall.
 
-Hoje é um botão único gigante "Comece agora por R$24,75 → Assinar". Vamos dividir em dois:
+Isso vai afetar TODA cliente que a gente já ativou manual ou que vier a ser ativada manual no futuro (equipe, cortesias, correções de erro do webhook).
 
-- Esquerda: um link discreto **"Já tenho conta · Entrar"** (texto branco/80%, sem fundo, ocupa ~35% da largura).
-- Direita: o CTA principal encolhe pra pill "Assinar R$24,75/mês" (~65% da largura), mantendo o gradiente/sombra atual.
+## Fix (só front-end, sem tocar em back)
 
-Ambos no mesmo container arredondado escuro (para não perder a estética glass atual), navegando: "Entrar" → `/auth`, "Assinar" → `onClick` original.
+Regra: um `next_invoice` só é considerado válido quando é **coerente com o período atual da assinatura**. Se `current_period_end` está muito à frente do `due_date` do invoice, o invoice é obsoleto (a assinatura já foi renovada/estendida por outro caminho) e deve ser ignorado.
 
-## 2) `FloatingNav` (topo) — deixar o "Entrar" mais óbvio no mobile
+### 1. `src/hooks/usePendingInvoice.ts`
+- Passar a ler também `current_period_end` e `status` do `subscription_state` na query.
+- Adicionar helper `isInvoiceStale(invoice, currentPeriodEnd)`: retorna `true` quando `currentPeriodEnd` existe e é maior que `invoice.due_date + 2 dias de folga` (folga cobre o intervalo normal de "gerou fatura do próximo ciclo antes do fim do atual").
+- Quando `isInvoiceStale` for verdadeiro OU `status !== 'active' && status !== 'past_due'` for falso mas o invoice já venceu há mais de 7 dias sem virar `past_due`, tratar `invoice` como `null` no retorno (mantém dados brutos internos pra debug, mas expõe `invoice=null`, `hasPendingPixInvoice=false`, `hasUrgentInvoice=false`).
 
-Hoje é um ghost quase invisível ao lado do "Começar". Ajustes:
+### 2. `src/pages/Renew.tsx`
+- Nenhuma mudança de lógica além de já cair no branch "Nenhuma fatura pendente" quando o hook devolver `invoice=null`. Isso resolve o caso da cliente que digita `/renovar` na mão ou é redirecionada por link antigo.
 
-- Trocar `variant="ghost"` por um outline sutil: borda `border-white/25`, fundo `bg-white/5`, texto `text-white` (não mais 80%).
-- Manter tamanho `sm` pra não competir com o CTA principal, mas com contorno visível ele passa a ser reconhecido como botão.
-- Nenhuma outra mudança no CTA "Começar".
+### 3. Sem mudança em `PixDueBanner.tsx`
+Ele já esconde sozinho quando `hasUrgentInvoice=false`.
 
-## O que NÃO muda
+## Fora de escopo (não vou mexer agora)
 
-- Nenhuma lógica de subscription/paywall.
-- `App.tsx`, `useSubscription`, `PaywallScreen` ficam iguais — o comportamento de mandar não-pagante pro paywall é correto por design.
-- Copy, cores globais, tokens: sem mexer.
+- Não vou mexer em `PaywallScreen`, `AccessGuard`, `useSubscription`, `App.tsx` — todos esses já estão corretos pro caso da manual annual.
+- Não vou limpar `next_invoice` no banco via SQL agora; o fix no front resolve pra todas as clientes de uma vez sem depender de eu rodar UPDATE pra cada uma. Se quiser depois eu escrevo o SQL, mas não é bloqueante.
 
-## Arquivos tocados
+## Como valida
 
-- `src/components/landing/StickyCheckoutBar.tsx` — divide o CTA em 2.
-- `src/components/landing/FloatingNav.tsx` — botão "Entrar" com outline sutil.
-
-## Observação sobre o caso raiz
-
-Se você quiser, num próximo passo dá pra adicionar no `PaywallScreen` uma linha extra tipo "Não é você? Trocar de conta" já existe (via `signOut`), mas poderíamos também mostrar o email logado ali pra deixar claro em qual conta a pessoa está. Fora do escopo deste plano — me avise se quer incluir.
+Depois do deploy, a cliente que estava travada:
+- abre o app → não vê mais a barra vermelha do PIX no topo
+- se clicar em algum link antigo pra `/renovar`, vê "Nenhuma fatura pendente · Sua assinatura está em dia · Voltar pro app"
