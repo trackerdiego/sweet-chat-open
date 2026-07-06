@@ -42,11 +42,11 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
 
   const t = useRef<number | null>(null);
   useEffect(() => {
+    if (t.current) window.clearTimeout(t.current);
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
       return;
     }
-    if (t.current) window.clearTimeout(t.current);
     t.current = window.setTimeout(() => {
       try { sessionStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft)); } catch {}
     }, 200);
