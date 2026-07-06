@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { useSubscription } from '@/hooks/useSubscription';
 import { CHECKOUT_PLAN_KEY, clearPendingCheckout } from '@/lib/checkoutStorage';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 type Plan = 'monthly' | 'yearly';
 
