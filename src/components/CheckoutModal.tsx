@@ -27,6 +27,7 @@ import { BonusStack } from "@/components/checkout/BonusStack";
 import { UrgencyBar } from "@/components/checkout/UrgencyBar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calcInstallment, formatBRL, MAX_INSTALLMENTS } from "@/lib/installments";
+import { clearPendingCheckout } from "@/lib/checkoutStorage";
 
 interface CheckoutModalProps {
   open: boolean;
@@ -70,10 +71,13 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   const { draft, update, setDraft, clear } = useCheckoutDraft(initialPlan);
   const celebratedRef = useRef(false);
   const redirectTimerRef = useRef<number | null>(null);
+  const wasOpenRef = useRef(false);
+  const activeAtOpenRef = useRef(false);
 
   const goToOnboarding = () => {
     if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
     if (pollRef.current) window.clearInterval(pollRef.current);
+    clearPendingCheckout();
     clear();
     onOpenChange(false);
     navigate('/onboarding');
@@ -89,6 +93,26 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   const [cepLoading, setCepLoading] = useState(false);
   const [cardApproved, setCardApproved] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      activeAtOpenRef.current = isActive;
+    }
+    if (!open) {
+      activeAtOpenRef.current = false;
+      celebratedRef.current = false;
+    }
+    wasOpenRef.current = open;
+  }, [open, isActive]);
+
+  useEffect(() => {
+    if (!open || !isActive || !activeAtOpenRef.current) return;
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    if (redirectTimerRef.current) window.clearTimeout(redirectTimerRef.current);
+    clearPendingCheckout();
+    clear();
+    onOpenChange(false);
+  }, [open, isActive, onOpenChange, clear]);
 
   // ajusta plano quando initialPlan muda
   useEffect(() => {
@@ -140,6 +164,7 @@ export function CheckoutModal({ open, onOpenChange, initialPlan }: CheckoutModal
   useEffect(() => {
     if (!isActive || draft.step !== "result" || celebratedRef.current) return;
     celebratedRef.current = true;
+    clearPendingCheckout();
     if (pollRef.current) window.clearInterval(pollRef.current);
 
     // confete

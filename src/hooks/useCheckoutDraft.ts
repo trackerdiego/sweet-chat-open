@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
-const KEY = "checkout:v1";
+import { CHECKOUT_DRAFT_KEY } from "@/lib/checkoutStorage";
 
 export interface CheckoutDraft {
   step: "data" | "method" | "result";
@@ -31,7 +30,7 @@ export const emptyDraft: CheckoutDraft = {
 export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
   const [draft, setDraft] = useState<CheckoutDraft>(() => {
     try {
-      const raw = sessionStorage.getItem(KEY);
+      const raw = sessionStorage.getItem(CHECKOUT_DRAFT_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as CheckoutDraft;
         return { ...emptyDraft, ...parsed, selectedPlan: initialPlan ?? parsed.selectedPlan };
@@ -53,7 +52,7 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
     setDraft((d) => ({ ...d, [k]: v }));
 
   const clear = () => {
-    try { sessionStorage.removeItem(KEY); } catch {}
+    try { sessionStorage.removeItem(CHECKOUT_DRAFT_KEY); } catch {}
     setDraft({ ...emptyDraft, selectedPlan: initialPlan ?? "yearly" });
   };
 

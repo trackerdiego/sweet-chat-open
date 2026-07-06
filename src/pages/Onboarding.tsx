@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useOnboardingRun, type StageKey } from '@/hooks/useOnboardingRun';
+import { useSubscription } from '@/hooks/useSubscription';
 import { supabase } from '@/integrations/supabase/client';
+import { clearPendingCheckout } from '@/lib/checkoutStorage';
 import { toast } from 'sonner';
 import { ArrowRight, ArrowLeft, Loader2, Sparkles, Check, X, Users, Brain, LayoutGrid, UserCircle } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
@@ -55,6 +57,7 @@ const STAGE_ORDER: StageKey[] = ['profile', 'audience', 'visceral', 'matrix'];
 
 const Onboarding = () => {
   const { profile, refreshProfile } = useUserProfile();
+  const { refresh: refreshSubscription } = useSubscription();
   const navigate = useNavigate();
   const isReturningUser = !!profile && profile.primary_niche !== 'lifestyle' && profile.primary_niche.length < 80;
 
@@ -105,6 +108,7 @@ const Onboarding = () => {
     if (run.status === 'completed' && matrixValidated) {
       toast.success('✨ Tudo pronto! Sua experiência personalizada está montada.');
       try { localStorage.removeItem('influlab.onboardingRunId'); } catch {}
+      clearPendingCheckout();
       // Confirma no banco que onboarding_completed=true ANTES de navegar.
       // Sem isso, o AppRoutes pode ler estado antigo (needsOnboarding=true) e
       // jogar o usuário de volta para /onboarding ao tentar ir para /.
@@ -114,12 +118,14 @@ const Onboarding = () => {
           if (p?.onboarding_completed) break;
           await new Promise(r => setTimeout(r, 400));
         }
+        await refreshSubscription();
+        clearPendingCheckout();
         window.location.replace('/');
       })();
     } else if (run.status === 'failed') {
       toast.error('Tivemos um problema em uma das etapas. Toque em "Tentar novamente".');
     }
-  }, [run, matrixValidated, refreshProfile]);
+  }, [run, matrixValidated, refreshProfile, refreshSubscription]);
 
   const handleFinish = async () => {
     // Re-check session
