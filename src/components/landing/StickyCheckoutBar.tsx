@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface Props {
   onClick: () => void;
@@ -13,6 +14,7 @@ interface Props {
  * (would be redundant there).
  */
 export function StickyCheckoutBar({ onClick }: Props) {
+  const navigate = useNavigate();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -39,24 +41,28 @@ export function StickyCheckoutBar({ onClick }: Props) {
           className="fixed bottom-0 left-0 right-0 z-[60] px-3 pb-3 pointer-events-none"
           style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
         >
-          <button
-            onClick={onClick}
-            className="pointer-events-auto w-full max-w-md mx-auto flex items-center justify-between gap-3 rounded-full bg-gradient-to-r from-primary to-accent px-5 py-3.5 shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)] active:scale-[0.98] transition-transform"
-          >
-            <div className="text-left">
-              <div className="text-white font-bold text-sm leading-tight">
-                Comece agora por R$24,75
+          <div className="pointer-events-auto w-full max-w-md mx-auto flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-md border border-white/10 p-1.5 shadow-[0_10px_40px_-10px_rgba(168,85,247,0.7)]">
+            <button
+              onClick={() => navigate("/auth")}
+              className="shrink-0 px-3.5 py-2.5 rounded-full text-white/90 hover:text-white hover:bg-white/10 active:scale-[0.98] transition text-xs font-medium leading-tight text-left"
+            >
+              Já tenho<br />conta · Entrar
+            </button>
+            <button
+              onClick={onClick}
+              className="flex-1 flex items-center justify-between gap-2 rounded-full bg-gradient-to-r from-primary to-accent px-4 py-2.5 active:scale-[0.98] transition-transform"
+            >
+              <div className="text-left">
+                <div className="text-white font-bold text-sm leading-tight">
+                  Assinar R$24,75
+                </div>
+                <div className="text-[10px] text-white/80 font-medium leading-tight mt-0.5">
+                  plano anual · 7 dias garantia
+                </div>
               </div>
-              <div className="text-[11px] text-white/80 font-medium leading-tight mt-0.5">
-                no plano anual · 7 dias garantia
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white/20 rounded-full px-3 py-1.5">
-              <span className="text-white font-semibold text-xs">Assinar</span>
-              <ArrowRight className="h-3.5 w-3.5 text-white" />
-            </div>
-
-          </button>
+              <ArrowRight className="h-4 w-4 text-white shrink-0" />
+            </button>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
