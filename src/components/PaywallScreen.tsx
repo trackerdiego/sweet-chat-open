@@ -4,8 +4,7 @@ import { Crown, LogOut, ShieldCheck, Lock, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { useUserProfile } from '@/hooks/useUserProfile';
-
-const CHECKOUT_PLAN_KEY = 'pending_checkout_plan';
+import { CHECKOUT_PLAN_KEY, clearPendingCheckout } from '@/lib/checkoutStorage';
 
 /**
  * Tela de retenção mostrada após signup (e ao fechar o modal do PIX).
@@ -98,7 +97,7 @@ export function PaywallScreen() {
         onOpenChange={(v) => {
           setCheckoutOpen(v);
           if (!v) {
-            try { sessionStorage.removeItem(CHECKOUT_PLAN_KEY); } catch {}
+            clearPendingCheckout();
           }
         }}
         initialPlan={initialPlan}

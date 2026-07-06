@@ -8,9 +8,9 @@ import { toast } from 'sonner';
 import { Loader2, Mail, ArrowLeft, Gift } from 'lucide-react';
 import logo from '@/assets/vyrallab-logo-light.png';
 import { InAppBrowserBanner } from '@/components/InAppBrowserBanner';
+import { CHECKOUT_PLAN_KEY } from '@/lib/checkoutStorage';
 
 const REF_STORAGE_KEY = 'pending_ref';
-const CHECKOUT_PLAN_KEY = 'pending_checkout_plan';
 
 const PLAN_LABELS: Record<string, { label: string; price: string }> = {
   yearly: { label: 'Anual', price: 'R$297/ano (≈ R$24,75/mês)' },
