@@ -26,6 +26,22 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.round((due.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Um next_invoice é considerado obsoleto quando o period_end da assinatura
+ * já foi muito além do due_date do invoice. Isso indica que a assinatura
+ * foi renovada/estendida por outro caminho (liberação manual, correção via
+ * SQL, ajuste de cortesia) e o invoice antigo ficou órfão no
+ * subscription_state.next_invoice. Sem esse guard, a cliente vê banner
+ * vermelho "Sua fatura Pix vence hoje" mesmo estando 100% em dia.
+ */
+function isInvoiceStale(dueDate: string | null, currentPeriodEnd: string | null): boolean {
+  if (!dueDate || !currentPeriodEnd) return false;
+  const due = new Date(dueDate).getTime();
+  const periodEnd = new Date(currentPeriodEnd).getTime();
+  const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+  return periodEnd - due > TWO_DAYS;
+}
+
 export function usePendingInvoice() {
   const [invoice, setInvoice] = useState<PendingInvoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,10 +50,15 @@ export function usePendingInvoice() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
     const { data } = await (supabase.from as any)('subscription_state')
-      .select('next_invoice')
+      .select('next_invoice, current_period_end')
       .eq('user_id', user.id)
       .maybeSingle();
-    setInvoice((data?.next_invoice as PendingInvoice | null) ?? null);
+    const raw = (data?.next_invoice as PendingInvoice | null) ?? null;
+    if (raw && isInvoiceStale(raw.due_date, data?.current_period_end ?? null)) {
+      setInvoice(null);
+    } else {
+      setInvoice(raw);
+    }
     setLoading(false);
   }, []);
 
@@ -73,3 +94,4 @@ export function usePendingInvoice() {
     applyDiscountAndFetch,
   };
 }
+
