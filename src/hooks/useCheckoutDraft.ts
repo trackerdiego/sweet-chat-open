@@ -28,6 +28,7 @@ export const emptyDraft: CheckoutDraft = {
 };
 
 export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
+  const skipNextPersist = useRef(false);
   const [draft, setDraft] = useState<CheckoutDraft>(() => {
     try {
       const raw = sessionStorage.getItem(CHECKOUT_DRAFT_KEY);
@@ -41,6 +42,10 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
 
   const t = useRef<number | null>(null);
   useEffect(() => {
+    if (skipNextPersist.current) {
+      skipNextPersist.current = false;
+      return;
+    }
     if (t.current) window.clearTimeout(t.current);
     t.current = window.setTimeout(() => {
       try { sessionStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft)); } catch {}
@@ -52,6 +57,7 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
     setDraft((d) => ({ ...d, [k]: v }));
 
   const clear = () => {
+    skipNextPersist.current = true;
     try { sessionStorage.removeItem(CHECKOUT_DRAFT_KEY); } catch {}
     setDraft({ ...emptyDraft, selectedPlan: initialPlan ?? "yearly" });
   };
