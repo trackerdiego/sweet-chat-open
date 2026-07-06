@@ -43,7 +43,7 @@ export function useCheckoutDraft(initialPlan?: "monthly" | "yearly") {
   useEffect(() => {
     if (t.current) window.clearTimeout(t.current);
     t.current = window.setTimeout(() => {
-      try { sessionStorage.setItem(KEY, JSON.stringify(draft)); } catch {}
+      try { sessionStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft)); } catch {}
     }, 200);
     return () => { if (t.current) window.clearTimeout(t.current); };
   }, [draft]);
