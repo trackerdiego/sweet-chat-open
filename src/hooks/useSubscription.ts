@@ -21,7 +21,10 @@ const DEFAULT: SubscriptionState = {
   asaasCustomerId: null,
 };
 
-const ADMIN_EMAIL = 'agentevendeagente@gmail.com';
+const ADMIN_EMAILS = ['agentevendeagente@gmail.com'];
+// Emails de cortesia: acesso full liberado sem consultar subscription_state.
+// Não vira admin do painel — só bypassa o paywall.
+const COMP_EMAILS = ['meduardamusa@gmail.com'];
 
 const ADMIN_SUB: SubscriptionState = {
   status: 'active',
@@ -42,10 +45,13 @@ export function useSubscription() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
 
-    // Admin bypass — nunca trava o admin master no paywall, mesmo
-    // se a query do subscription_state falhar por lock contention.
-    if (user.email === ADMIN_EMAIL) {
-      setIsAdmin(true);
+    const email = (user.email || '').toLowerCase();
+    const isAdminEmail = ADMIN_EMAILS.includes(email);
+    const isCompEmail = COMP_EMAILS.includes(email);
+
+    // Admin + emails de cortesia — bypass total do paywall.
+    if (isAdminEmail || isCompEmail) {
+      if (isAdminEmail) setIsAdmin(true);
       setSub(ADMIN_SUB);
       setHasLoadedOnce(true);
       setLoading(false);

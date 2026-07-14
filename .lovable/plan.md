@@ -1,85 +1,64 @@
-## Problema
 
-Depois do onboarding + geração de matriz, a cliente cai na tela **CheckoutModal** (imagem que você mandou — "Garanta seu acesso / DADOS / PAGAMENTO / CONFIRMAÇÃO"). Essa tela pode ser aberta por **3 caminhos diferentes** e sem log do device dela é impossível cravar qual é:
+# Liberar acesso full para `meduardamusa@gmail.com`
 
-1. `AutoCheckoutOpener` → abriu porque `sessionStorage[pending_checkout_plan]` ainda existia ou porque a URL trouxe `?openCheckout=...`
-2. `AccessGuard` → `useSubscription().hasAccess === false` (linha `subscription_state` retornou `status !== 'active'`, ou a query falhou nas 2 tentativas e caiu no default `trial` expirado)
-3. Botão manual em `PaywallScreen`, `PremiumGate`, `TrialBanner`, etc.
+Como a usuária ainda **não criou conta**, precisamos de duas camadas pra garantir que ela nunca veja paywall — independente da ordem em que ela se cadastrar.
 
-Como não dá pra pedir console dela, vamos **gravar cada abertura da modal num log server-side** que a gente consulta depois via SQL no Studio self-hosted. Assim, na próxima vez que ela cair na tela, temos o "raio-x" completo:  qual gatilho, o que o `subscription_state` retornou naquele instante, o que estava no `sessionStorage`, a URL, se o webhook Asaas já rodou pra ela, etc.
+---
 
-## O que vai ser feito
+## 1. Frontend — whitelist de emails "cortesia"
 
-### 1. Nova tabela `client_diagnostics` (SQL manual no Studio self-hosted)
+Hoje `useSubscription.ts` tem um bypass hardcoded só pro admin (`agentevendeagente@gmail.com`). Vou transformar isso numa **lista** de emails com acesso liberado (mesmo comportamento do admin, mas sem virar admin do painel):
 
-```text
-client_diagnostics
-├── id uuid pk
-├── user_id uuid            -- auth.uid()
-├── event text              -- 'checkout_opened' | 'access_guard_blocked' | 'auto_opener_fired'
-├── source text             -- 'AutoCheckoutOpener' | 'AccessGuard' | 'PaywallScreen' | 'manual'
-├── payload jsonb           -- snapshot completo (ver abaixo)
-├── created_at timestamptz default now()
-```
+- Em `src/hooks/useSubscription.ts`:
+  - Trocar `ADMIN_EMAIL` por dois arrays: `ADMIN_EMAILS` (mantém `agentevendeagente@gmail.com`) e `COMP_EMAILS` (novo, começa com `meduardamusa@gmail.com`).
+  - Se `user.email ∈ ADMIN_EMAILS ∪ COMP_EMAILS` → setar `ADMIN_SUB` (status `active`) e sair sem consultar `subscription_state`. Só marca `isAdmin=true` pra ADMIN_EMAILS.
+  - Efeito: assim que ela logar pela primeira vez, o `hasAccess` já é `true`, `AccessGuard` libera tudo, `AutoCheckoutOpener` e `PaywallScreen` não disparam.
 
-RLS: `INSERT` liberado pro `authenticated` (`WITH CHECK (auth.uid() = user_id)`). `SELECT` só pro service_role (a gente consulta via Studio).
+Nenhuma outra mudança de UI ou lógica de assinatura.
 
-Snapshot em `payload`:
-```json
-{
-  "route": "/",
-  "url": "https://app.influlab.pro/?...",
-  "subscription": { "status": "...", "plan": "...", "current_period_end": "...", "asaas_customer_id": "..." },
-  "hasLoadedOnce": true,
-  "sessionStorage": { "pending_checkout_plan": "...", "checkout:v1": "..." },
-  "onboardingCompleted": true,
-  "hasAccess": false,
-  "isActive": false,
-  "trigger": "auto-opener" | "access-guard" | "manual-btn"
-}
-```
+## 2. Backend — SQL pra rodar no Studio self-hosted (`api.influlab.pro`)
 
-### 2. Helper `src/lib/diagnostics.ts`
+Dois cenários cobertos no mesmo bloco:
 
-`logDiagnostic(event, source, payload)` → chama `supabase.from('client_diagnostics').insert(...)`. Silencioso (nunca joga erro pra UI). No-op se sem sessão.
+**A) Se ela ainda NÃO criou conta** — o SQL não faz nada agora, mas o frontend já libera assim que ela logar. Rodar o bloco B depois só pra deixar registro persistente.
 
-### 3. Instrumentar os 3 gatilhos
+**B) Depois que ela criar conta (ou se já criou)** — inserir/atualizar `subscription_state` como `active` com validade longa, pra que mesmo sem o bypass do frontend ela passe:
 
-- **`AutoCheckoutOpener`** — quando detecta `candidate` e vai chamar `setOpen(true)`, dispara `logDiagnostic('checkout_opened', 'AutoCheckoutOpener', {...})`.
-- **`AccessGuard`** — quando renderiza o bloqueio (`!hasAccess && !ALWAYS_OPEN`), dispara `logDiagnostic('access_guard_blocked', 'AccessGuard', {...})` uma vez por render de path (usando `useRef` para não spammar).
-- **`CheckoutModal`** — no `useEffect` que detecta `open === true` na borda de subida, dispara `logDiagnostic('checkout_opened', 'CheckoutModal', { activeAtOpen, ... })`. Isso captura QUALQUER caller (inclusive manual).
-
-### 4. Como você vai usar depois que ela cair de novo
-
-SQL no Studio:
 ```sql
-select created_at, event, source, payload
-from public.client_diagnostics
-where user_id = '<uuid da cliente>'
-order by created_at desc
-limit 20;
+-- Rodar no Studio self-hosted após ela criar a conta
+WITH u AS (
+  SELECT id FROM auth.users WHERE lower(email) = 'meduardamusa@gmail.com' LIMIT 1
+)
+INSERT INTO public.subscription_state (
+  user_id, status, plan, current_period_end, trial_ends_at, first_paid_at, updated_at
+)
+SELECT id, 'active', 'annual', now() + interval '10 years', NULL, now(), now()
+FROM u
+ON CONFLICT (user_id) DO UPDATE
+SET status = 'active',
+    plan = COALESCE(public.subscription_state.plan, 'annual'),
+    current_period_end = now() + interval '10 years',
+    first_paid_at = COALESCE(public.subscription_state.first_paid_at, now()),
+    updated_at = now();
+
+-- Conferir
+SELECT user_id, status, plan, current_period_end, asaas_customer_id
+FROM public.subscription_state
+WHERE user_id = (SELECT id FROM auth.users WHERE lower(email)='meduardamusa@gmail.com');
 ```
 
-Com isso você vê, em ordem:
-- Se `AutoCheckoutOpener` disparou → o `sessionStorage` ainda tinha coisa (bug de limpeza).
-- Se `AccessGuard` bloqueou → `subscription.status` retornou o quê exatamente naquele device (`trial` expirado? `active` mas `useSubscription` não sincronizou? row nula?).
-- Se veio de um botão manual → algum componente reabriu.
+Observação: `asaas_customer_id` fica `NULL` de propósito — mesmo padrão dos 4 premium manuais da equipe, então ela não polui auditoria de pagantes reais.
 
-### 5. Bloco copia-e-cola pra VPS
+---
 
-No fim vai o SQL de migration + `deploy-selfhost.sh` do frontend (mas frontend é Vercel auto, então só o SQL precisa rodar manual + push do código).
+## Ordem sugerida
 
-## Arquivos
+1. Aprovar este plano → aplico a mudança em `useSubscription.ts`.
+2. Você manda o link/instrução pra ela criar conta normalmente.
+3. Assim que ela criar, você roda o SQL do bloco acima no Studio (isso deixa persistente mesmo se um dia removermos o bypass do frontend).
 
-- **novo** `src/lib/diagnostics.ts`
-- **editar** `src/components/AutoCheckoutOpener.tsx`
-- **editar** `src/components/AccessGuard.tsx`
-- **editar** `src/components/CheckoutModal.tsx`
-- **SQL manual** (não migration Lovable — backend é self-hosted): `CREATE TABLE public.client_diagnostics` + GRANTs + RLS + policies
+## Detalhes técnicos
 
-## Escopo NÃO incluído
-
-- Nenhuma alteração de lógica de assinatura, onboarding ou webhook. Isso aqui é **puramente instrumentação** — depois que a gente ler os logs dela, aí sim atacamos a causa raiz com certeza.
-- Nada de UI muda pra usuário final.
-
-Confirma que posso instrumentar assim? Quando a cliente logar de novo e cair na tela, a gente resolve com dados reais em vez de chutar.
+- Arquivo alterado: `src/hooks/useSubscription.ts` (só a checagem de email no topo de `fetch`).
+- Nenhum edge function, nenhuma migration Lovable (backend é self-hosted).
+- Reversão futura: remover o email de `COMP_EMAILS` e opcionalmente `UPDATE subscription_state SET status='canceled' WHERE user_id=...`.
